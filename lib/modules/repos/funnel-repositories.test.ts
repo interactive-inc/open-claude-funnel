@@ -21,29 +21,29 @@ describe("FunnelRepositories", () => {
     expect(mcp.findInstalledName("/repo")).toBe("funnel")
   })
 
-  test("cannot remove a repo referenced by an agent", () => {
+  test("cannot remove a repo referenced by a profile", () => {
     const { service, store } = makeService()
 
     service.add({ name: "r", path: "/repo" })
 
     const settings = store.read()
-    settings.agents.push({ name: "a", channel: "x", repo: "r" })
+    settings.profiles.push({ name: "a", channel: "x", repo: "r" })
     store.write(settings)
 
-    expect(() => service.remove("r")).toThrow(/referenced by an agent/)
+    expect(() => service.remove("r")).toThrow(/referenced by a profile/)
   })
 
-  test("rename also updates agent repo references", () => {
+  test("rename also updates profile repo references", () => {
     const { service, store } = makeService()
 
     service.add({ name: "r", path: "/repo" })
 
     const settings = store.read()
-    settings.agents.push({ name: "a", channel: "x", repo: "r" })
+    settings.profiles.push({ name: "a", channel: "x", repo: "r" })
     store.write(settings)
 
     service.rename("r", "r2")
 
-    expect(store.read().agents[0]?.repo).toBe("r2")
+    expect(store.read().profiles[0]?.repo).toBe("r2")
   })
 })

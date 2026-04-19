@@ -52,7 +52,7 @@ describe("FunnelSettingsStore", () => {
           connectors: [{ type: "slack", name: "x", botToken: "wrong", appToken: "also-wrong" }],
           channels: [],
           repositories: [],
-          agents: [],
+          profiles: [],
         }),
       },
     })

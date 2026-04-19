@@ -29,11 +29,11 @@ lib/
 ├── factory.ts          createFactory() の唯一の呼び出し場所
 ├── funnel.ts           Funnel class（全 Service を束ねる Facade、公開 API）
 ├── routes.ts           中央。sub-Hono を mount
-├── routes/             ルートハンドラ（connectors / channels / agents / repos / claude / gateway / status）
+├── routes/             ルートハンドラ（connectors / channels / profiles / repos / claude / gateway / status / update）
 └── modules/            ビジネスロジック。Hono 非依存
     ├── connectors/     FunnelConnectors + Adapter / Listener / EventProcessor 群
     ├── channels/       FunnelChannels（購読箱）
-    ├── agents/         FunnelAgents（プリセット）
+    ├── profiles/       FunnelProfiles（起動プロファイル）
     ├── claude/         FunnelClaude
     ├── repos/          FunnelRepositories
     ├── mcp/            FunnelMcp + channel-server
@@ -98,11 +98,13 @@ lib/
 
 ### Claude 起動
 
-- `fnl claude --channel <name>` が必須フラグ。Claude Code 子プロセスに `FUNNEL_CHANNEL_ID=<name>` を注入
+- `fnl claude` は "default" profile を起動。`fnl claude --profile <name>` で名前付き profile を起動
+- `fnl claude --channel <name>` で profile を使わない raw 起動（`FUNNEL_CHANNEL_ID=<name>` を子プロセスに注入）
 - `--repo <name>` で cwd を切り替え（おまけ）
 - `--sub-agent <name>` で `claude --agent` に伝播
 - `--env-file <file>` で追加 env 読込
-- `fnl agents <name>` はプリセットを展開した `fnl claude` の糖衣
+- `fnl profiles <name> run` はプロファイルを展開した `fnl claude` の糖衣
+- 同一 profile 名で起動中は二重起動を拒否。PID ファイル: `~/.funnel/claude/<name>.pid`
 
 ## Conventions
 

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
-import { FunnelAgents } from "@/modules/agents/funnel-agents"
 import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelClaude } from "@/modules/claude/funnel-claude"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
+import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { FunnelRepositories } from "@/modules/repos/funnel-repositories"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
@@ -16,7 +16,7 @@ describe("Funnel", () => {
   test("getters return each service", () => {
     expect(funnel.connectors).toBeInstanceOf(FunnelConnectors)
     expect(funnel.channels).toBeInstanceOf(FunnelChannels)
-    expect(funnel.agents).toBeInstanceOf(FunnelAgents)
+    expect(funnel.profiles).toBeInstanceOf(FunnelProfiles)
     expect(funnel.repositories).toBeInstanceOf(FunnelRepositories)
     expect(funnel.claude).toBeInstanceOf(FunnelClaude)
     expect(funnel.gateway).toBeInstanceOf(FunnelGateway)

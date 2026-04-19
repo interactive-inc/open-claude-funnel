@@ -7,7 +7,7 @@ const makeService = () => {
     connectors: [{ type: "slack", name: "slack-a", botToken: "xoxb", appToken: "xapp" }],
     channels: [],
     repositories: [],
-    agents: [],
+    profiles: [],
   })
   return { store, service: new FunnelChannels({ store }) }
 }
@@ -40,25 +40,25 @@ describe("FunnelChannels", () => {
     expect(() => service.attachConnector("inbox", "missing")).toThrow(/not found/)
   })
 
-  test("rename also updates agent channel references", () => {
+  test("rename also updates profile channel references", () => {
     const { service, store } = makeService()
     service.add({ name: "inbox", connectors: [] })
     const settings = store.read()
-    settings.agents.push({ name: "cto", channel: "inbox" })
+    settings.profiles.push({ name: "cto", channel: "inbox" })
     store.write(settings)
 
     service.rename("inbox", "inbox2")
 
-    expect(store.read().agents[0]?.channel).toBe("inbox2")
+    expect(store.read().profiles[0]?.channel).toBe("inbox2")
   })
 
-  test("cannot remove a channel referenced by an agent", () => {
+  test("cannot remove a channel referenced by a profile", () => {
     const { service, store } = makeService()
     service.add({ name: "inbox", connectors: [] })
     const settings = store.read()
-    settings.agents.push({ name: "cto", channel: "inbox" })
+    settings.profiles.push({ name: "cto", channel: "inbox" })
     store.write(settings)
 
-    expect(() => service.remove("inbox")).toThrow(/referenced by an agent/)
+    expect(() => service.remove("inbox")).toThrow(/referenced by a profile/)
   })
 })

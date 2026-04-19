@@ -5,7 +5,7 @@ export const createSettings = (partial: Partial<Settings> = {}): Settings => ({
   connectors: [],
   channels: [],
   repositories: [],
-  agents: [],
+  profiles: [],
   ...partial,
 })
 

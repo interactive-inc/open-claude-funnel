@@ -13,13 +13,14 @@ usage: funnel [command]
 
 commands:
   (none)                launch TUI
-  claude --channel <c>  launch Claude Code
+  claude                launch Claude Code (default profile or --profile)
   connectors            manage external connections (Slack, etc.)
   channels              manage subscription boxes
-  agents                manage agent presets (extra)
+  profiles              manage launch profiles
   repos                 manage repositories (extra)
   gateway               manage the gateway
   status                show overall connection status
+  update                update funnel to the latest version
   mcp                   run as an MCP server (invoked from .mcp.json)
 
 options:

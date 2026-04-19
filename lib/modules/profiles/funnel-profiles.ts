@@ -1,11 +1,11 @@
 import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
-import type { AgentConfig } from "@/modules/settings/settings-schema"
+import type { ProfileConfig } from "@/modules/settings/settings-schema"
 
 type Deps = {
   store: FunnelSettingsReader
 }
 
-export class FunnelAgents {
+export class FunnelProfiles {
   private readonly store: FunnelSettingsReader
 
   constructor(deps: Deps) {
@@ -13,19 +13,19 @@ export class FunnelAgents {
     Object.freeze(this)
   }
 
-  list(): AgentConfig[] {
-    return this.store.read().agents
+  list(): ProfileConfig[] {
+    return this.store.read().profiles
   }
 
-  get(name: string): AgentConfig | null {
-    return this.list().find((a) => a.name === name) ?? null
+  get(name: string): ProfileConfig | null {
+    return this.list().find((p) => p.name === name) ?? null
   }
 
-  add(config: AgentConfig): void {
+  add(config: ProfileConfig): void {
     const settings = this.store.read()
 
-    if (settings.agents.some((a) => a.name === config.name)) {
-      throw new Error(`agent "${config.name}" already exists`)
+    if (settings.profiles.some((p) => p.name === config.name)) {
+      throw new Error(`profile "${config.name}" already exists`)
     }
 
     if (!settings.channels.some((c) => c.name === config.channel)) {
@@ -36,7 +36,7 @@ export class FunnelAgents {
       throw new Error(`repo "${config.repo}" not found`)
     }
 
-    settings.agents.push(config)
+    settings.profiles.push(config)
 
     this.store.write(settings)
   }
@@ -44,11 +44,11 @@ export class FunnelAgents {
   remove(name: string): void {
     const settings = this.store.read()
 
-    const index = settings.agents.findIndex((a) => a.name === name)
+    const index = settings.profiles.findIndex((p) => p.name === name)
 
-    if (index < 0) throw new Error(`agent "${name}" not found`)
+    if (index < 0) throw new Error(`profile "${name}" not found`)
 
-    settings.agents.splice(index, 1)
+    settings.profiles.splice(index, 1)
 
     this.store.write(settings)
   }
@@ -56,32 +56,32 @@ export class FunnelAgents {
   rename(oldName: string, newName: string): void {
     const settings = this.store.read()
 
-    const agent = settings.agents.find((a) => a.name === oldName)
+    const profile = settings.profiles.find((p) => p.name === oldName)
 
-    if (!agent) throw new Error(`agent "${oldName}" not found`)
+    if (!profile) throw new Error(`profile "${oldName}" not found`)
 
-    if (settings.agents.some((a) => a.name === newName)) {
-      throw new Error(`agent "${newName}" already exists`)
+    if (settings.profiles.some((p) => p.name === newName)) {
+      throw new Error(`profile "${newName}" already exists`)
     }
 
-    agent.name = newName
+    profile.name = newName
 
     this.store.write(settings)
   }
 
-  update(name: string, fields: Partial<Omit<AgentConfig, "name">>): void {
+  update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {
     const settings = this.store.read()
 
-    const agent = settings.agents.find((a) => a.name === name)
+    const profile = settings.profiles.find((p) => p.name === name)
 
-    if (!agent) throw new Error(`agent "${name}" not found`)
+    if (!profile) throw new Error(`profile "${name}" not found`)
 
     if (fields.channel !== undefined) {
       if (!settings.channels.some((c) => c.name === fields.channel)) {
         throw new Error(`channel "${fields.channel}" not found`)
       }
 
-      agent.channel = fields.channel
+      profile.channel = fields.channel
     }
 
     if (fields.repo !== undefined) {
@@ -89,15 +89,15 @@ export class FunnelAgents {
         throw new Error(`repo "${fields.repo}" not found`)
       }
 
-      agent.repo = fields.repo || undefined
+      profile.repo = fields.repo || undefined
     }
 
     if (fields.subAgent !== undefined) {
-      agent.subAgent = fields.subAgent || undefined
+      profile.subAgent = fields.subAgent || undefined
     }
 
     if (fields.envFiles !== undefined) {
-      agent.envFiles = fields.envFiles
+      profile.envFiles = fields.envFiles
     }
 
     this.store.write(settings)

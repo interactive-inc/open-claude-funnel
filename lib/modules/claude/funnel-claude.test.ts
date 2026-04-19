@@ -13,7 +13,7 @@ const makeClaude = () => {
     connectors: [],
     channels: [{ name: "inbox", connectors: [] }],
     repositories: [{ name: "r", path: "/repo" }],
-    agents: [],
+    profiles: [],
   })
   const fs = new MemoryFunnelFileSystem({
     dirs: ["/repo"],

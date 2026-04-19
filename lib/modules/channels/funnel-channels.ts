@@ -46,8 +46,8 @@ export class FunnelChannels {
 
     if (index < 0) throw new Error(`channel "${name}" not found`)
 
-    if (settings.agents.some((a) => a.channel === name)) {
-      throw new Error(`channel "${name}" is referenced by an agent`)
+    if (settings.profiles.some((p) => p.channel === name)) {
+      throw new Error(`channel "${name}" is referenced by a profile`)
     }
 
     settings.channels.splice(index, 1)
@@ -68,8 +68,8 @@ export class FunnelChannels {
 
     channel.name = newName
 
-    for (const agent of settings.agents) {
-      if (agent.channel === oldName) agent.channel = newName
+    for (const profile of settings.profiles) {
+      if (profile.channel === oldName) profile.channel = newName
     }
 
     this.store.write(settings)

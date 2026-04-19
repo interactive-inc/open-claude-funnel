@@ -2,13 +2,14 @@ import { HTTPException } from "hono/http-exception"
 import { factory } from "@/factory"
 import { Funnel } from "@/funnel"
 import { FunnelSettingsStore } from "@/modules/settings/funnel-settings-store"
-import { agentsRoutes } from "@/routes/agents/routes"
 import { channelsRoutes } from "@/routes/channels/routes"
 import { claudeRoutes } from "@/routes/claude/routes"
 import { connectorsRoutes } from "@/routes/connectors/routes"
 import { gatewayRoutes } from "@/routes/gateway/routes"
+import { profilesRoutes } from "@/routes/profiles/routes"
 import { reposRoutes } from "@/routes/repos/routes"
 import { statusRoutes } from "@/routes/status/routes"
+import { updateRoutes } from "@/routes/update/routes"
 
 const base = factory.createApp()
 
@@ -31,6 +32,7 @@ export const app = base
   .route("/connectors", connectorsRoutes)
   .route("/channels", channelsRoutes)
   .route("/repos", reposRoutes)
-  .route("/agents", agentsRoutes)
+  .route("/profiles", profilesRoutes)
   .route("/gateway", gatewayRoutes)
   .route("/status", statusRoutes)
+  .route("/update", updateRoutes)

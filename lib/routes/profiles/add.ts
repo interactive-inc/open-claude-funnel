@@ -1,14 +1,14 @@
 import { z } from "zod"
 import { factory } from "@/factory"
 import { zValidator } from "@/modules/router/validator"
-import { help } from "@/routes/agents/set.help"
+import { help } from "@/routes/profiles/add.help"
 
-export const agentsSetHandler = factory.createHandlers(
+export const profilesAddHandler = factory.createHandlers(
   zValidator("param", z.object({ name: z.string() })),
   zValidator(
     "query",
     z.object({
-      channel: z.string().optional(),
+      channel: z.string(),
       repo: z.string().optional(),
       "sub-agent": z.string().optional(),
       "env-file": z.string().optional(),
@@ -20,13 +20,14 @@ export const agentsSetHandler = factory.createHandlers(
     const query = c.req.valid("query")
     const funnel = c.var.funnel
 
-    funnel.agents.update(param.name, {
+    funnel.profiles.add({
+      name: param.name,
       channel: query.channel,
       repo: query.repo,
       subAgent: query["sub-agent"],
-      envFiles: query["env-file"] !== undefined ? [query["env-file"]] : undefined,
+      envFiles: query["env-file"] ? [query["env-file"]] : undefined,
     })
 
-    return c.text(`updated agent "${param.name}"`)
+    return c.text(`added profile "${param.name}"`)
   },
 )

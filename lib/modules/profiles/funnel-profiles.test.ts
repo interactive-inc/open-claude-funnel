@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { FunnelAgents } from "@/modules/agents/funnel-agents"
+import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
 const makeService = () => {
@@ -7,12 +7,12 @@ const makeService = () => {
     connectors: [],
     channels: [{ name: "inbox", connectors: [] }],
     repositories: [{ name: "myapp", path: "/tmp/myapp" }],
-    agents: [],
+    profiles: [],
   })
-  return { store, service: new FunnelAgents({ store }) }
+  return { store, service: new FunnelProfiles({ store }) }
 }
 
-describe("FunnelAgents", () => {
+describe("FunnelProfiles", () => {
   test("add / get", () => {
     const { service } = makeService()
     service.add({ name: "cto", channel: "inbox" })
@@ -42,9 +42,9 @@ describe("FunnelAgents", () => {
     service.add({ name: "cto", channel: "inbox" })
     service.update("cto", { channel: "other", repo: "myapp" })
 
-    const agent = service.get("cto")
-    expect(agent?.channel).toBe("other")
-    expect(agent?.repo).toBe("myapp")
+    const profile = service.get("cto")
+    expect(profile?.channel).toBe("other")
+    expect(profile?.repo).toBe("myapp")
   })
 
   test("update with empty repo string unsets it", () => {

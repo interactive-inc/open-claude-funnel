@@ -1,3 +1,4 @@
+import { join } from "node:path"
 import type { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
@@ -7,6 +8,9 @@ import type { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 import { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
 import type { FunnelRepositories } from "@/modules/repos/funnel-repositories"
+import { FUNNEL_DIR } from "@/modules/settings/funnel-settings-store"
+
+const CLAUDE_PID_DIR = join(FUNNEL_DIR, "claude")
 
 export type LaunchOptions = {
   channel: string
@@ -14,6 +18,7 @@ export type LaunchOptions = {
   subAgent?: string
   envFiles?: string[]
   userArgs?: string[]
+  profileName?: string
 }
 
 type Deps = {
@@ -53,6 +58,10 @@ export class FunnelClaude {
       throw new Error(`channel "${options.channel}" not found`)
     }
 
+    if (options.profileName && this.isRunning(options.profileName)) {
+      throw new Error(`profile "${options.profileName}" is already running`)
+    }
+
     const cwd = options.repo
       ? this.repositories.resolvePath(options.repo)
       : globalThis.process.cwd()
@@ -68,6 +77,11 @@ export class FunnelClaude {
       await this.gateway.start()
     }
 
+    if (options.profileName) {
+      this.writePidFile(options.profileName)
+      this.installCleanup(options.profileName)
+    }
+
     const claudeArgs = this.buildArgs(options, cwd)
     const env = this.buildEnv(options, cwd)
 
@@ -78,7 +92,71 @@ export class FunnelClaude {
       cwd,
     })
 
-    return await this.process.attach(["claude", ...claudeArgs], { cwd, env })
+    try {
+      return await this.process.attach(["claude", ...claudeArgs], { cwd, env })
+    } finally {
+      if (options.profileName) this.removePidFile(options.profileName)
+    }
+  }
+
+  isRunning(profileName: string): boolean {
+    const pid = this.readPid(profileName)
+
+    if (!pid) return false
+
+    return this.isProcessAlive(pid)
+  }
+
+  private pidPath(profileName: string): string {
+    return join(CLAUDE_PID_DIR, `${profileName}.pid`)
+  }
+
+  private readPid(profileName: string): number | null {
+    const path = this.pidPath(profileName)
+
+    if (!this.fs.existsSync(path)) return null
+
+    try {
+      const content = this.fs.readFileSync(path).trim()
+      const pid = Number(content)
+
+      if (!pid || pid <= 0) return null
+
+      return pid
+    } catch {
+      return null
+    }
+  }
+
+  private writePidFile(profileName: string): void {
+    this.fs.mkdirSync(CLAUDE_PID_DIR, { recursive: true })
+    this.fs.writeFileSync(this.pidPath(profileName), String(globalThis.process.pid))
+  }
+
+  private removePidFile(profileName: string): void {
+    const path = this.pidPath(profileName)
+
+    if (this.fs.existsSync(path)) this.fs.unlink(path)
+  }
+
+  private installCleanup(profileName: string): void {
+    const cleanup = () => this.removePidFile(profileName)
+
+    globalThis.process.once("exit", cleanup)
+    globalThis.process.once("SIGINT", cleanup)
+    globalThis.process.once("SIGTERM", cleanup)
+  }
+
+  private isProcessAlive(pid: number): boolean {
+    const result = this.process.runSync(["ps", "-p", String(pid), "-o", "state="])
+
+    if (result.exitCode !== 0) return false
+
+    const state = result.stdout.trim()
+
+    if (!state) return false
+
+    return !state.startsWith("Z")
   }
 
   private buildArgs(options: LaunchOptions, cwd: string): string[] {

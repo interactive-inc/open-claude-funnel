@@ -1,17 +1,17 @@
 import { z } from "zod"
 import { factory } from "@/factory"
 import { zValidator } from "@/modules/router/validator"
-import { help } from "@/routes/agents/remove.help"
+import { help } from "@/routes/profiles/remove.help"
 
-export const agentsRemoveHandler = factory.createHandlers(
+export const profilesRemoveHandler = factory.createHandlers(
   zValidator("param", z.object({ name: z.string() })),
   zValidator("query", z.object({}), help),
   (c) => {
     const param = c.req.valid("param")
     const funnel = c.var.funnel
 
-    funnel.agents.remove(param.name)
+    funnel.profiles.remove(param.name)
 
-    return c.text(`removed agent "${param.name}"`)
+    return c.text(`removed profile "${param.name}"`)
   },
 )

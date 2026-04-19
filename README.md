@@ -66,27 +66,31 @@ fnl channels <name> connectors detach <connector>
 fnl channels rename <old> <new>
 fnl channels remove <name>
 
-fnl agents                                  list agent presets (extra)
-fnl agents add <name> --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
-fnl agents <name>                           launch (sugar for fnl claude)
-fnl agents <name> set [--channel ...] [--repo ...] [--sub-agent ...] [--env-file ...]
-fnl agents rename <old> <new>
-fnl agents remove <name>
+fnl profiles                                list launch profiles
+fnl profiles add <name> --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
+fnl profiles <name> run                     launch (sugar for fnl claude)
+fnl profiles <name>                         launch (alias for run)
+fnl profiles <name> set [--channel ...] [--repo ...] [--sub-agent ...] [--env-file ...]
+fnl profiles rename <old> <new>
+fnl profiles remove <name>
 
 fnl repos                                   list repositories (extra)
-fnl repos add <name> --path <path>          register funnel MCP into .mcp.json
+fnl repos add <name> [--path <path>]        register funnel MCP (path defaults to cwd)
 fnl repos <name>                            show details
 fnl repos <name> set [--path <path>]
 fnl repos rename <old> <new>
 fnl repos remove <name>
 
+fnl claude                                  launch the "default" profile
+fnl claude --profile <name>                 launch a named profile
 fnl claude --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
-                                            launch Claude Code
+                                            raw launch (no profile)
 fnl mcp                                     run as an MCP server (invoked from .mcp.json)
 
 fnl gateway                                 running status
 fnl gateway start / stop / restart / run / logs
-fnl status                                  overall status (connectors / channels / agents / repos / gateway)
+fnl update                                  update funnel via bun i -g
+fnl status                                  overall status (connectors / channels / profiles / repos / gateway)
 
 fnl --version
 fnl --help        (every subcommand has --help)
@@ -102,9 +106,9 @@ Connector =
 
 Channel    = { name, connectors[] }                        subscription box
 Repository = { name, path }                                 extra
-Agent      = { name, channel, repo?, subAgent?, envFiles? } preset (extra)
+Profile    = { name, channel, repo?, subAgent?, envFiles? } launch profile
 
-Settings = { connectors[], channels[], repositories[], agents[] }
+Settings = { connectors[], channels[], repositories[], profiles[] }
          → ~/.funnel/settings.json
 ```
 

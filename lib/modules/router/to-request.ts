@@ -7,7 +7,6 @@ const STRIPPED_METHOD_KEYWORDS: Record<string, string> = {
   add: "POST",
   remove: "DELETE",
   set: "PUT",
-  update: "PUT",
 }
 
 const KEPT_METHOD_KEYWORDS: Record<string, string> = {

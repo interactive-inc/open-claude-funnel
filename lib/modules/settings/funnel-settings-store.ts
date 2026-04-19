@@ -33,7 +33,7 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
         connectors: [],
         channels: [],
         repositories: [],
-        agents: [],
+        profiles: [],
       }
     }
 

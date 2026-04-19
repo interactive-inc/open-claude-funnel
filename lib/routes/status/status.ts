@@ -14,7 +14,7 @@ export const statusHandler = factory.createHandlers(
     const funnel = c.var.funnel
     const connectors = funnel.connectors.list()
     const channels = funnel.channels.list()
-    const agents = funnel.agents.list()
+    const profiles = funnel.profiles.list()
     const repos = funnel.repositories.list()
     const gatewayStatus = funnel.gateway.getStatus()
 
@@ -36,14 +36,14 @@ export const statusHandler = factory.createHandlers(
     }
     lines.push("")
 
-    lines.push(`agents: ${agents.length}`)
-    for (const agent of agents) {
-      const parts = [`channel=${agent.channel}`]
+    lines.push(`profiles: ${profiles.length}`)
+    for (const profile of profiles) {
+      const parts = [`channel=${profile.channel}`]
 
-      if (agent.repo) parts.push(`repo=${agent.repo}`)
-      if (agent.subAgent) parts.push(`subAgent=${agent.subAgent}`)
+      if (profile.repo) parts.push(`repo=${profile.repo}`)
+      if (profile.subAgent) parts.push(`subAgent=${profile.subAgent}`)
 
-      lines.push(`  - ${agent.name} [${parts.join(", ")}]`)
+      lines.push(`  - ${profile.name} [${parts.join(", ")}]`)
     }
     lines.push("")
 

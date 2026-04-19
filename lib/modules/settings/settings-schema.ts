@@ -47,7 +47,7 @@ export const repositoryConfigSchema = z.object({
 
 export type RepositoryConfig = z.infer<typeof repositoryConfigSchema>
 
-export const agentConfigSchema = z.object({
+export const profileConfigSchema = z.object({
   name: z.string(),
   channel: z.string(),
   repo: z.string().optional(),
@@ -55,13 +55,13 @@ export const agentConfigSchema = z.object({
   envFiles: z.array(z.string()).optional(),
 })
 
-export type AgentConfig = z.infer<typeof agentConfigSchema>
+export type ProfileConfig = z.infer<typeof profileConfigSchema>
 
 export const settingsSchema = z.object({
   connectors: z.array(connectorConfigSchema).default([]),
   channels: z.array(channelConfigSchema).default([]),
   repositories: z.array(repositoryConfigSchema).default([]),
-  agents: z.array(agentConfigSchema).default([]),
+  profiles: z.array(profileConfigSchema).default([]),
 })
 
 export type Settings = z.infer<typeof settingsSchema>

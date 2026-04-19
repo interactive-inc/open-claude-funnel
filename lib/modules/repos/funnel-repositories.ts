@@ -46,8 +46,8 @@ export class FunnelRepositories {
 
     if (index < 0) throw new Error(`repo "${name}" not found`)
 
-    if (settings.agents.some((a) => a.repo === name)) {
-      throw new Error(`repo "${name}" is referenced by an agent`)
+    if (settings.profiles.some((p) => p.repo === name)) {
+      throw new Error(`repo "${name}" is referenced by a profile`)
     }
 
     const repo = settings.repositories[index]!
@@ -72,8 +72,8 @@ export class FunnelRepositories {
 
     repo.name = newName
 
-    for (const agent of settings.agents) {
-      if (agent.repo === oldName) agent.repo = newName
+    for (const profile of settings.profiles) {
+      if (profile.repo === oldName) profile.repo = newName
     }
 
     this.store.write(settings)
