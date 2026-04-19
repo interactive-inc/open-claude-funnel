@@ -29,7 +29,10 @@
     "funnel": "./lib/index.ts"
   },
   "files": [
-    "lib",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "!lib/**/*.test.ts",
+    "!lib/**/*.test.tsx",
     "README.md",
     "LICENSE"
   ],
