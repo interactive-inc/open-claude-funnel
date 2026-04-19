@@ -20,7 +20,8 @@ describe("FunnelGhAdapter", () => {
     await adapter.call({ method: "post", path: "/repos/owner/repo/issues", body: { title: "x" } })
 
     const call = runner.calls[0]
-    expect(call?.command).toEqual([
+    if (call?.kind !== "run") throw new Error("expected run call")
+    expect(call.command).toEqual([
       "gh",
       "api",
       "/repos/owner/repo/issues",
@@ -29,7 +30,7 @@ describe("FunnelGhAdapter", () => {
       "--input",
       "-",
     ])
-    expect((call?.options as { input?: string }).input).toBe('{"title":"x"}')
+    expect(call.options.input).toBe('{"title":"x"}')
   })
 
   test("non-zero exitCode throws Error", async () => {

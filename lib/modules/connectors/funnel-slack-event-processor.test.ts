@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { FunnelSlackEventProcessor } from "@/modules/connectors/funnel-slack-event-processor"
 
-const make = () =>
-  new FunnelSlackEventProcessor({ ownBotUserId: "UBOT", ownBotId: "BBOT" })
+const make = () => new FunnelSlackEventProcessor({ ownBotUserId: "UBOT", ownBotId: "BBOT" })
 
 describe("FunnelSlackEventProcessor", () => {
   test("skips disallowed event types", () => {

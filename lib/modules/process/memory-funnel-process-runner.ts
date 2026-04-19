@@ -18,11 +18,12 @@ export type MemoryProcessHandler = (
 
 export type MemoryProcessSyncHandler = (command: string[]) => MemoryProcessResponse
 
-export type MemoryProcessCall = {
-  kind: "run" | "runSync" | "attach" | "detach" | "kill"
-  command: string[]
-  options?: RunOptions | AttachOptions | DetachOptions
-}
+export type MemoryProcessCall =
+  | { kind: "run"; command: string[]; options: RunOptions }
+  | { kind: "runSync"; command: string[] }
+  | { kind: "attach"; command: string[]; options: AttachOptions }
+  | { kind: "detach"; command: string[]; options: DetachOptions }
+  | { kind: "kill"; command: string[] }
 
 const empty: MemoryProcessResponse = { exitCode: 0, stdout: "", stderr: "" }
 

@@ -14,10 +14,7 @@ const makeSample = () => ({
   appToken: "xapp-a",
 })
 
-const expectSlackBotToken = (
-  conn: ReturnType<FunnelConnectors["get"]>,
-  expected: string,
-): void => {
+const expectSlackBotToken = (conn: ReturnType<FunnelConnectors["get"]>, expected: string): void => {
   expect(conn?.type).toBe("slack")
   if (conn?.type === "slack") {
     expect(conn.botToken).toBe(expected)

@@ -4,7 +4,7 @@ import { zValidator } from "@/modules/router/validator"
 import { help } from "@/routes/channels/rename.help"
 
 export const channelsRenameHandler = factory.createHandlers(
-  zValidator("param", z.object({ name: z.string(), "newName": z.string() })),
+  zValidator("param", z.object({ name: z.string(), newName: z.string() })),
   zValidator("query", z.object({}), help),
   (c) => {
     const param = c.req.valid("param")

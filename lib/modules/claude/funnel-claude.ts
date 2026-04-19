@@ -53,7 +53,9 @@ export class FunnelClaude {
       throw new Error(`channel "${options.channel}" not found`)
     }
 
-    const cwd = options.repo ? this.repositories.resolvePath(options.repo) : globalThis.process.cwd()
+    const cwd = options.repo
+      ? this.repositories.resolvePath(options.repo)
+      : globalThis.process.cwd()
 
     if (!this.mcp.findInstalledName(cwd)) {
       this.mcp.install(cwd)

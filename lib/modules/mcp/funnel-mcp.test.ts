@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 
-const readJson = (fs: MemoryFunnelFileSystem, path: string): { mcpServers?: Record<string, { command?: string; args?: string[] }> } =>
+const readJson = (
+  fs: MemoryFunnelFileSystem,
+  path: string,
+): { mcpServers?: Record<string, { command?: string; args?: string[] }> } =>
   JSON.parse(fs.readFileSync(path))
 
 describe("FunnelMcp", () => {

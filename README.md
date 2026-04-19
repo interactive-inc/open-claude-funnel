@@ -108,11 +108,11 @@ Discord Bot Token を使う場合:
 
 ## 環境変数
 
-| 変数 | 用途 |
-|---|---|
-| `FUNNEL_CHANNEL_ID` | `fnl claude` が子プロセスに注入。funnel MCP がこれを見て gateway に購読接続 |
-| `FUNNEL_PORT` | gateway のポート（デフォルト 9742）|
-| `FUNNEL_GATEWAY_URL` | MCP 側の gateway WebSocket URL（デフォルト `ws://localhost:9742/ws`）|
+| 変数                 | 用途                                                                        |
+| -------------------- | --------------------------------------------------------------------------- |
+| `FUNNEL_CHANNEL_ID`  | `fnl claude` が子プロセスに注入。funnel MCP がこれを見て gateway に購読接続 |
+| `FUNNEL_PORT`        | gateway のポート（デフォルト 9742）                                         |
+| `FUNNEL_GATEWAY_URL` | MCP 側の gateway WebSocket URL（デフォルト `ws://localhost:9742/ws`）       |
 
 ## 設計の詳細
 

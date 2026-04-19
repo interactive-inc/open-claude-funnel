@@ -62,9 +62,9 @@ describe("FunnelClaude", () => {
     await claude.launch({ channel: "inbox", repo: "r" })
 
     const attach = runner.calls.find((c) => c.kind === "attach")
-    const env = (attach?.options as { env?: Record<string, string> }).env
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
 
-    expect(env?.FUNNEL_CHANNEL_ID).toBe("inbox")
+    expect(attach.options.env?.FUNNEL_CHANNEL_ID).toBe("inbox")
   })
 
   test("cwd is the repo path", async () => {
@@ -73,9 +73,9 @@ describe("FunnelClaude", () => {
     await claude.launch({ channel: "inbox", repo: "r" })
 
     const attach = runner.calls.find((c) => c.kind === "attach")
-    const cwd = (attach?.options as { cwd?: string }).cwd
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
 
-    expect(cwd).toBe("/repo")
+    expect(attach.options.cwd).toBe("/repo")
   })
 
   test("--dangerously-load-development-channels is auto-appended", async () => {

@@ -22,7 +22,9 @@ describe("killCompetingSlackGateways", () => {
   })
 
   test("does not kill own PID", async () => {
-    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout: "  300 bun gateway daemon" }))
+    const runner = new MemoryFunnelProcessRunner().on(() => ({
+      stdout: "  300 bun gateway daemon",
+    }))
 
     const killed = await killCompetingSlackGateways({ selfPid: 300, process: runner })
 

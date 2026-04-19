@@ -17,7 +17,9 @@ export const gatewayRunHandler = factory.createHandlers(
     const gatewayScript = resolve(import.meta.dir, "../../modules/gateway/daemon.ts")
 
     const useCaffeinate = query["no-caffeine"] !== "true" && process.platform === "darwin"
-    const command = useCaffeinate ? ["caffeinate", "-i", "bun", gatewayScript] : ["bun", gatewayScript]
+    const command = useCaffeinate
+      ? ["caffeinate", "-i", "bun", gatewayScript]
+      : ["bun", gatewayScript]
 
     const proc = Bun.spawn(command, {
       stdio: ["inherit", "inherit", "inherit"],
