@@ -1,4 +1,4 @@
-## Open Claude Funnel
+## @interactive-inc/claude-funnel
 
 複数の Claude Code と外部サービス（Slack 等）を繋ぐハブ。外部からの通知を「購読箱」経由で Claude Code セッションに流し込み、Claude から外部 API への呼び出しもまとめて扱う。
 
@@ -16,6 +16,10 @@ Slack/他            Connectors      Channels (購読箱)       Claude Code
 ## セットアップ
 
 ```bash
+# npm からインストール（Bun 必須）
+bun add -g @interactive-inc/claude-funnel
+
+# もしくはソースからローカル開発
 bun install
 bun link   # funnel / fnl がグローバル登録
 ```
@@ -118,3 +122,7 @@ Discord Bot Token を使う場合:
 
 - `CLAUDE.md` コード規約と設計原則
 - `.docs/` 個別仕様
+
+## ライセンス
+
+MIT © Interactive Inc.

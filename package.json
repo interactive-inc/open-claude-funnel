@@ -1,13 +1,44 @@
 {
-  "name": "open-claude-funnel",
+  "name": "@interactive-inc/claude-funnel",
   "version": "0.1.0",
-  "private": true,
+  "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
+  "license": "MIT",
+  "author": "Interactive Inc.",
+  "homepage": "https://github.com/interactive-inc/claude-funnel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/interactive-inc/claude-funnel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/interactive-inc/claude-funnel/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "slack",
+    "discord",
+    "github",
+    "cli",
+    "bun"
+  ],
+  "type": "module",
+  "module": "lib/index.ts",
   "bin": {
     "fnl": "./lib/index.ts",
     "funnel": "./lib/index.ts"
   },
-  "type": "module",
-  "module": "lib/index.ts",
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
     "@modelcontextprotocol/sdk": "^1.29.0",

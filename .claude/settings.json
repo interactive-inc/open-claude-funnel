@@ -1,5 +1,4 @@
 {
-  "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
@@ -10,29 +9,21 @@
     "security-guidance@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true
   },
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_TASK_LIST_ID": "open-claude-funnel"
-  },
   "hooks": {
     "PostToolUse": [
       {
+        "matcher": "Write|Edit",
         "hooks": [
           {
-            "command": "jq -r '.tool_input.file_path | select(endswith(\".ts\") or endswith(\".tsx\"))' | xargs -r vp check",
-            "type": "command"
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path | select(endswith(\".ts\") or endswith(\".tsx\"))' | xargs -r vp check"
           },
           {
-            "command": "jq -r '.tool_input.file_path | select(endswith(\".ts\") or endswith(\".tsx\"))' | xargs -r vp test",
-            "type": "command"
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path | select(endswith(\".ts\") or endswith(\".tsx\"))' | xargs -r vp test"
           }
-        ],
-        "matcher": "Write|Edit"
+        ]
       }
     ]
-  },
-  "permissions": {
-    "defaultMode": "bypassPermissions"
-  },
-  "skipDangerousModePermissionPrompt": true
+  }
 }

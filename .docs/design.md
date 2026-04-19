@@ -32,7 +32,7 @@ Service は毎回の getter 呼び出しで new するが、`store` を共有す
 
 モジュールは logger を使い、CLI 境界のみ `process.stdout.write` / `process.stderr.write` を使う。標準出力を汚すと呼び出し側の処理が壊れるため。
 
-エラーは Module で throw し onError で整形する。経路を増やさないことで CLI 出力を一貫させる。エラーメッセージは日本語で統一。
+エラーは Module で throw し onError で整形する。経路を増やさないことで CLI 出力を一貫させる。エラーメッセージとコード内の文字列は英語で統一（ドキュメントだけ日本語）。
 
 ### CLI 規約
 
