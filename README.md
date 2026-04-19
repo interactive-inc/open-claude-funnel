@@ -3,96 +3,96 @@
 [![npm](https://img.shields.io/npm/v/@interactive-inc/claude-funnel.svg)](https://www.npmjs.com/package/@interactive-inc/claude-funnel)
 [![license](https://img.shields.io/npm/l/@interactive-inc/claude-funnel.svg)](./LICENSE)
 
-複数の Claude Code と外部サービス（Slack / GitHub / Discord）を繋ぐハブ CLI。外部通知を「購読箱」経由で Claude Code セッションに流し込み、Claude から外部 API への呼び出しもまとめて扱う。
+A hub CLI that connects multiple Claude Code agents to external services (Slack / GitHub / Discord). External events flow through subscription "channels" into Claude Code sessions, and outbound API calls from Claude are funneled through the same connectors.
 
-コマンドは `funnel` または短縮形 `fnl`。
+The command is `funnel` or its shorthand `fnl`.
 
-## 全体像
+## Overview
 
 ```
-Slack/他            Connectors      Channels (購読箱)       Claude Code
-(外部API)   ──→    (funnel)   ──→   (購読ルーティング)  ──WS/MCP──→   (<channel> タグで受信)
+Slack/others         Connectors      Channels                Claude Code
+(external APIs) ─→   (funnel)  ─→    (subscription router) ──WS/MCP─→   (received as <channel> tags)
                                                            ↑
-                                               funnel MCP サーバ (funnel mcp)
+                                               funnel MCP server (funnel mcp)
 ```
 
-## 必要環境
+## Requirements
 
-- [Bun](https://bun.sh) 1.3 以上（ランタイム）
+- [Bun](https://bun.sh) 1.3 or later (runtime)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI
-- Slack / GitHub / Discord いずれかのトークンまたは CLI（使う Connector に応じて）
+- A Slack / GitHub / Discord token or CLI, depending on which connectors you use
 
-## インストール
+## Install
 
 ```bash
 bun add -g @interactive-inc/claude-funnel
 ```
 
-インストール後、`funnel` / `fnl` がグローバルコマンドとして使える。
+After install, `funnel` and `fnl` are available globally.
 
-## クイックスタート
+## Quick start
 
 ```bash
-# 外部接続 (Connector) を登録
+# Register an external connection (Connector)
 fnl connectors add my-slack --type slack --bot-token xoxb-... --app-token xapp-...
 
-# 購読箱 (Channel) を作って Connector を繋ぐ
+# Create a subscription box (Channel) and attach the connector
 fnl channels add my-inbox
 fnl channels my-inbox connectors attach my-slack
 
-# gateway を起動（Slack Socket Mode に接続）
+# Start the gateway (connects to Slack Socket Mode)
 fnl gateway start
 
-# Claude を起動（カレントディレクトリの .mcp.json に funnel が自動登録される）
+# Launch Claude (funnel is auto-registered in the current directory's .mcp.json)
 fnl claude --channel my-inbox
 ```
 
-## コマンド一覧
+## Commands
 
 ```
-fnl connectors                              一覧
+fnl connectors                              list
 fnl connectors add <name> --type <t> --bot-token <t> --app-token <t>
-fnl connectors <name>                       詳細
+fnl connectors <name>                       show details
 fnl connectors <name> set [--bot-token ...] [--app-token ...]
 fnl connectors rename <old> <new>
 fnl connectors remove <name>
-fnl connectors <name> <method> <path> [body]   API 直叩き (get/post/put/delete/...)
+fnl connectors <name> <method> <path> [body]   call API (get/post/put/delete/...)
 
-fnl channels                                一覧
+fnl channels                                list
 fnl channels add <name>
-fnl channels <name>                         詳細
+fnl channels <name>                         show details
 fnl channels <name> connectors attach <connector>
 fnl channels <name> connectors detach <connector>
 fnl channels rename <old> <new>
 fnl channels remove <name>
 
-fnl agents                                  エージェントプリセット一覧（おまけ）
+fnl agents                                  list agent presets (extra)
 fnl agents add <name> --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
-fnl agents <name>                           起動（fnl claude の糖衣）
+fnl agents <name>                           launch (sugar for fnl claude)
 fnl agents <name> set [--channel ...] [--repo ...] [--sub-agent ...] [--env-file ...]
 fnl agents rename <old> <new>
 fnl agents remove <name>
 
-fnl repos                                   リポジトリ一覧（おまけ）
-fnl repos add <name> --path <path>          .mcp.json に funnel MCP を自動追加
-fnl repos <name>                            詳細
+fnl repos                                   list repositories (extra)
+fnl repos add <name> --path <path>          register funnel MCP into .mcp.json
+fnl repos <name>                            show details
 fnl repos <name> set [--path <path>]
 fnl repos rename <old> <new>
 fnl repos remove <name>
 
 fnl claude --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
-                                            Claude Code を起動
-fnl mcp                                     MCP サーバとして起動（.mcp.json から呼ばれる）
+                                            launch Claude Code
+fnl mcp                                     run as an MCP server (invoked from .mcp.json)
 
-fnl gateway                                 稼働状態
+fnl gateway                                 running status
 fnl gateway start / stop / restart / run / logs
-fnl status                                  全体状況（connectors / channels / agents / repos / gateway）
+fnl status                                  overall status (connectors / channels / agents / repos / gateway)
 
 fnl --version
-fnl --help        （各サブコマンドに --help あり）
+fnl --help        (every subcommand has --help)
 ```
 
-## データモデル
+## Data model
 
 ```
 Connector =
@@ -100,53 +100,53 @@ Connector =
   | { type: "gh",      name, pollInterval? }                GitHub (gh CLI)
   | { type: "discord", name, botToken }                     Discord Gateway
 
-Channel    = { name, connectors[] }                        購読箱
-Repository = { name, path }                                 おまけ
-Agent      = { name, channel, repo?, subAgent?, envFiles? } プリセット（おまけ）
+Channel    = { name, connectors[] }                        subscription box
+Repository = { name, path }                                 extra
+Agent      = { name, channel, repo?, subAgent?, envFiles? } preset (extra)
 
 Settings = { connectors[], channels[], repositories[], agents[] }
          → ~/.funnel/settings.json
 ```
 
-## Discord Bot を使う場合
+## Discord bot setup
 
-- Discord Developer Portal で Bot を作成し Token を取得
-- Privileged Gateway Intents で `Message Content Intent` を有効化
-- OAuth2 → URL Generator で `bot` scope、`View Channels` / `Send Messages` / `Read Message History` 権限付きで招待
+- Create a bot in the Discord Developer Portal and obtain its token
+- Enable `Message Content Intent` under Privileged Gateway Intents
+- Invite the bot via OAuth2 → URL Generator with the `bot` scope and `View Channels` / `Send Messages` / `Read Message History` permissions
 
-## 環境変数
+## Environment variables
 
-| 変数                 | 用途                                                                        |
-| -------------------- | --------------------------------------------------------------------------- |
-| `FUNNEL_CHANNEL_ID`  | `fnl claude` が子プロセスに注入。funnel MCP がこれを見て gateway に購読接続 |
-| `FUNNEL_PORT`        | gateway のポート（デフォルト 9742）                                         |
-| `FUNNEL_GATEWAY_URL` | MCP 側の gateway WebSocket URL（デフォルト `ws://localhost:9742/ws`）       |
+| Variable             | Purpose                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| `FUNNEL_CHANNEL_ID`  | Injected into the child process by `fnl claude`; funnel MCP uses it to subscribe.       |
+| `FUNNEL_PORT`        | Gateway port (default 9742).                                                            |
+| `FUNNEL_GATEWAY_URL` | Gateway WebSocket URL used by MCP (default `ws://localhost:9742/ws`).                   |
 
-## ファイル配置
+## File layout
 
-- 設定: `~/.funnel/settings.json`
+- Config: `~/.funnel/settings.json`
 - PID: `~/.funnel/gateway.pid`
-- イベントログ: `/tmp/funnel/events/*.jsonl`（30 日で自動削除）
-- プロセスログ: `/tmp/funnel/gateway.log`
+- Event log: `/tmp/funnel/events/*.jsonl` (auto-deleted after 30 days)
+- Process log: `/tmp/funnel/gateway.log`
 
-## リンク
+## Links
 
 - [GitHub](https://github.com/interactive-inc/claude-funnel)
 - [Issues](https://github.com/interactive-inc/claude-funnel/issues)
-- コード規約と設計原則: [CLAUDE.md](https://github.com/interactive-inc/claude-funnel/blob/main/CLAUDE.md)
-- 設計ドキュメント: [`.docs/`](https://github.com/interactive-inc/claude-funnel/tree/main/.docs)
+- Coding rules and design principles: [CLAUDE.md](https://github.com/interactive-inc/claude-funnel/blob/main/CLAUDE.md)
+- Design notes: [`.docs/`](https://github.com/interactive-inc/claude-funnel/tree/main/.docs)
 
-## 開発
+## Development
 
 ```bash
 git clone https://github.com/interactive-inc/claude-funnel.git
 cd claude-funnel
 bun install
-bun link            # funnel / fnl をグローバル登録
-bun test            # テスト
-bunx tsc -b         # 型チェック
+bun link            # register funnel / fnl globally
+bun test            # run tests
+bunx tsc -b         # type check
 ```
 
-## ライセンス
+## License
 
 MIT © Interactive Inc.
