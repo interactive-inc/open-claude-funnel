@@ -1,8 +1,11 @@
-## @interactive-inc/claude-funnel
+# @interactive-inc/claude-funnel
 
-複数の Claude Code と外部サービス（Slack 等）を繋ぐハブ。外部からの通知を「購読箱」経由で Claude Code セッションに流し込み、Claude から外部 API への呼び出しもまとめて扱う。
+[![npm](https://img.shields.io/npm/v/@interactive-inc/claude-funnel.svg)](https://www.npmjs.com/package/@interactive-inc/claude-funnel)
+[![license](https://img.shields.io/npm/l/@interactive-inc/claude-funnel.svg)](./LICENSE)
 
-コマンドは `funnel` または短縮の `fnl`。
+複数の Claude Code と外部サービス（Slack / GitHub / Discord）を繋ぐハブ CLI。外部通知を「購読箱」経由で Claude Code セッションに流し込み、Claude から外部 API への呼び出しもまとめて扱う。
+
+コマンドは `funnel` または短縮形 `fnl`。
 
 ## 全体像
 
@@ -13,18 +16,21 @@ Slack/他            Connectors      Channels (購読箱)       Claude Code
                                                funnel MCP サーバ (funnel mcp)
 ```
 
-## セットアップ
+## 必要環境
+
+- [Bun](https://bun.sh) 1.3 以上（ランタイム）
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI
+- Slack / GitHub / Discord いずれかのトークンまたは CLI（使う Connector に応じて）
+
+## インストール
 
 ```bash
-# npm からインストール（Bun 必須）
 bun add -g @interactive-inc/claude-funnel
-
-# もしくはソースからローカル開発
-bun install
-bun link   # funnel / fnl がグローバル登録
 ```
 
-## 基本フロー
+インストール後、`funnel` / `fnl` がグローバルコマンドとして使える。
+
+## クイックスタート
 
 ```bash
 # 外部接続 (Connector) を登録
@@ -37,7 +43,7 @@ fnl channels my-inbox connectors attach my-slack
 # gateway を起動（Slack Socket Mode に接続）
 fnl gateway start
 
-# Claude を起動（どこで叩いても .mcp.json が自動生成される）
+# Claude を起動（カレントディレクトリの .mcp.json に funnel が自動登録される）
 fnl claude --channel my-inbox
 ```
 
@@ -50,7 +56,7 @@ fnl connectors <name>                       詳細
 fnl connectors <name> set [--bot-token ...] [--app-token ...]
 fnl connectors rename <old> <new>
 fnl connectors remove <name>
-fnl connectors <name> <method> <path> [body]   API 直叩き (get/post/put/delete/... )
+fnl connectors <name> <method> <path> [body]   API 直叩き (get/post/put/delete/...)
 
 fnl channels                                一覧
 fnl channels add <name>
@@ -102,9 +108,7 @@ Settings = { connectors[], channels[], repositories[], agents[] }
          → ~/.funnel/settings.json
 ```
 
-## Discord Bot の前提
-
-Discord Bot Token を使う場合:
+## Discord Bot を使う場合
 
 - Discord Developer Portal で Bot を作成し Token を取得
 - Privileged Gateway Intents で `Message Content Intent` を有効化
@@ -118,10 +122,30 @@ Discord Bot Token を使う場合:
 | `FUNNEL_PORT`        | gateway のポート（デフォルト 9742）                                         |
 | `FUNNEL_GATEWAY_URL` | MCP 側の gateway WebSocket URL（デフォルト `ws://localhost:9742/ws`）       |
 
-## 設計の詳細
+## ファイル配置
 
-- `CLAUDE.md` コード規約と設計原則
-- `.docs/` 個別仕様
+- 設定: `~/.funnel/settings.json`
+- PID: `~/.funnel/gateway.pid`
+- イベントログ: `/tmp/funnel/events/*.jsonl`（30 日で自動削除）
+- プロセスログ: `/tmp/funnel/gateway.log`
+
+## リンク
+
+- [GitHub](https://github.com/interactive-inc/claude-funnel)
+- [Issues](https://github.com/interactive-inc/claude-funnel/issues)
+- コード規約と設計原則: [CLAUDE.md](https://github.com/interactive-inc/claude-funnel/blob/main/CLAUDE.md)
+- 設計ドキュメント: [`.docs/`](https://github.com/interactive-inc/claude-funnel/tree/main/.docs)
+
+## 開発
+
+```bash
+git clone https://github.com/interactive-inc/claude-funnel.git
+cd claude-funnel
+bun install
+bun link            # funnel / fnl をグローバル登録
+bun test            # テスト
+bunx tsc -b         # 型チェック
+```
 
 ## ライセンス
 
