@@ -16,8 +16,7 @@ export const startChannelServer = async (): Promise<void> => {
       instructions: [
         `Events arrive inside <channel source="${FUNNEL_MCP_NAME}"> tags. Use meta.event_type to discriminate.`,
         "",
-        'event_type="slack": a Slack message. meta includes channel_id, user_id, mentioned, thread_ts, etc. content is the Slack event JSON.',
-        'event_type="system": system event (connect / disconnect / startup, etc.).',
+        "To reply or act on an event, run `funnel request <platform> --help` via the Bash tool (e.g. `funnel request slack --help`). For general CLI usage, run `funnel --help`.",
       ].join("\n"),
     },
   )

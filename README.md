@@ -56,7 +56,9 @@ fnl connectors <name>                       show details
 fnl connectors <name> set [--bot-token ...] [--app-token ...]
 fnl connectors rename <old> <new>
 fnl connectors remove <name>
-fnl connectors <name> <method> <path> [body]   call API (get/post/put/delete/...)
+
+fnl request slack   post <path> [body] --connector <name>   call Slack Web API
+fnl request discord <method> <path> [body] --connector <name>   call Discord REST API
 
 fnl channels                                list
 fnl channels add <name>

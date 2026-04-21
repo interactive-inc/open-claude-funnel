@@ -8,6 +8,7 @@ import { connectorsRoutes } from "@/routes/connectors/routes"
 import { gatewayRoutes } from "@/routes/gateway/routes"
 import { profilesRoutes } from "@/routes/profiles/routes"
 import { reposRoutes } from "@/routes/repos/routes"
+import { requestRoutes } from "@/routes/request/routes"
 import { statusRoutes } from "@/routes/status/routes"
 import { updateRoutes } from "@/routes/update/routes"
 
@@ -33,6 +34,7 @@ export const app = base
   .route("/channels", channelsRoutes)
   .route("/repos", reposRoutes)
   .route("/profiles", profilesRoutes)
+  .route("/request", requestRoutes)
   .route("/gateway", gatewayRoutes)
   .route("/status", statusRoutes)
   .route("/update", updateRoutes)

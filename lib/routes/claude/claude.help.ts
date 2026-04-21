@@ -1,7 +1,7 @@
 export const help = `funnel claude — launch Claude Code
 
 usage:
-  funnel claude                          launch the "default" profile
+  funnel claude                          launch "default" profile (or the first profile)
   funnel claude --profile <name>         launch a named profile
   funnel claude --channel <name> [opts]  raw launch (no profile)
 

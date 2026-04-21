@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "license": "MIT",
   "author": "Interactive Inc.",

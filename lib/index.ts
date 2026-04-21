@@ -17,6 +17,7 @@ commands:
   connectors            manage external connections (Slack, etc.)
   channels              manage subscription boxes
   profiles              manage launch profiles
+  request               send an outbound API call via a connector
   repos                 manage repositories (extra)
   gateway               manage the gateway
   status                show overall connection status

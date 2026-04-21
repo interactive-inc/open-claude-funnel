@@ -37,11 +37,10 @@ describe("toRequest", () => {
     })
   })
 
-  test("API call (post) moves method/path/body into query params", () => {
-    const req = toRequest(["connectors", "x", "post", "chat.postMessage", '{"a":1}'])
-    expect(req.path).toBe("/connectors/x/call")
+  test("API method becomes a path segment, path/body move to query", () => {
+    const req = toRequest(["request", "slack", "post", "chat.postMessage", '{"a":1}'])
+    expect(req.path).toBe("/request/slack/post")
     const params = new URL(req.url).searchParams
-    expect(params.get("method")).toBe("post")
     expect(params.get("path")).toBe("chat.postMessage")
     expect(params.get("body")).toBe('{"a":1}')
   })

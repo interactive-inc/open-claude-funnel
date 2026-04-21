@@ -2,7 +2,7 @@ import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/factory"
 import { zValidator } from "@/modules/router/validator"
-import { help } from "@/routes/connectors/call.help"
+import { help } from "@/routes/request/slack.help"
 
 const parseBody = (raw: string | undefined): unknown => {
   if (!raw) return {}
@@ -16,12 +16,12 @@ const parseBody = (raw: string | undefined): unknown => {
   }
 }
 
-export const connectorsCallHandler = factory.createHandlers(
-  zValidator("param", z.object({ name: z.string() })),
+export const requestSlackHandler = factory.createHandlers(
+  zValidator("param", z.object({ method: z.string() })),
   zValidator(
     "query",
     z.object({
-      method: z.string(),
+      connector: z.string(),
       path: z.string(),
       body: z.string().optional(),
     }),
@@ -32,8 +32,26 @@ export const connectorsCallHandler = factory.createHandlers(
     const query = c.req.valid("query")
     const funnel = c.var.funnel
 
-    const result = await funnel.connectors.call(param.name, {
-      method: query.method,
+    if (param.method.toLowerCase() !== "post") {
+      throw new HTTPException(400, {
+        message: `slack only supports POST (got "${param.method}")`,
+      })
+    }
+
+    const connector = funnel.connectors.get(query.connector)
+
+    if (!connector) {
+      throw new HTTPException(404, { message: `connector "${query.connector}" not found` })
+    }
+
+    if (connector.type !== "slack") {
+      throw new HTTPException(400, {
+        message: `connector "${query.connector}" is type "${connector.type}", not "slack"`,
+      })
+    }
+
+    const result = await funnel.connectors.call(query.connector, {
+      method: "POST",
       path: query.path,
       body: parseBody(query.body),
     })

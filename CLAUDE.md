@@ -29,7 +29,7 @@ lib/
 ├── factory.ts          createFactory() の唯一の呼び出し場所
 ├── funnel.ts           Funnel class（全 Service を束ねる Facade、公開 API）
 ├── routes.ts           中央。sub-Hono を mount
-├── routes/             ルートハンドラ（connectors / channels / profiles / repos / claude / gateway / status / update）
+├── routes/             ルートハンドラ（connectors / channels / profiles / repos / claude / request / gateway / status / update）
 └── modules/            ビジネスロジック。Hono 非依存
     ├── connectors/     FunnelConnectors + Adapter / Listener / EventProcessor 群
     ├── channels/       FunnelChannels（購読箱）

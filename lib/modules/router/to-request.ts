@@ -23,8 +23,6 @@ const isValue = (arg: string | undefined): arg is string => {
 }
 
 const consumeApiCall = (args: string[], i: number, params: URLSearchParams): number => {
-  params.set("method", args[i]!)
-
   const nextPath = args[i + 1]
 
   if (!isValue(nextPath)) return 1
@@ -98,8 +96,8 @@ export const toRequest = (args: string[]) => {
       continue
     }
 
-    if (API_CALL_METHODS.has(arg) && !params.has("method")) {
-      segments.push("call")
+    if (API_CALL_METHODS.has(arg) && !params.has("path")) {
+      segments.push(arg)
       i += consumeApiCall(args, i, params)
       continue
     }

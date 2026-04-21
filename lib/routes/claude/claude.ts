@@ -58,7 +58,7 @@ export const claudeHandler = factory.createHandlers(
       process.exit(exitCode)
     }
 
-    const defaultProfile = funnel.profiles.get(DEFAULT_PROFILE_NAME)
+    const defaultProfile = funnel.profiles.get(DEFAULT_PROFILE_NAME) ?? funnel.profiles.list()[0]
 
     if (!defaultProfile) return c.text(help)
 
