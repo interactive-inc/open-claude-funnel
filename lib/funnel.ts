@@ -1,14 +1,23 @@
 import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelClaude } from "@/modules/claude/funnel-claude"
+import {
+  type ConnectorStoresBundle,
+  createConnectorStores,
+} from "@/modules/connectors/funnel-connector-stores"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+import type { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { FunnelRepositories } from "@/modules/repos/funnel-repositories"
+import { FunnelSchedule } from "@/modules/schedule/funnel-schedule"
 import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
 
 type Props = {
   store: FunnelSettingsReader
+  fs?: FunnelFileSystem
+  dir?: string
+  connectorStores?: ConnectorStoresBundle
 }
 
 export class Funnel {
@@ -16,12 +25,41 @@ export class Funnel {
     Object.freeze(this)
   }
 
+  get stores(): ConnectorStoresBundle {
+    return (
+      this.props.connectorStores ??
+      createConnectorStores({ fs: this.props.fs, dir: this.props.dir })
+    )
+  }
+
   get connectors(): FunnelConnectors {
-    return new FunnelConnectors({ store: this.props.store })
+    const stores = this.stores
+    const channels: FunnelChannels = new FunnelChannels({
+      store: this.props.store,
+      connectorChecker: { has: (name) => connectors.has(name) },
+    })
+    const connectors: FunnelConnectors = new FunnelConnectors({
+      ...stores,
+      refUpdater: channels,
+    })
+    return connectors
   }
 
   get channels(): FunnelChannels {
-    return new FunnelChannels({ store: this.props.store })
+    const stores = this.stores
+    const channels: FunnelChannels = new FunnelChannels({
+      store: this.props.store,
+      connectorChecker: { has: (name) => connectors.has(name) },
+    })
+    const connectors: FunnelConnectors = new FunnelConnectors({
+      ...stores,
+      refUpdater: channels,
+    })
+    return channels
+  }
+
+  get schedule(): FunnelSchedule {
+    return new FunnelSchedule({ store: this.stores.schedule })
   }
 
   get profiles(): FunnelProfiles {

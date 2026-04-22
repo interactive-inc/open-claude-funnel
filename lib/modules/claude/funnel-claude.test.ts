@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelClaude } from "@/modules/claude/funnel-claude"
+import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
 import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
@@ -10,7 +12,6 @@ import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-setting
 
 const makeClaude = () => {
   const store = new MockFunnelSettingsReader({
-    connectors: [],
     channels: [{ name: "inbox", connectors: [] }],
     repositories: [{ name: "r", path: "/repo" }],
     profiles: [],
@@ -28,8 +29,17 @@ const makeClaude = () => {
   const mcp = new FunnelMcp({ fs })
   const gateway = new FunnelGateway({ fs, process: runner })
 
+  const stores = createConnectorStores({ fs })
+  const channels: FunnelChannels = new FunnelChannels({
+    store,
+    connectorChecker: { has: (name: string) => connectors.has(name) },
+  })
+  const connectors: FunnelConnectors = new FunnelConnectors({
+    ...stores,
+    refUpdater: channels,
+  })
   const claude = new FunnelClaude({
-    channels: new FunnelChannels({ store }),
+    channels,
     repositories: new FunnelRepositories({ store, mcp }),
     mcp,
     gateway,

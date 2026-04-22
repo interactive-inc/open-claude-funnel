@@ -5,7 +5,7 @@ import {
 } from "@/modules/connectors/funnel-connector-listener"
 import { FunnelDiscordEventProcessor } from "@/modules/connectors/funnel-discord-event-processor"
 import { logger } from "@/modules/logger"
-import type { DiscordConnectorConfig } from "@/modules/settings/settings-schema"
+import type { DiscordConnectorConfig } from "@/modules/connectors/discord-connector-schema"
 
 type Deps = {
   config: DiscordConnectorConfig

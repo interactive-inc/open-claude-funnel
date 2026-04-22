@@ -4,7 +4,7 @@ import {
 } from "@/modules/connectors/funnel-connector-adapter"
 import { FunnelHttpClient } from "@/modules/http/funnel-http-client"
 import { NodeFunnelHttpClient } from "@/modules/http/node-funnel-http-client"
-import type { DiscordConnectorConfig } from "@/modules/settings/settings-schema"
+import type { DiscordConnectorConfig } from "@/modules/connectors/discord-connector-schema"
 
 const DISCORD_API_BASE = "https://discord.com/api/v10"
 

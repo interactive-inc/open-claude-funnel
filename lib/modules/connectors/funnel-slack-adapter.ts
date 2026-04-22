@@ -3,7 +3,7 @@ import {
   FunnelConnectorAdapter,
   type CallInput,
 } from "@/modules/connectors/funnel-connector-adapter"
-import type { SlackConnectorConfig } from "@/modules/settings/settings-schema"
+import type { SlackConnectorConfig } from "@/modules/connectors/slack-connector-schema"
 
 export type SlackWebClientLike = {
   apiCall: (method: string, options: Record<string, unknown>) => Promise<unknown>

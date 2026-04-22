@@ -3,6 +3,7 @@ import { Funnel } from "@/funnel"
 import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelClaude } from "@/modules/claude/funnel-claude"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
@@ -11,7 +12,8 @@ import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-setting
 
 describe("Funnel", () => {
   const store = new MockFunnelSettingsReader()
-  const funnel = new Funnel({ store })
+  const fs = new MemoryFunnelFileSystem()
+  const funnel = new Funnel({ store, fs, dir: "/fake" })
 
   test("getters return each service", () => {
     expect(funnel.connectors).toBeInstanceOf(FunnelConnectors)

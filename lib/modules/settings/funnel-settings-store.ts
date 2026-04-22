@@ -30,7 +30,6 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
   read(): Settings {
     if (!this.fs.existsSync(this.path)) {
       return {
-        connectors: [],
         channels: [],
         repositories: [],
         profiles: [],

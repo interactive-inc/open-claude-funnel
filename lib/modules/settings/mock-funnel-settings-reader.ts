@@ -2,7 +2,6 @@ import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
 import type { Settings } from "@/modules/settings/settings-schema"
 
 export const createSettings = (partial: Partial<Settings> = {}): Settings => ({
-  connectors: [],
   channels: [],
   repositories: [],
   profiles: [],

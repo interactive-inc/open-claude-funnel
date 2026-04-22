@@ -21,6 +21,9 @@ export const connectorsAddHandler = factory.createHandlers(
         type: z.literal("discord"),
         "bot-token": z.string().min(10),
       }),
+      z.object({
+        type: z.literal("schedule"),
+      }),
     ]),
     help,
   ),
@@ -42,11 +45,17 @@ export const connectorsAddHandler = factory.createHandlers(
         name: param.name,
         pollInterval: query["poll-interval"] ? Number(query["poll-interval"]) : undefined,
       })
-    } else {
+    } else if (query.type === "discord") {
       funnel.connectors.add({
         type: "discord",
         name: param.name,
         botToken: query["bot-token"],
+      })
+    } else {
+      funnel.connectors.add({
+        type: "schedule",
+        name: param.name,
+        entries: [],
       })
     }
 

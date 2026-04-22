@@ -4,7 +4,10 @@ import { join } from "node:path"
 import type { ServerWebSocket } from "bun"
 import { Hono } from "hono"
 import { logger } from "@/modules/logger"
-import { resolveListener } from "@/modules/connectors/resolve-listener"
+import { FunnelChannels } from "@/modules/channels/funnel-channels"
+import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
+import { migrateLegacyConnectors } from "@/modules/connectors/migrate-legacy-connectors"
 import { FunnelBroadcaster } from "@/modules/gateway/funnel-broadcaster"
 import { FunnelEventLogger } from "@/modules/gateway/funnel-event-logger"
 import { killCompetingSlackGateways } from "@/modules/gateway/kill-competing-slack-gateways"
@@ -45,6 +48,18 @@ process.on("SIGINT", () => process.exit(130))
 process.on("SIGTERM", () => process.exit(143))
 
 const store = new FunnelSettingsStore()
+const connectorStores = createConnectorStores()
+
+migrateLegacyConnectors({ stores: connectorStores })
+
+const channels: FunnelChannels = new FunnelChannels({
+  store,
+  connectorChecker: { has: (name: string) => connectors.has(name) },
+})
+const connectors: FunnelConnectors = new FunnelConnectors({
+  ...connectorStores,
+  refUpdater: channels,
+})
 
 const eventLogger = new FunnelEventLogger({ logDir: LOG_DIR })
 const broadcaster = new FunnelBroadcaster()
@@ -146,11 +161,11 @@ const notify = async (
   broadcaster.broadcast(content, withConnector)
 }
 
-const settings = store.read()
+const allConnectors = connectors.list()
 
 // Multiple Slack Socket Mode connections sharing one App Token steal DMs/mentions
 // from each other. Terminate other bun + gateway/bolt/slack processes first.
-if (settings.connectors.some((c) => c.type === "slack")) {
+if (allConnectors.some((c) => c.type === "slack")) {
   const killed = await killCompetingSlackGateways({ selfPid: process.pid })
 
   if (killed.length > 0) {
@@ -162,25 +177,23 @@ if (settings.connectors.some((c) => c.type === "slack")) {
   }
 }
 
-for (const connector of settings.connectors) {
+for (const { config, listener } of connectors.createListeners()) {
   const bind = (content: string, meta?: Record<string, string>) =>
-    notify(connector.name, content, meta)
+    notify(config.name, content, meta)
 
   try {
-    const listener = resolveListener(connector)
-
     await listener.start(bind)
 
-    eventLogger.log(`${connector.type} listener started: ${connector.name}`, {
+    eventLogger.log(`${config.type} listener started: ${config.name}`, {
       event_type: "system",
-      action: `${connector.type}_connect`,
-      connector: connector.name,
+      action: `${config.type}_connect`,
+      connector: config.name,
     })
 
-    logger.info(`${connector.type} listener started`, { connector: connector.name })
+    logger.info(`${config.type} listener started`, { connector: config.name })
   } catch (error) {
-    logger.error(`${connector.type} listener failed`, {
-      connector: connector.name,
+    logger.error(`${config.type} listener failed`, {
+      connector: config.name,
       error: error instanceof Error ? error.message : String(error),
     })
   }

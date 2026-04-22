@@ -1,15 +1,19 @@
+import type { ConnectorExistenceChecker } from "@/modules/connectors/connector-existence-checker"
 import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
 import type { ChannelConfig } from "@/modules/settings/settings-schema"
 
 type Deps = {
   store: FunnelSettingsReader
+  connectorChecker: ConnectorExistenceChecker
 }
 
 export class FunnelChannels {
   private readonly store: FunnelSettingsReader
+  private readonly connectorChecker: ConnectorExistenceChecker
 
   constructor(deps: Deps) {
     this.store = deps.store
+    this.connectorChecker = deps.connectorChecker
     Object.freeze(this)
   }
 
@@ -29,7 +33,7 @@ export class FunnelChannels {
     }
 
     for (const connectorName of config.connectors) {
-      if (!settings.connectors.some((c) => c.name === connectorName)) {
+      if (!this.connectorChecker.has(connectorName)) {
         throw new Error(`connector "${connectorName}" not found`)
       }
     }
@@ -82,7 +86,7 @@ export class FunnelChannels {
 
     if (!channel) throw new Error(`channel "${name}" not found`)
 
-    if (!settings.connectors.some((c) => c.name === connectorName)) {
+    if (!this.connectorChecker.has(connectorName)) {
       throw new Error(`connector "${connectorName}" not found`)
     }
 
@@ -109,5 +113,37 @@ export class FunnelChannels {
     channel.connectors.splice(index, 1)
 
     this.store.write(settings)
+  }
+
+  renameRef(oldName: string, newName: string): void {
+    const settings = this.store.read()
+    let changed = false
+
+    for (const channel of settings.channels) {
+      const i = channel.connectors.indexOf(oldName)
+
+      if (i >= 0) {
+        channel.connectors[i] = newName
+        changed = true
+      }
+    }
+
+    if (changed) this.store.write(settings)
+  }
+
+  removeRef(connectorName: string): void {
+    const settings = this.store.read()
+    let changed = false
+
+    for (const channel of settings.channels) {
+      const i = channel.connectors.indexOf(connectorName)
+
+      if (i >= 0) {
+        channel.connectors.splice(i, 1)
+        changed = true
+      }
+    }
+
+    if (changed) this.store.write(settings)
   }
 }

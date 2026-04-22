@@ -1,15 +1,32 @@
 import { describe, expect, test } from "bun:test"
 import { FunnelChannels } from "@/modules/channels/funnel-channels"
+import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
+import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
 const makeService = () => {
   const store = new MockFunnelSettingsReader({
-    connectors: [{ type: "slack", name: "slack-a", botToken: "xoxb", appToken: "xapp" }],
     channels: [],
     repositories: [],
     profiles: [],
   })
-  return { store, service: new FunnelChannels({ store }) }
+  const fs = new MemoryFunnelFileSystem()
+  const stores = createConnectorStores({ fs, dir: "/fake" })
+
+  const service: FunnelChannels = new FunnelChannels({
+    store,
+    connectorChecker: { has: (name: string) => connectors.has(name) },
+  })
+
+  const connectors: FunnelConnectors = new FunnelConnectors({
+    ...stores,
+    refUpdater: service,
+  })
+
+  connectors.add({ type: "slack", name: "slack-a", botToken: "xoxb-a", appToken: "xapp-a" })
+
+  return { store, service, connectors }
 }
 
 describe("FunnelChannels", () => {

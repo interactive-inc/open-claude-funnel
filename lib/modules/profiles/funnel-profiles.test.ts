@@ -4,7 +4,6 @@ import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-setting
 
 const makeService = () => {
   const store = new MockFunnelSettingsReader({
-    connectors: [],
     channels: [{ name: "inbox", connectors: [] }],
     repositories: [{ name: "myapp", path: "/tmp/myapp" }],
     profiles: [],

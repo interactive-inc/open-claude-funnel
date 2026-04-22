@@ -1,11 +1,15 @@
 #!/usr/bin/env bun
 import pkg from "../package.json" with { type: "json" }
+import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
+import { migrateLegacyConnectors } from "@/modules/connectors/migrate-legacy-connectors"
 import { startChannelServer } from "@/modules/mcp/channel-server"
 import { toRequest } from "@/modules/router/to-request"
 import { launchTui } from "@/modules/tui/tui"
 import { app } from "@/routes"
 
 process.title = "funnel"
+
+migrateLegacyConnectors({ stores: createConnectorStores() })
 
 const HELP = `funnel — Open Claude Funnel
 

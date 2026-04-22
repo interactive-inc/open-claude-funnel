@@ -25,6 +25,15 @@ export const connectorsShowHandler = factory.createHandlers(
       lines.push(`pollInterval: ${connector.pollInterval ?? 60}s`)
     } else if (connector.type === "discord") {
       lines.push(`botToken: ${connector.botToken.slice(0, 8)}...`)
+    } else if (connector.type === "schedule") {
+      lines.push(`entries: ${connector.entries.length}`)
+
+      for (const entry of connector.entries) {
+        const status = entry.enabled ? "" : " (disabled)"
+        lines.push(`  - ${entry.id}${status}`)
+        lines.push(`      cron:   ${entry.cron}`)
+        lines.push(`      prompt: ${entry.prompt}`)
+      }
     }
 
     return c.text(lines.join("\n"))

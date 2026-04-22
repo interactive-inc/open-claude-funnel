@@ -5,7 +5,7 @@ import {
 } from "@/modules/connectors/funnel-connector-listener"
 import { FunnelSlackEventProcessor } from "@/modules/connectors/funnel-slack-event-processor"
 import { logger } from "@/modules/logger"
-import type { SlackConnectorConfig } from "@/modules/settings/settings-schema"
+import type { SlackConnectorConfig } from "@/modules/connectors/slack-connector-schema"
 
 type Deps = {
   config: SlackConnectorConfig

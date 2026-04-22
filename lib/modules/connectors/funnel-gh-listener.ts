@@ -5,7 +5,7 @@ import {
 import { logger } from "@/modules/logger"
 import { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
-import type { GhConnectorConfig } from "@/modules/settings/settings-schema"
+import type { GhConnectorConfig } from "@/modules/connectors/gh-connector-schema"
 
 type GhNotification = {
   id: string

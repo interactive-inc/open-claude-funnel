@@ -18,15 +18,14 @@ describe("FunnelSettingsStore", () => {
 
     store.write(
       createSettings({
-        connectors: [{ type: "slack", name: "s", botToken: "xoxb-a", appToken: "xapp-a" }],
         channels: [{ name: "inbox", connectors: ["s"] }],
       }),
     )
 
     const restored = store.read()
 
-    expect(restored.connectors).toHaveLength(1)
     expect(restored.channels[0]?.name).toBe("inbox")
+    expect(restored.channels[0]?.connectors).toEqual(["s"])
   })
 
   test("write creates the parent directory", () => {
@@ -49,8 +48,7 @@ describe("FunnelSettingsStore", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {
         [path]: JSON.stringify({
-          connectors: [{ type: "slack", name: "x", botToken: "wrong", appToken: "also-wrong" }],
-          channels: [],
+          channels: "not-an-array",
           repositories: [],
           profiles: [],
         }),
@@ -59,5 +57,22 @@ describe("FunnelSettingsStore", () => {
     const store = new FunnelSettingsStore({ fs, path })
 
     expect(() => store.read()).toThrow(/invalid settings/)
+  })
+
+  test("legacy connectors field is silently stripped by the schema (migration is external)", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        [path]: JSON.stringify({
+          connectors: [{ type: "slack", name: "s", botToken: "xoxb-a", appToken: "xapp-a" }],
+          channels: [],
+          repositories: [],
+          profiles: [],
+        }),
+      },
+    })
+    const store = new FunnelSettingsStore({ fs, path })
+    const settings = store.read()
+
+    expect("connectors" in settings).toBe(false)
   })
 })

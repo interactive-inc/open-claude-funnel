@@ -1,10 +1,26 @@
 import { describe, expect, test } from "bun:test"
+import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
+import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
 const makeService = () => {
   const store = new MockFunnelSettingsReader()
-  return { store, service: new FunnelConnectors({ store }) }
+  const fs = new MemoryFunnelFileSystem()
+  const stores = createConnectorStores({ fs, dir: "/fake" })
+
+  const channels: FunnelChannels = new FunnelChannels({
+    store,
+    connectorChecker: { has: (name: string) => service.has(name) },
+  })
+
+  const service: FunnelConnectors = new FunnelConnectors({
+    ...stores,
+    refUpdater: channels,
+  })
+
+  return { store, fs, service, channels }
 }
 
 const makeSample = () => ({
@@ -92,5 +108,19 @@ describe("FunnelConnectors", () => {
   test("renaming an unregistered connector fails", () => {
     const { service } = makeService()
     expect(() => service.rename("missing", "x")).toThrow(/not found/)
+  })
+
+  test("update on schedule connector throws", () => {
+    const { service } = makeService()
+    service.add({ type: "schedule", name: "cron-a", entries: [] })
+    expect(() => service.update("cron-a", { botToken: "x" })).toThrow(/no top-level fields/)
+  })
+
+  test("call on schedule connector throws", () => {
+    const { service } = makeService()
+    service.add({ type: "schedule", name: "cron-a", entries: [] })
+    expect(service.call("cron-a", { method: "GET", path: "/" })).rejects.toThrow(
+      /does not support call/,
+    )
   })
 })

@@ -31,8 +31,9 @@ lib/
 ├── routes.ts           中央。sub-Hono を mount
 ├── routes/             ルートハンドラ（connectors / channels / profiles / repos / claude / request / gateway / status / update）
 └── modules/            ビジネスロジック。Hono 非依存
-    ├── connectors/     FunnelConnectors + Adapter / Listener / EventProcessor 群
+    ├── connectors/     FunnelConnectors (facade) + per-type Store/Listener/Adapter/EventProcessor 群
     ├── channels/       FunnelChannels（購読箱）
+    ├── schedule/       FunnelSchedule（schedule コネクタのエントリ CRUD）
     ├── profiles/       FunnelProfiles（起動プロファイル）
     ├── claude/         FunnelClaude
     ├── repos/          FunnelRepositories
@@ -74,9 +75,32 @@ lib/
 ### Settings
 
 - ディレクトリ: `~/.funnel/`
-- パス: `~/.funnel/settings.json`
+- パス: `~/.funnel/settings.json`（channels / profiles / repositories のみ）
 - スキーマ: `lib/modules/settings/settings-schema.ts`（Zod v4）。型は `z.infer` で生成
 - Slack トークンは `xoxb-` / `xapp-` プレフィックスで検証
+- Connector 設定は settings.json には入れず、per-type ディレクトリに分散（下の Connectors 参照）
+
+### Connectors
+
+- データ配置: `~/.funnel/connectors/<type>/<name>.(json|jsonl)` — 型ごとに独立、新しい型の追加/廃止はその配下のみで完結
+  - `slack/<name>.json` — `{type, name, botToken, appToken}`
+  - `gh/<name>.json` — `{type, name, pollInterval?}`
+  - `discord/<name>.json` — `{type, name, botToken}`
+  - `schedule/<name>.jsonl` — 1 行 1 エントリ `{id, cron, prompt, enabled}`
+  - `schedule/<name>.state.json` — 発火済みエントリの lastFiredAt（catch-up 用）
+- `FunnelConnectorTypeStore<TConfig>` はジェネリック抽象クラス。per-type ストアは自身の narrow 型で `add` / `update` / `createListener` / `createAdapter` を実装する（ランタイム type 防御コードは書かない）
+- `FunnelConnectors`（facade）は typed fields（`slack` / `gh` / `discord` / `schedule`）＋ `ChannelConnectorRefUpdater` を DI で受け取り、discriminated union の `switch` で dispatch する。`as` キャストは一切使わない
+- Channel ↔ Connector の双方向依存は `ConnectorExistenceChecker`（channels → connectors）と `ChannelConnectorRefUpdater`（connectors → channels）の型だけで切る。`Funnel` は forward-const クロージャで遅延ワイヤリング
+- 新しい Connector 型を足すときは `xxx-connector-schema.ts` / `funnel-xxx-store.ts` / `funnel-xxx-listener.ts`（任意で adapter）を作り `FunnelConnectors` に一フィールド追加 + `createConnectorStores()` に登録。廃止はその逆で完結
+- 旧 `settings.json` の `connectors[]` は起動時に `migrateLegacyConnectors` が per-type ファイルへ書き出してフィールドを除去する（冪等）
+
+### Schedule Connector
+
+- `lib/modules/schedule/funnel-schedule.ts` — エントリ CRUD は `FunnelSchedule` サービスが担う。`FunnelConnectors` には schedule 専用メソッドを置かない
+- cron 式（5 フィールド）とプロンプトを保存し、毎分 tick で発火してチャネルへ notify する
+- `FunnelScheduleListener` は tick ごとに `schedule/<name>.state.json` の `lastFiredAt` を読み、`(lastFired + 1min)` から now まで逆走して最も新しいマッチング分を 1 回だけ発火する。スリープ復帰や daemon 再起動で落ちた分を拾う（上限 24 時間）。catch-up 発火には `meta.catchup = "true"` を付ける
+- エントリ CRUD は `fnl connectors <name> schedules add|remove` サブコマンド（URL は `/connectors/<name>/schedules[/<id>]`）
+- cron 評価は `lib/modules/connectors/match-cron.ts` の自前実装（`*` / `N` / `A-B` / `*/N` / `A,B` 対応）
 
 ### Gateway
 
