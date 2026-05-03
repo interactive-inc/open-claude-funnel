@@ -3,6 +3,7 @@ import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
 import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
+import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
 const makeService = () => {
@@ -13,10 +14,13 @@ const makeService = () => {
   })
   const fs = new MemoryFunnelFileSystem()
   const stores = createConnectorStores({ fs, dir: "/fake" })
+  const profiles = new FunnelProfiles({ store })
 
   const service: FunnelChannels = new FunnelChannels({
     store,
     connectorChecker: { has: (name: string) => connectors.has(name) },
+    profileChecker: profiles,
+    profileRefUpdater: profiles,
   })
 
   const connectors: FunnelConnectors = new FunnelConnectors({

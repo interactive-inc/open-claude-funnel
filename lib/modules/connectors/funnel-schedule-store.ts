@@ -1,7 +1,7 @@
 import { join } from "node:path"
-import type { FunnelConnectorAdapter } from "@/modules/connectors/funnel-connector-adapter"
 import type { FunnelConnectorListener } from "@/modules/connectors/funnel-connector-listener"
 import { FunnelConnectorTypeStore } from "@/modules/connectors/funnel-connector-type-store"
+import { logger } from "@/modules/logger"
 import { DEFAULT_FUNNEL_DIR } from "@/modules/connectors/funnel-json-connector-store"
 import { FunnelScheduleListener } from "@/modules/connectors/funnel-schedule-listener"
 import { ScheduleLastFiredStore } from "@/modules/connectors/schedule-last-fired-store"
@@ -125,10 +125,6 @@ export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnec
     })
   }
 
-  createAdapter(_config: ScheduleConnectorConfig): FunnelConnectorAdapter | null {
-    return null
-  }
-
   private createLastFiredStore(name: string): ScheduleLastFiredStore {
     return new ScheduleLastFiredStore({ connector: name, fs: this.fs, dir: this.baseDir })
   }
@@ -150,17 +146,31 @@ export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnec
     const lines = content.split("\n").filter((l) => l.trim().length > 0)
     const entries: ScheduleEntry[] = []
 
-    for (const line of lines) {
-      const parsed = JSON.parse(line)
-      const result = scheduleEntrySchema.safeParse(parsed)
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!
+      const lineNumber = i + 1
 
-      if (!result.success) {
-        throw new Error(
-          `invalid schedule entry in "${name}": ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")}`,
-        )
+      try {
+        const parsed = JSON.parse(line)
+        const result = scheduleEntrySchema.safeParse(parsed)
+
+        if (!result.success) {
+          logger.warn("skipping invalid schedule entry", {
+            connector: name,
+            line: lineNumber,
+            issues: result.error.issues.map((iss) => `${iss.path.join(".")}: ${iss.message}`),
+          })
+          continue
+        }
+
+        entries.push(result.data)
+      } catch (error) {
+        logger.warn("skipping unparseable schedule entry", {
+          connector: name,
+          line: lineNumber,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
-
-      entries.push(result.data)
     }
 
     return entries

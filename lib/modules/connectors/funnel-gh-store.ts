@@ -1,6 +1,6 @@
+import { FunnelCallableConnectorStore } from "@/modules/connectors/funnel-callable-connector-store"
 import type { FunnelConnectorAdapter } from "@/modules/connectors/funnel-connector-adapter"
 import type { FunnelConnectorListener } from "@/modules/connectors/funnel-connector-listener"
-import { FunnelConnectorTypeStore } from "@/modules/connectors/funnel-connector-type-store"
 import {
   DEFAULT_FUNNEL_DIR,
   FunnelJsonConnectorStore,
@@ -22,7 +22,7 @@ export type GhUpdateFields = {
   pollInterval?: number
 }
 
-export class FunnelGhStore extends FunnelConnectorTypeStore<GhConnectorConfig> {
+export class FunnelGhStore extends FunnelCallableConnectorStore<GhConnectorConfig> {
   readonly type = "gh" as const
   private readonly store: FunnelJsonConnectorStore<GhConnectorConfig>
 

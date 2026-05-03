@@ -3,17 +3,32 @@
 [![npm](https://img.shields.io/npm/v/@interactive-inc/claude-funnel.svg)](https://www.npmjs.com/package/@interactive-inc/claude-funnel)
 [![license](https://img.shields.io/npm/l/@interactive-inc/claude-funnel.svg)](./LICENSE)
 
-A hub CLI that connects multiple Claude Code agents to external services (Slack / GitHub / Discord). External events flow through subscription "channels" into Claude Code sessions, and outbound API calls from Claude are funneled through the same connectors.
+A hub CLI that connects multiple Claude Code agents to external services (Slack / GitHub / Discord) and time-based triggers (cron). External events flow through subscription "channels" into Claude Code sessions, and outbound API calls from Claude are funneled through the same connectors.
 
 The command is `funnel` or its shorthand `fnl`.
 
 ## Overview
 
 ```
-Slack/others         Connectors      Channels                Claude Code
-(external APIs) ─→   (funnel)  ─→    (subscription router) ──WS/MCP─→   (received as <channel> tags)
-                                                           ↑
-                                               funnel MCP server (funnel mcp)
+External sources
+(Slack / GitHub / Discord / cron)
+            │
+            ▼
+        Connectors
+       (per-type stores)
+            │
+            ▼
+         Channels
+   (subscription router)
+            │
+            ▼  WebSocket
+       Gateway daemon
+            │
+            ▼  MCP (stdio)
+       Claude Code
+  (events surfaced as <channel> tags;
+   outbound calls go back through the
+   same connectors via funnel MCP)
 ```
 
 ## Requirements
@@ -47,15 +62,33 @@ fnl gateway start
 fnl claude --channel my-inbox
 ```
 
+Schedule (cron) trigger:
+
+```bash
+# Register a schedule connector and a cron entry
+fnl connectors add daily --type schedule
+fnl connectors daily schedules add --cron "0 9 * * *" --prompt "morning standup"
+
+# Attach it to a channel just like any other connector
+fnl channels my-inbox connectors attach daily
+```
+
 ## Commands
 
 ```
 fnl connectors                              list
-fnl connectors add <name> --type <t> --bot-token <t> --app-token <t>
+fnl connectors add <name> --type slack    --bot-token xoxb-... --app-token xapp-...
+fnl connectors add <name> --type gh       [--poll-interval <sec>]
+fnl connectors add <name> --type discord  --bot-token <token>
+fnl connectors add <name> --type schedule
 fnl connectors <name>                       show details
-fnl connectors <name> set [--bot-token ...] [--app-token ...]
+fnl connectors <name> set [--bot-token ...] [--app-token ...] [--poll-interval ...]
 fnl connectors rename <old> <new>
 fnl connectors remove <name>
+
+fnl connectors <name> schedules                              list cron entries
+fnl connectors <name> schedules add --cron "<expr>" --prompt "<text>" [--disabled]
+fnl connectors <name> schedules remove <id>
 
 fnl request slack   post <path> [body] --connector <name>   call Slack Web API
 fnl request discord <method> <path> [body] --connector <name>   call Discord REST API
@@ -102,16 +135,29 @@ fnl --help        (every subcommand has --help)
 
 ```
 Connector =
-  | { type: "slack",   name, botToken, appToken }          Slack Socket Mode
-  | { type: "gh",      name, pollInterval? }                GitHub (gh CLI)
-  | { type: "discord", name, botToken }                     Discord Gateway
+  | { type: "slack",    name, botToken, appToken }
+        Slack Socket Mode
+  | { type: "gh",       name, pollInterval? }
+        GitHub (gh CLI)
+  | { type: "discord",  name, botToken }
+        Discord Gateway
+  | { type: "schedule", name, entries[] }
+        cron-driven, entries = { id, cron, prompt, enabled }
 
-Channel    = { name, connectors[] }                        subscription box
-Repository = { name, path }                                 extra
-Profile    = { name, channel, repo?, subAgent?, envFiles? } launch profile
+Channel    = { name, connectors[] }
+        subscription box
 
-Settings = { connectors[], channels[], repositories[], profiles[] }
-         → ~/.funnel/settings.json
+Repository = { name, path }
+        extra
+
+Profile    = { name, channel, repo?, subAgent?, envFiles? }
+        launch profile
+
+Settings = { channels[], repositories[], profiles[] }
+        → ~/.funnel/settings.json
+
+Connectors are stored per type, one file per connector:
+        → ~/.funnel/connectors/<type>/<name>.(json|jsonl)
 ```
 
 ## Discord bot setup
@@ -130,8 +176,12 @@ Settings = { connectors[], channels[], repositories[], profiles[] }
 
 ## File layout
 
-- Config: `~/.funnel/settings.json`
+- Config: `~/.funnel/settings.json` (channels / repositories / profiles)
+- Connectors: `~/.funnel/connectors/<type>/<name>.(json|jsonl)`
+  - `slack/<name>.json`, `gh/<name>.json`, `discord/<name>.json`
+  - `schedule/<name>.jsonl` (one entry per line) and `schedule/<name>.state.json` (last-fired timestamps for catch-up)
 - PID: `~/.funnel/gateway.pid`
+- Claude PIDs: `~/.funnel/claude/<profile>.pid`
 - Event log: `/tmp/funnel/events/*.jsonl` (auto-deleted after 30 days)
 - Process log: `/tmp/funnel/gateway.log`
 

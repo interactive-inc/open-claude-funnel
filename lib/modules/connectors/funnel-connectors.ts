@@ -2,10 +2,13 @@ import type { ChannelConnectorRefUpdater } from "@/modules/channels/channel-conn
 import type { ConnectorConfig } from "@/modules/connectors/connector-config-schema"
 import type { CallInput } from "@/modules/connectors/funnel-connector-adapter"
 import type { FunnelConnectorListener } from "@/modules/connectors/funnel-connector-listener"
-import type { FunnelDiscordStore } from "@/modules/connectors/funnel-discord-store"
-import type { FunnelGhStore } from "@/modules/connectors/funnel-gh-store"
+import type {
+  DiscordUpdateFields,
+  FunnelDiscordStore,
+} from "@/modules/connectors/funnel-discord-store"
+import type { FunnelGhStore, GhUpdateFields } from "@/modules/connectors/funnel-gh-store"
 import type { FunnelScheduleStore } from "@/modules/connectors/funnel-schedule-store"
-import type { FunnelSlackStore } from "@/modules/connectors/funnel-slack-store"
+import type { FunnelSlackStore, SlackUpdateFields } from "@/modules/connectors/funnel-slack-store"
 
 type Deps = {
   slack: FunnelSlackStore
@@ -13,12 +16,6 @@ type Deps = {
   discord: FunnelDiscordStore
   schedule: FunnelScheduleStore
   refUpdater: ChannelConnectorRefUpdater
-}
-
-export type ConnectorUpdateFields = {
-  botToken?: string
-  appToken?: string
-  pollInterval?: number
 }
 
 export class FunnelConnectors {
@@ -74,24 +71,16 @@ export class FunnelConnectors {
     return this.schedule.add(config)
   }
 
-  update(name: string, fields: ConnectorUpdateFields): void {
-    const current = this.get(name)
+  updateSlack(name: string, fields: SlackUpdateFields): void {
+    this.slack.update(name, fields)
+  }
 
-    if (!current) throw new Error(`connector "${name}" not found`)
+  updateGh(name: string, fields: GhUpdateFields): void {
+    this.gh.update(name, fields)
+  }
 
-    if (current.type === "slack") {
-      return this.slack.update(name, { botToken: fields.botToken, appToken: fields.appToken })
-    }
-
-    if (current.type === "gh") {
-      return this.gh.update(name, { pollInterval: fields.pollInterval })
-    }
-
-    if (current.type === "discord") {
-      return this.discord.update(name, { botToken: fields.botToken })
-    }
-
-    throw new Error(`schedule connectors have no top-level fields — use schedule entry operations`)
+  updateDiscord(name: string, fields: DiscordUpdateFields): void {
+    this.discord.update(name, fields)
   }
 
   remove(name: string): void {
@@ -121,16 +110,28 @@ export class FunnelConnectors {
     this.refUpdater.renameRef(oldName, newName)
   }
 
-  async call(name: string, input: CallInput): Promise<unknown> {
-    const config = this.get(name)
+  async callSlack(name: string, input: CallInput): Promise<unknown> {
+    const config = this.slack.get(name)
 
-    if (!config) throw new Error(`connector "${name}" not found`)
+    if (!config) throw new Error(`slack connector "${name}" not found`)
 
-    if (config.type === "slack") return await this.slack.createAdapter(config).call(input)
-    if (config.type === "gh") return await this.gh.createAdapter(config).call(input)
-    if (config.type === "discord") return await this.discord.createAdapter(config).call(input)
+    return await this.slack.createAdapter(config).call(input)
+  }
 
-    throw new Error(`connector "${name}" (${config.type}) does not support call()`)
+  async callGh(name: string, input: CallInput): Promise<unknown> {
+    const config = this.gh.get(name)
+
+    if (!config) throw new Error(`gh connector "${name}" not found`)
+
+    return await this.gh.createAdapter(config).call(input)
+  }
+
+  async callDiscord(name: string, input: CallInput): Promise<unknown> {
+    const config = this.discord.get(name)
+
+    if (!config) throw new Error(`discord connector "${name}" not found`)
+
+    return await this.discord.createAdapter(config).call(input)
   }
 
   createListeners(): { config: ConnectorConfig; listener: FunnelConnectorListener }[] {

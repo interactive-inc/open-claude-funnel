@@ -1,6 +1,6 @@
+import { FunnelCallableConnectorStore } from "@/modules/connectors/funnel-callable-connector-store"
 import type { FunnelConnectorAdapter } from "@/modules/connectors/funnel-connector-adapter"
 import type { FunnelConnectorListener } from "@/modules/connectors/funnel-connector-listener"
-import { FunnelConnectorTypeStore } from "@/modules/connectors/funnel-connector-type-store"
 import {
   DEFAULT_FUNNEL_DIR,
   FunnelJsonConnectorStore,
@@ -23,7 +23,7 @@ export type SlackUpdateFields = {
   appToken?: string
 }
 
-export class FunnelSlackStore extends FunnelConnectorTypeStore<SlackConnectorConfig> {
+export class FunnelSlackStore extends FunnelCallableConnectorStore<SlackConnectorConfig> {
   readonly type = "slack" as const
   private readonly store: FunnelJsonConnectorStore<SlackConnectorConfig>
 

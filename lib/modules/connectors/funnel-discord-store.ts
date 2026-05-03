@@ -1,6 +1,6 @@
+import { FunnelCallableConnectorStore } from "@/modules/connectors/funnel-callable-connector-store"
 import type { FunnelConnectorAdapter } from "@/modules/connectors/funnel-connector-adapter"
 import type { FunnelConnectorListener } from "@/modules/connectors/funnel-connector-listener"
-import { FunnelConnectorTypeStore } from "@/modules/connectors/funnel-connector-type-store"
 import {
   DEFAULT_FUNNEL_DIR,
   FunnelJsonConnectorStore,
@@ -22,7 +22,7 @@ export type DiscordUpdateFields = {
   botToken?: string
 }
 
-export class FunnelDiscordStore extends FunnelConnectorTypeStore<DiscordConnectorConfig> {
+export class FunnelDiscordStore extends FunnelCallableConnectorStore<DiscordConnectorConfig> {
   readonly type = "discord" as const
   private readonly store: FunnelJsonConnectorStore<DiscordConnectorConfig>
 

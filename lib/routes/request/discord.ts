@@ -54,7 +54,7 @@ export const requestDiscordHandler = factory.createHandlers(
       })
     }
 
-    const result = await funnel.connectors.call(query.connector, {
+    const result = await funnel.connectors.callDiscord(query.connector, {
       method: method.toUpperCase(),
       path: query.path,
       body: parseBody(query.body),

@@ -50,7 +50,7 @@ export const requestSlackHandler = factory.createHandlers(
       })
     }
 
-    const result = await funnel.connectors.call(query.connector, {
+    const result = await funnel.connectors.callSlack(query.connector, {
       method: "POST",
       path: query.path,
       body: parseBody(query.body),

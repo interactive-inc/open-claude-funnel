@@ -11,6 +11,7 @@ import { migrateLegacyConnectors } from "@/modules/connectors/migrate-legacy-con
 import { FunnelBroadcaster } from "@/modules/gateway/funnel-broadcaster"
 import { FunnelEventLogger } from "@/modules/gateway/funnel-event-logger"
 import { killCompetingSlackGateways } from "@/modules/gateway/kill-competing-slack-gateways"
+import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { FUNNEL_DIR, FunnelSettingsStore } from "@/modules/settings/funnel-settings-store"
 
 const PORT = Number(process.env.FUNNEL_PORT) || 9742
@@ -52,9 +53,12 @@ const connectorStores = createConnectorStores()
 
 migrateLegacyConnectors({ stores: connectorStores })
 
+const profiles = new FunnelProfiles({ store })
 const channels: FunnelChannels = new FunnelChannels({
   store,
   connectorChecker: { has: (name: string) => connectors.has(name) },
+  profileChecker: profiles,
+  profileRefUpdater: profiles,
 })
 const connectors: FunnelConnectors = new FunnelConnectors({
   ...connectorStores,

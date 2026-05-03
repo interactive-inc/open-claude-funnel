@@ -69,6 +69,24 @@ export class FunnelProfiles {
     this.store.write(settings)
   }
 
+  hasChannelRef(channelName: string): boolean {
+    return this.store.read().profiles.some((p) => p.channel === channelName)
+  }
+
+  renameChannelRef(oldName: string, newName: string): void {
+    const settings = this.store.read()
+    let changed = false
+
+    for (const profile of settings.profiles) {
+      if (profile.channel === oldName) {
+        profile.channel = newName
+        changed = true
+      }
+    }
+
+    if (changed) this.store.write(settings)
+  }
+
   update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {
     const settings = this.store.read()
 

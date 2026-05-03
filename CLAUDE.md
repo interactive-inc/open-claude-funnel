@@ -54,8 +54,8 @@ lib/
 
 - 対話禁止。全てオプション引数で完結する（Claude-first）
 - `export default` 禁止
-- 全ルートは `?help=true` に対してヘルプテキストを返す
-- 全ルートは GET のみ（副作用も GET）
+- ルートは `?help=true` に対してヘルプテキストを返すのが原則。`index.ts` 側で「ルートが該当しない / メソッドが合わない」場合は同 path の GET、続いてグループ help にフォールバックする
+- CLI verb は `lib/modules/router/to-request.ts` で HTTP method に変換される（`add` → POST, `remove` → DELETE, `set` → PUT, `rename` / `attach` → PUT, `detach` → DELETE）。GET 専用ではない
 
 ### Modules
 
@@ -88,10 +88,11 @@ lib/
   - `discord/<name>.json` — `{type, name, botToken}`
   - `schedule/<name>.jsonl` — 1 行 1 エントリ `{id, cron, prompt, enabled}`
   - `schedule/<name>.state.json` — 発火済みエントリの lastFiredAt（catch-up 用）
-- `FunnelConnectorTypeStore<TConfig>` はジェネリック抽象クラス。per-type ストアは自身の narrow 型で `add` / `update` / `createListener` / `createAdapter` を実装する（ランタイム type 防御コードは書かない）
-- `FunnelConnectors`（facade）は typed fields（`slack` / `gh` / `discord` / `schedule`）＋ `ChannelConnectorRefUpdater` を DI で受け取り、discriminated union の `switch` で dispatch する。`as` キャストは一切使わない
+- 抽象階層は 2 段。listener-only は `FunnelConnectorTypeStore<TConfig>`、adapter を持つ callable 型（slack / gh / discord）は `FunnelCallableConnectorStore<TConfig>` を継承して `createAdapter` を実装する。schedule は前者のみで、`createAdapter` はそもそも存在しない（ランタイムの `null` 返しや type 防御コードは書かない）
+- `FunnelConnectors`（facade）は typed fields（`slack` / `gh` / `discord` / `schedule`）＋ `ChannelConnectorRefUpdater` を DI で受け取り、discriminated union の `switch` で dispatch する。`as` キャストは一切使わない。フィールド更新と adapter 経由の API は型ごとに分かれる（`updateSlack` / `updateGh` / `updateDiscord` と `callSlack` / `callGh` / `callDiscord`）
 - Channel ↔ Connector の双方向依存は `ConnectorExistenceChecker`（channels → connectors）と `ChannelConnectorRefUpdater`（connectors → channels）の型だけで切る。`Funnel` は forward-const クロージャで遅延ワイヤリング
-- 新しい Connector 型を足すときは `xxx-connector-schema.ts` / `funnel-xxx-store.ts` / `funnel-xxx-listener.ts`（任意で adapter）を作り `FunnelConnectors` に一フィールド追加 + `createConnectorStores()` に登録。廃止はその逆で完結
+- Channel ↔ Profile も同様に `ProfileChannelChecker` / `ProfileChannelRefUpdater`（`lib/modules/profiles/`）の型で切り、`FunnelChannels` が DI で受け取る。`FunnelProfiles` がこれらの interface を実装する
+- 新しい Connector 型を足すときは `xxx-connector-schema.ts` / `funnel-xxx-store.ts` / `funnel-xxx-listener.ts`（callable なら adapter も）を作り `FunnelConnectors` に一フィールド追加 + `createConnectorStores()` に登録。廃止はその逆で完結
 - 旧 `settings.json` の `connectors[]` は起動時に `migrateLegacyConnectors` が per-type ファイルへ書き出してフィールドを除去する（冪等）
 
 ### Schedule Connector

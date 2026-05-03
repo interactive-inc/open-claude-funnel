@@ -7,6 +7,7 @@ import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 import { MemoryFunnelProcessRunner } from "@/modules/process/memory-funnel-process-runner"
+import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { FunnelRepositories } from "@/modules/repos/funnel-repositories"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
@@ -30,9 +31,12 @@ const makeClaude = () => {
   const gateway = new FunnelGateway({ fs, process: runner })
 
   const stores = createConnectorStores({ fs })
+  const profiles = new FunnelProfiles({ store })
   const channels: FunnelChannels = new FunnelChannels({
     store,
     connectorChecker: { has: (name: string) => connectors.has(name) },
+    profileChecker: profiles,
+    profileRefUpdater: profiles,
   })
   const connectors: FunnelConnectors = new FunnelConnectors({
     ...stores,

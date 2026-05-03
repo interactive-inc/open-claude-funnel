@@ -62,6 +62,22 @@ describe("FunnelScheduleStore", () => {
     expect(names).toEqual(["cron-a", "cron-b"])
   })
 
+  test("readEntries skips invalid JSON lines without throwing", () => {
+    const { store, fs } = makeStore()
+    store.add({ type: "schedule", name: "cron-a", entries: [] })
+    const valid = store.addEntry("cron-a", { cron: "* * * * *", prompt: "ok", enabled: true })
+
+    fs.appendFileSync("/fake/connectors/schedule/cron-a.jsonl", "{not json}\n")
+    fs.appendFileSync(
+      "/fake/connectors/schedule/cron-a.jsonl",
+      `${JSON.stringify({ id: "x", cron: "" })}\n`,
+    )
+
+    const entries = store.get("cron-a")?.entries ?? []
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.id).toBe(valid.id)
+  })
+
   test("rename moves the file", () => {
     const { store } = makeStore()
     store.add({ type: "schedule", name: "cron-a", entries: [] })

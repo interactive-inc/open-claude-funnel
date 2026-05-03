@@ -1,19 +1,27 @@
 import type { ConnectorExistenceChecker } from "@/modules/connectors/connector-existence-checker"
+import type { ProfileChannelChecker } from "@/modules/profiles/profile-channel-checker"
+import type { ProfileChannelRefUpdater } from "@/modules/profiles/profile-channel-ref-updater"
 import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
 import type { ChannelConfig } from "@/modules/settings/settings-schema"
 
 type Deps = {
   store: FunnelSettingsReader
   connectorChecker: ConnectorExistenceChecker
+  profileChecker: ProfileChannelChecker
+  profileRefUpdater: ProfileChannelRefUpdater
 }
 
 export class FunnelChannels {
   private readonly store: FunnelSettingsReader
   private readonly connectorChecker: ConnectorExistenceChecker
+  private readonly profileChecker: ProfileChannelChecker
+  private readonly profileRefUpdater: ProfileChannelRefUpdater
 
   constructor(deps: Deps) {
     this.store = deps.store
     this.connectorChecker = deps.connectorChecker
+    this.profileChecker = deps.profileChecker
+    this.profileRefUpdater = deps.profileRefUpdater
     Object.freeze(this)
   }
 
@@ -50,7 +58,7 @@ export class FunnelChannels {
 
     if (index < 0) throw new Error(`channel "${name}" not found`)
 
-    if (settings.profiles.some((p) => p.channel === name)) {
+    if (this.profileChecker.hasChannelRef(name)) {
       throw new Error(`channel "${name}" is referenced by a profile`)
     }
 
@@ -72,11 +80,9 @@ export class FunnelChannels {
 
     channel.name = newName
 
-    for (const profile of settings.profiles) {
-      if (profile.channel === oldName) profile.channel = newName
-    }
-
     this.store.write(settings)
+
+    this.profileRefUpdater.renameChannelRef(oldName, newName)
   }
 
   attachConnector(name: string, connectorName: string): void {

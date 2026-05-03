@@ -3,16 +3,20 @@ import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"
 import { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
+import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
 
 const makeService = () => {
   const store = new MockFunnelSettingsReader()
   const fs = new MemoryFunnelFileSystem()
   const stores = createConnectorStores({ fs, dir: "/fake" })
+  const profiles = new FunnelProfiles({ store })
 
   const channels: FunnelChannels = new FunnelChannels({
     store,
     connectorChecker: { has: (name: string) => service.has(name) },
+    profileChecker: profiles,
+    profileRefUpdater: profiles,
   })
 
   const service: FunnelConnectors = new FunnelConnectors({
@@ -82,10 +86,10 @@ describe("FunnelConnectors", () => {
     expect(store.read().channels[0]?.connectors).toEqual(["slack-b"])
   })
 
-  test("update can change botToken", () => {
+  test("updateSlack can change botToken", () => {
     const { service } = makeService()
     service.add(makeSample())
-    service.update("slack-a", { botToken: "xoxb-new" })
+    service.updateSlack("slack-a", { botToken: "xoxb-new" })
     expectSlackBotToken(service.get("slack-a"), "xoxb-new")
   })
 
@@ -110,17 +114,15 @@ describe("FunnelConnectors", () => {
     expect(() => service.rename("missing", "x")).toThrow(/not found/)
   })
 
-  test("update on schedule connector throws", () => {
+  test("updateSlack on a non-existent name throws", () => {
     const { service } = makeService()
-    service.add({ type: "schedule", name: "cron-a", entries: [] })
-    expect(() => service.update("cron-a", { botToken: "x" })).toThrow(/no top-level fields/)
+    expect(() => service.updateSlack("missing", { botToken: "xoxb-x" })).toThrow(/not found/)
   })
 
-  test("call on schedule connector throws", () => {
+  test("callSlack on a non-existent name throws", () => {
     const { service } = makeService()
-    service.add({ type: "schedule", name: "cron-a", entries: [] })
-    expect(service.call("cron-a", { method: "GET", path: "/" })).rejects.toThrow(
-      /does not support call/,
+    expect(service.callSlack("missing", { method: "POST", path: "/" })).rejects.toThrow(
+      /not found/,
     )
   })
 })

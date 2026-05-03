@@ -34,9 +34,12 @@ export class Funnel {
 
   get connectors(): FunnelConnectors {
     const stores = this.stores
+    const profiles = this.profiles
     const channels: FunnelChannels = new FunnelChannels({
       store: this.props.store,
       connectorChecker: { has: (name) => connectors.has(name) },
+      profileChecker: profiles,
+      profileRefUpdater: profiles,
     })
     const connectors: FunnelConnectors = new FunnelConnectors({
       ...stores,
@@ -47,9 +50,12 @@ export class Funnel {
 
   get channels(): FunnelChannels {
     const stores = this.stores
+    const profiles = this.profiles
     const channels: FunnelChannels = new FunnelChannels({
       store: this.props.store,
       connectorChecker: { has: (name) => connectors.has(name) },
+      profileChecker: profiles,
+      profileRefUpdater: profiles,
     })
     const connectors: FunnelConnectors = new FunnelConnectors({
       ...stores,
