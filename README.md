@@ -188,9 +188,19 @@ All Funnel facets — `connectors` / `channels` / `profiles` / `repositories` / 
 
 ```ts
 funnel.gateway.getStatus()                  // { running, pid, port }
-await funnel.gateway.start()                // spawns the daemon
+await funnel.gateway.start()                // spawns the daemon as a separate process
 await funnel.claude.launch({ channel: "inbox" })
 funnel.mcp.install("/path/to/repo")         // writes .mcp.json
+```
+
+Or run the gateway in-process (no daemon spawn — useful for tests, embedding, or custom hosts):
+
+```ts
+const server = funnel.gatewayServer({ port: 9742 })
+await server.start()             // starts Bun.serve, boots all connector listeners
+server.getStatus()                // { clients, channels: [...] }
+server.getBroadcaster().broadcast("hello", { connector: "my-slack" })
+server.stop()
 ```
 
 Every side-effecting boundary is a DI seam. For tests / sandbox use, swap them all with the in-memory implementations and Funnel will not touch real disk, real processes, real time, or real UUIDs:

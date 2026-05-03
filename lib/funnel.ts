@@ -7,6 +7,7 @@ import {
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import type { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
+import { FunnelGatewayServer } from "@/modules/gateway/funnel-gateway-server"
 import type { FunnelIdGenerator } from "@/modules/id/funnel-id-generator"
 import type { FunnelLogger } from "@/modules/logger/funnel-logger"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
@@ -112,6 +113,20 @@ export class Funnel {
       clock: this.props.clock,
       dir: this.props.dir,
       tmpDir: this.props.tmpDir,
+    })
+  }
+
+  gatewayServer(options: { port?: number; logDir?: string; killCompetingSlack?: boolean } = {}): FunnelGatewayServer {
+    return new FunnelGatewayServer({
+      connectors: this.connectors,
+      settings: this.props.store,
+      port: options.port,
+      logDir: options.logDir,
+      fs: this.props.fs,
+      process: this.props.process,
+      clock: this.props.clock,
+      logger: this.props.logger,
+      killCompetingSlack: options.killCompetingSlack,
     })
   }
 

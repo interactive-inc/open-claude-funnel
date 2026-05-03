@@ -8,6 +8,9 @@ export {
   createConnectorStores,
 } from "@/modules/connectors/funnel-connector-stores"
 export { FunnelGateway } from "@/modules/gateway/funnel-gateway"
+export { FunnelGatewayServer } from "@/modules/gateway/funnel-gateway-server"
+export { FunnelBroadcaster } from "@/modules/gateway/funnel-broadcaster"
+export { FunnelEventLogger } from "@/modules/gateway/funnel-event-logger"
 export { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 export { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 export { FunnelRepositories } from "@/modules/repos/funnel-repositories"
