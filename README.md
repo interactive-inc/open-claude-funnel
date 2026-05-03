@@ -193,12 +193,15 @@ await funnel.claude.launch({ channel: "inbox" })
 funnel.mcp.install("/path/to/repo")         // writes .mcp.json
 ```
 
-For tests / sandbox use, swap the persistence and process layers with the in-memory implementations:
+Every side-effecting boundary is a DI seam. For tests / sandbox use, swap them all with the in-memory implementations and Funnel will not touch real disk, real processes, real time, or real UUIDs:
 
 ```ts
 import {
   Funnel,
+  MemoryFunnelClock,
   MemoryFunnelFileSystem,
+  MemoryFunnelIdGenerator,
+  MemoryFunnelLogger,
   MemoryFunnelProcessRunner,
   MockFunnelSettingsReader,
 } from "@interactive-inc/claude-funnel"
@@ -207,9 +210,15 @@ const funnel = new Funnel({
   store: new MockFunnelSettingsReader(),
   fs: new MemoryFunnelFileSystem(),
   process: new MemoryFunnelProcessRunner(),
-  dir: "/fake",
+  logger: new MemoryFunnelLogger(),
+  clock: new MemoryFunnelClock({ start: new Date("2026-01-01T00:00:00Z") }),
+  idGenerator: new MemoryFunnelIdGenerator({ prefix: "test" }),
+  dir: "/sandbox/.funnel",
+  tmpDir: "/sandbox/tmp",
 })
 ```
+
+Available abstractions (each has `Funnel*` interface, `Node*` default, and `Memory*` for tests): `FunnelFileSystem`, `FunnelProcessRunner`, `FunnelLogger`, `FunnelClock`, `FunnelIdGenerator`. Plus `NoopFunnelLogger` for silent operation.
 
 The package ships TypeScript sources directly, so a Bun runtime is required. Importing `@interactive-inc/claude-funnel/cli` resolves to the CLI entry point (with side effects) — only do this if you're embedding the CLI rather than the library.
 

@@ -3,9 +3,11 @@ import { join } from "node:path"
 import { stringify } from "yaml"
 import { z } from "zod"
 import { factory } from "@/factory"
-import { logger } from "@/modules/logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import { zValidator } from "@/modules/router/validator"
 import { help } from "@/routes/gateway/logs.help"
+
+const logger = new NodeFunnelLogger()
 
 const tryParseJson = (s: string): unknown => {
   try {

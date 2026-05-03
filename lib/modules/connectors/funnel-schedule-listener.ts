@@ -5,15 +5,19 @@ import {
 import { FunnelScheduleStore } from "@/modules/connectors/funnel-schedule-store"
 import { matchCron } from "@/modules/connectors/match-cron"
 import { ScheduleLastFiredStore } from "@/modules/connectors/schedule-last-fired-store"
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import type { ScheduleConnectorConfig } from "@/modules/connectors/schedule-connector-schema"
 
 type Deps = {
   config: ScheduleConnectorConfig
   store: FunnelScheduleStore
   lastFiredStore: ScheduleLastFiredStore
+  logger?: FunnelLogger
   now?: () => Date
 }
+
+const defaultLogger = new NodeFunnelLogger()
 
 const MAX_CATCHUP_MINUTES = 60 * 24
 
@@ -21,6 +25,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly config: ScheduleConnectorConfig
   private readonly store: FunnelScheduleStore
   private readonly lastFiredStore: ScheduleLastFiredStore
+  private readonly logger: FunnelLogger
   private readonly now: () => Date
 
   constructor(deps: Deps) {
@@ -28,6 +33,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     this.config = deps.config
     this.store = deps.store
     this.lastFiredStore = deps.lastFiredStore
+    this.logger = deps.logger ?? defaultLogger
     this.now = deps.now ?? (() => new Date())
     Object.freeze(this)
   }
@@ -103,7 +109,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       try {
         if (matchCron(cron, candidate)) return candidate
       } catch (error) {
-        logger.error("invalid cron expression in schedule", {
+        this.logger.error("invalid cron expression in schedule", {
           connector: this.config.name,
           id: entryId,
           cron,

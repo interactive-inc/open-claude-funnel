@@ -4,19 +4,25 @@ import {
   type NotifyFn,
 } from "@/modules/connectors/funnel-connector-listener"
 import { FunnelSlackEventProcessor } from "@/modules/connectors/funnel-slack-event-processor"
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import type { SlackConnectorConfig } from "@/modules/connectors/slack-connector-schema"
 
 type Deps = {
   config: SlackConnectorConfig
+  logger?: FunnelLogger
 }
+
+const defaultLogger = new NodeFunnelLogger()
 
 export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly config: SlackConnectorConfig
+  private readonly logger: FunnelLogger
 
   constructor(deps: Deps) {
     super()
     this.config = deps.config
+    this.logger = deps.logger ?? defaultLogger
     Object.freeze(this)
   }
 
@@ -62,7 +68,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     })
 
     app.error(async (error) => {
-      logger.error("Slack error", {
+      this.logger.error("Slack error", {
         error: error instanceof Error ? error.message : String(error),
       })
     })

@@ -4,20 +4,24 @@ import type { ConnectorStoresBundle } from "@/modules/connectors/funnel-connecto
 import { DEFAULT_FUNNEL_DIR } from "@/modules/connectors/funnel-json-connector-store"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 
 type Props = {
   stores: ConnectorStoresBundle
   fs?: FunnelFileSystem
   dir?: string
+  logger?: FunnelLogger
 }
 
 const defaultFs = new NodeFunnelFileSystem()
+const defaultLogger = new NodeFunnelLogger()
 
 export const migrateLegacyConnectors = (props: Props): number => {
   const fs = props.fs ?? defaultFs
   const base = props.dir ?? DEFAULT_FUNNEL_DIR
   const path = join(base, "settings.json")
+  const logger = props.logger ?? defaultLogger
 
   if (!fs.existsSync(path)) return 0
 

@@ -1,7 +1,6 @@
 import { join } from "node:path"
 import type { FunnelConnectorListener } from "@/modules/connectors/funnel-connector-listener"
 import { FunnelConnectorTypeStore } from "@/modules/connectors/funnel-connector-type-store"
-import { logger } from "@/modules/logger"
 import { DEFAULT_FUNNEL_DIR } from "@/modules/connectors/funnel-json-connector-store"
 import { FunnelScheduleListener } from "@/modules/connectors/funnel-schedule-listener"
 import { ScheduleLastFiredStore } from "@/modules/connectors/schedule-last-fired-store"
@@ -12,25 +11,41 @@ import {
 } from "@/modules/connectors/schedule-connector-schema"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
+import { FunnelIdGenerator } from "@/modules/id/funnel-id-generator"
+import { NodeFunnelIdGenerator } from "@/modules/id/node-funnel-id-generator"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
+import type { FunnelClock } from "@/modules/time/funnel-clock"
 
 type Deps = {
   fs?: FunnelFileSystem
   dir?: string
+  logger?: FunnelLogger
+  idGenerator?: FunnelIdGenerator
+  clock?: FunnelClock
 }
 
 const defaultFs = new NodeFunnelFileSystem()
+const defaultLogger = new NodeFunnelLogger()
+const defaultIdGenerator = new NodeFunnelIdGenerator()
 
 export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnectorConfig> {
   readonly type = "schedule" as const
   private readonly fs: FunnelFileSystem
   private readonly baseDir: string
   private readonly dir: string
+  private readonly logger: FunnelLogger
+  private readonly idGenerator: FunnelIdGenerator
+  private readonly clock?: FunnelClock
 
   constructor(deps: Deps = {}) {
     super()
     this.fs = deps.fs ?? defaultFs
     this.baseDir = deps.dir ?? DEFAULT_FUNNEL_DIR
     this.dir = join(this.baseDir, "connectors", "schedule")
+    this.logger = deps.logger ?? defaultLogger
+    this.idGenerator = deps.idGenerator ?? defaultIdGenerator
+    this.clock = deps.clock
     Object.freeze(this)
   }
 
@@ -96,7 +111,7 @@ export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnec
     if (!this.has(name)) throw new Error(`connector "${name}" not found`)
 
     const full: ScheduleEntry = {
-      id: entry.id ?? crypto.randomUUID(),
+      id: entry.id ?? this.idGenerator.generate(),
       cron: entry.cron,
       prompt: entry.prompt,
       enabled: entry.enabled ?? true,
@@ -122,6 +137,8 @@ export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnec
       config,
       store: this,
       lastFiredStore: this.createLastFiredStore(config.name),
+      logger: this.logger,
+      now: this.clock ? () => this.clock!.now() : undefined,
     })
   }
 
@@ -155,7 +172,7 @@ export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnec
         const result = scheduleEntrySchema.safeParse(parsed)
 
         if (!result.success) {
-          logger.warn("skipping invalid schedule entry", {
+          this.logger.warn("skipping invalid schedule entry", {
             connector: name,
             line: lineNumber,
             issues: result.error.issues.map((iss) => `${iss.path.join(".")}: ${iss.message}`),
@@ -165,7 +182,7 @@ export class FunnelScheduleStore extends FunnelConnectorTypeStore<ScheduleConnec
 
         entries.push(result.data)
       } catch (error) {
-        logger.warn("skipping unparseable schedule entry", {
+        this.logger.warn("skipping unparseable schedule entry", {
           connector: name,
           line: lineNumber,
           error: error instanceof Error ? error.message : String(error),

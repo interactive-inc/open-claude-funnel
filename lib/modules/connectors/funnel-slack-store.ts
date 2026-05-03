@@ -12,10 +12,12 @@ import {
   slackConnectorSchema,
 } from "@/modules/connectors/slack-connector-schema"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
+import type { FunnelLogger } from "@/modules/logger/funnel-logger"
 
 type Deps = {
   fs?: FunnelFileSystem
   dir?: string
+  logger?: FunnelLogger
 }
 
 export type SlackUpdateFields = {
@@ -26,6 +28,7 @@ export type SlackUpdateFields = {
 export class FunnelSlackStore extends FunnelCallableConnectorStore<SlackConnectorConfig> {
   readonly type = "slack" as const
   private readonly store: FunnelJsonConnectorStore<SlackConnectorConfig>
+  private readonly logger?: FunnelLogger
 
   constructor(deps: Deps = {}) {
     super()
@@ -35,6 +38,7 @@ export class FunnelSlackStore extends FunnelCallableConnectorStore<SlackConnecto
       fs: deps.fs,
       dir: deps.dir ?? DEFAULT_FUNNEL_DIR,
     })
+    this.logger = deps.logger
     Object.freeze(this)
   }
 
@@ -77,7 +81,7 @@ export class FunnelSlackStore extends FunnelCallableConnectorStore<SlackConnecto
   }
 
   createListener(config: SlackConnectorConfig): FunnelConnectorListener {
-    return new FunnelSlackListener({ config })
+    return new FunnelSlackListener({ config, logger: this.logger })
   }
 
   createAdapter(config: SlackConnectorConfig): FunnelConnectorAdapter {

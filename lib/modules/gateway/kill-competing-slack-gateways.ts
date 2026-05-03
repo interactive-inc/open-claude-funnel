@@ -1,13 +1,16 @@
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
 
 type Props = {
   selfPid: number
   process?: FunnelProcessRunner
+  logger?: FunnelLogger
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
+const defaultLogger = new NodeFunnelLogger()
 
 const isBun = (args: string): boolean => {
   return args.includes("bun ") || /\/bun(\s|$)/.test(args)
@@ -19,6 +22,7 @@ const looksLikeSlackGateway = (args: string): boolean => {
 
 export const killCompetingSlackGateways = async (props: Props): Promise<number[]> => {
   const runner = props.process ?? defaultProcess
+  const logger = props.logger ?? defaultLogger
   const result = await runner.run(["ps", "-e", "-o", "pid=,args="])
 
   if (result.exitCode !== 0) return []

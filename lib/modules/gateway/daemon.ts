@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path"
 import type { ServerWebSocket } from "bun"
 import { Hono } from "hono"
-import { logger } from "@/modules/logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
+
+const logger = new NodeFunnelLogger()
 import { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import { createConnectorStores } from "@/modules/connectors/funnel-connector-stores"

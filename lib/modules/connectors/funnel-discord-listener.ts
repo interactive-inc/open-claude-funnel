@@ -4,19 +4,25 @@ import {
   type NotifyFn,
 } from "@/modules/connectors/funnel-connector-listener"
 import { FunnelDiscordEventProcessor } from "@/modules/connectors/funnel-discord-event-processor"
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import type { DiscordConnectorConfig } from "@/modules/connectors/discord-connector-schema"
 
 type Deps = {
   config: DiscordConnectorConfig
+  logger?: FunnelLogger
 }
+
+const defaultLogger = new NodeFunnelLogger()
 
 export class FunnelDiscordListener extends FunnelConnectorListener {
   private readonly config: DiscordConnectorConfig
+  private readonly logger: FunnelLogger
 
   constructor(deps: Deps) {
     super()
     this.config = deps.config
+    this.logger = deps.logger ?? defaultLogger
     Object.freeze(this)
   }
 
@@ -48,14 +54,14 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       try {
         await notify(result.content, result.meta)
       } catch (error) {
-        logger.error("discord notify error", {
+        this.logger.error("discord notify error", {
           error: error instanceof Error ? error.message : String(error),
         })
       }
     })
 
     client.on("error", (error) => {
-      logger.error("discord client error", {
+      this.logger.error("discord client error", {
         error: error instanceof Error ? error.message : String(error),
       })
     })

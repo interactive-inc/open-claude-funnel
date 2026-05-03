@@ -7,18 +7,25 @@ import {
 import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import type { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
+import type { FunnelIdGenerator } from "@/modules/id/funnel-id-generator"
+import type { FunnelLogger } from "@/modules/logger/funnel-logger"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 import type { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { FunnelRepositories } from "@/modules/repos/funnel-repositories"
 import { FunnelSchedule } from "@/modules/schedule/funnel-schedule"
 import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
+import type { FunnelClock } from "@/modules/time/funnel-clock"
 
 type Props = {
   store: FunnelSettingsReader
   fs?: FunnelFileSystem
   process?: FunnelProcessRunner
+  logger?: FunnelLogger
+  clock?: FunnelClock
+  idGenerator?: FunnelIdGenerator
   dir?: string
+  tmpDir?: string
   connectorStores?: ConnectorStoresBundle
 }
 
@@ -30,7 +37,14 @@ export class Funnel {
   get stores(): ConnectorStoresBundle {
     return (
       this.props.connectorStores ??
-      createConnectorStores({ fs: this.props.fs, dir: this.props.dir })
+      createConnectorStores({
+        fs: this.props.fs,
+        process: this.props.process,
+        logger: this.props.logger,
+        clock: this.props.clock,
+        idGenerator: this.props.idGenerator,
+        dir: this.props.dir,
+      })
     )
   }
 
@@ -86,6 +100,8 @@ export class Funnel {
       gateway: this.gateway,
       fs: this.props.fs,
       process: this.props.process,
+      logger: this.props.logger,
+      dir: this.props.dir,
     })
   }
 
@@ -93,6 +109,9 @@ export class Funnel {
     return new FunnelGateway({
       fs: this.props.fs,
       process: this.props.process,
+      clock: this.props.clock,
+      dir: this.props.dir,
+      tmpDir: this.props.tmpDir,
     })
   }
 

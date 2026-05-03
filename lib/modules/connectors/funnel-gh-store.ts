@@ -12,10 +12,16 @@ import {
   ghConnectorSchema,
 } from "@/modules/connectors/gh-connector-schema"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
+import type { FunnelLogger } from "@/modules/logger/funnel-logger"
+import type { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
+import type { FunnelClock } from "@/modules/time/funnel-clock"
 
 type Deps = {
   fs?: FunnelFileSystem
   dir?: string
+  process?: FunnelProcessRunner
+  logger?: FunnelLogger
+  clock?: FunnelClock
 }
 
 export type GhUpdateFields = {
@@ -25,6 +31,9 @@ export type GhUpdateFields = {
 export class FunnelGhStore extends FunnelCallableConnectorStore<GhConnectorConfig> {
   readonly type = "gh" as const
   private readonly store: FunnelJsonConnectorStore<GhConnectorConfig>
+  private readonly process?: FunnelProcessRunner
+  private readonly logger?: FunnelLogger
+  private readonly clock?: FunnelClock
 
   constructor(deps: Deps = {}) {
     super()
@@ -34,6 +43,9 @@ export class FunnelGhStore extends FunnelCallableConnectorStore<GhConnectorConfi
       fs: deps.fs,
       dir: deps.dir ?? DEFAULT_FUNNEL_DIR,
     })
+    this.process = deps.process
+    this.logger = deps.logger
+    this.clock = deps.clock
     Object.freeze(this)
   }
 
@@ -75,7 +87,12 @@ export class FunnelGhStore extends FunnelCallableConnectorStore<GhConnectorConfi
   }
 
   createListener(config: GhConnectorConfig): FunnelConnectorListener {
-    return new FunnelGhListener({ config })
+    return new FunnelGhListener({
+      config,
+      process: this.process,
+      logger: this.logger,
+      now: this.clock ? () => this.clock!.now() : undefined,
+    })
   }
 
   createAdapter(_config: GhConnectorConfig): FunnelConnectorAdapter {

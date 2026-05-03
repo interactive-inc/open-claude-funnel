@@ -4,28 +4,52 @@ import { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
 import { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
 import { FUNNEL_DIR } from "@/modules/settings/funnel-settings-store"
+import { FunnelClock } from "@/modules/time/funnel-clock"
+import { NodeFunnelClock } from "@/modules/time/node-funnel-clock"
 
 const DEFAULT_PORT = 9742
-const PID_FILE = join(FUNNEL_DIR, "gateway.pid")
-const LOG_DIR = "/tmp/funnel/events"
-const GATEWAY_LOG = "/tmp/funnel/gateway.log"
-const TMP_DIR = "/tmp/funnel"
+const DEFAULT_TMP_DIR = "/tmp/funnel"
 
 type Deps = {
   process?: FunnelProcessRunner
   fs?: FunnelFileSystem
+  clock?: FunnelClock
+  dir?: string
+  tmpDir?: string
+  port?: number
+  sleep?: (ms: number) => Promise<void>
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
 const defaultFs = new NodeFunnelFileSystem()
+const defaultClock = new NodeFunnelClock()
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((r) => {
+    setTimeout(r, ms)
+  })
 
 export class FunnelGateway {
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
+  private readonly clock: FunnelClock
+  private readonly pidFile: string
+  private readonly logDir: string
+  private readonly gatewayLog: string
+  private readonly tmpDir: string
+  private readonly port: number
+  private readonly sleep: (ms: number) => Promise<void>
 
   constructor(deps: Deps = {}) {
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
+    this.clock = deps.clock ?? defaultClock
+    const baseDir = deps.dir ?? FUNNEL_DIR
+    this.tmpDir = deps.tmpDir ?? DEFAULT_TMP_DIR
+    this.pidFile = join(baseDir, "gateway.pid")
+    this.logDir = join(this.tmpDir, "events")
+    this.gatewayLog = join(this.tmpDir, "gateway.log")
+    this.port = deps.port ?? DEFAULT_PORT
+    this.sleep = deps.sleep ?? defaultSleep
     Object.freeze(this)
   }
 
@@ -41,20 +65,20 @@ export class FunnelGateway {
     const pid = this.readPid()
     const running = pid !== null && this.isProcessAlive(pid)
 
-    return { running, pid: running ? pid : null, port: DEFAULT_PORT }
+    return { running, pid: running ? pid : null, port: this.port }
   }
 
   async start(options: { caffeinate?: boolean } = {}): Promise<boolean> {
     if (this.isRunning()) return true
 
-    this.fs.mkdirSync(TMP_DIR, { recursive: true })
+    this.fs.mkdirSync(this.tmpDir, { recursive: true })
 
     const gatewayScript = resolve(import.meta.dir, "./daemon.ts")
     const command = this.buildStartCommand(gatewayScript, options)
 
     this.process.detach(["bash", "-c", command])
 
-    await Bun.sleep(800)
+    await this.sleep(800)
 
     return this.isRunning()
   }
@@ -63,7 +87,7 @@ export class FunnelGateway {
     const useCaffeinate = options.caffeinate !== false && globalThis.process.platform === "darwin"
     const prefix = useCaffeinate ? "caffeinate -i " : ""
 
-    return `nohup ${prefix}bun ${gatewayScript} >> ${GATEWAY_LOG} 2>&1 &`
+    return `nohup ${prefix}bun ${gatewayScript} >> ${this.gatewayLog} 2>&1 &`
   }
 
   async stop(): Promise<boolean> {
@@ -77,29 +101,29 @@ export class FunnelGateway {
     }
 
     try {
-      globalThis.process.kill(pid, "SIGTERM")
+      this.process.kill(pid, "SIGTERM")
     } catch {
       return false
     }
 
-    const deadline = Date.now() + 2000
+    const deadline = this.clock.millis() + 2000
 
-    while (Date.now() < deadline) {
+    while (this.clock.millis() < deadline) {
       if (!this.isProcessAlive(pid)) {
         this.removePid()
         return true
       }
 
-      await Bun.sleep(100)
+      await this.sleep(100)
     }
 
     try {
-      globalThis.process.kill(pid, "SIGKILL")
+      this.process.kill(pid, "SIGKILL")
     } catch {
       // ignore
     }
 
-    await Bun.sleep(200)
+    await this.sleep(200)
     this.removePid()
 
     return !this.isProcessAlive(pid)
@@ -126,18 +150,18 @@ export class FunnelGateway {
   }
 
   getLogDir(): string {
-    return LOG_DIR
+    return this.logDir
   }
 
   getGatewayLog(): string {
-    return GATEWAY_LOG
+    return this.gatewayLog
   }
 
   private readPid(): number | null {
-    if (!this.fs.existsSync(PID_FILE)) return null
+    if (!this.fs.existsSync(this.pidFile)) return null
 
     try {
-      const content = this.fs.readFileSync(PID_FILE).trim()
+      const content = this.fs.readFileSync(this.pidFile).trim()
       const pid = Number(content)
 
       if (!pid || pid <= 0) return null
@@ -149,7 +173,7 @@ export class FunnelGateway {
   }
 
   private removePid(): void {
-    this.fs.unlink(PID_FILE)
+    this.fs.unlink(this.pidFile)
   }
 
   private isProcessAlive(pid: number): boolean {

@@ -12,10 +12,12 @@ import {
   discordConnectorSchema,
 } from "@/modules/connectors/discord-connector-schema"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
+import type { FunnelLogger } from "@/modules/logger/funnel-logger"
 
 type Deps = {
   fs?: FunnelFileSystem
   dir?: string
+  logger?: FunnelLogger
 }
 
 export type DiscordUpdateFields = {
@@ -25,6 +27,7 @@ export type DiscordUpdateFields = {
 export class FunnelDiscordStore extends FunnelCallableConnectorStore<DiscordConnectorConfig> {
   readonly type = "discord" as const
   private readonly store: FunnelJsonConnectorStore<DiscordConnectorConfig>
+  private readonly logger?: FunnelLogger
 
   constructor(deps: Deps = {}) {
     super()
@@ -34,6 +37,7 @@ export class FunnelDiscordStore extends FunnelCallableConnectorStore<DiscordConn
       fs: deps.fs,
       dir: deps.dir ?? DEFAULT_FUNNEL_DIR,
     })
+    this.logger = deps.logger
     Object.freeze(this)
   }
 
@@ -75,7 +79,7 @@ export class FunnelDiscordStore extends FunnelCallableConnectorStore<DiscordConn
   }
 
   createListener(config: DiscordConnectorConfig): FunnelConnectorListener {
-    return new FunnelDiscordListener({ config })
+    return new FunnelDiscordListener({ config, logger: this.logger })
   }
 
   createAdapter(config: DiscordConnectorConfig): FunnelConnectorAdapter {

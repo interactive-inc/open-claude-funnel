@@ -2,7 +2,8 @@ import {
   FunnelConnectorListener,
   type NotifyFn,
 } from "@/modules/connectors/funnel-connector-listener"
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
 import type { GhConnectorConfig } from "@/modules/connectors/gh-connector-schema"
@@ -18,9 +19,12 @@ type GhNotification = {
 type Deps = {
   config: GhConnectorConfig
   process?: FunnelProcessRunner
+  logger?: FunnelLogger
+  now?: () => Date
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
+const defaultLogger = new NodeFunnelLogger()
 
 const MAX_SEEN = 10000
 const KEEP_SEEN = 5000
@@ -28,14 +32,19 @@ const KEEP_SEEN = 5000
 export class FunnelGhListener extends FunnelConnectorListener {
   private readonly config: GhConnectorConfig
   private readonly process: FunnelProcessRunner
+  private readonly logger: FunnelLogger
+  private readonly now: () => Date
   private readonly seen = new Map<string, string>()
   private bootstrapped = false
-  private since = new Date().toISOString()
+  private since: string
 
   constructor(deps: Deps) {
     super()
     this.config = deps.config
     this.process = deps.process ?? defaultProcess
+    this.logger = deps.logger ?? defaultLogger
+    this.now = deps.now ?? (() => new Date())
+    this.since = this.now().toISOString()
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -47,14 +56,14 @@ export class FunnelGhListener extends FunnelConnectorListener {
   }
 
   async pollOnce(notify: NotifyFn): Promise<void> {
-    const nextSince = new Date().toISOString()
+    const nextSince = this.now().toISOString()
     const params = new URLSearchParams({ since: this.since, all: "false" })
 
     try {
       const result = await this.process.run(["gh", "api", `/notifications?${params}`])
 
       if (result.exitCode !== 0) {
-        logger.error("gh poll failed", { stderr: result.stderr })
+        this.logger.error("gh poll failed", { stderr: result.stderr })
         return
       }
 
@@ -94,7 +103,7 @@ export class FunnelGhListener extends FunnelConnectorListener {
       this.since = nextSince
       this.bootstrapped = true
     } catch (error) {
-      logger.error("gh poll error", {
+      this.logger.error("gh poll error", {
         error: error instanceof Error ? error.message : String(error),
       })
     }

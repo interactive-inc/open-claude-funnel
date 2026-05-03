@@ -3,14 +3,13 @@ import type { FunnelChannels } from "@/modules/channels/funnel-channels"
 import { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
 import type { FunnelGateway } from "@/modules/gateway/funnel-gateway"
-import { logger } from "@/modules/logger"
+import { FunnelLogger } from "@/modules/logger/funnel-logger"
+import { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
 import type { FunnelMcp } from "@/modules/mcp/funnel-mcp"
 import { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
 import type { FunnelRepositories } from "@/modules/repos/funnel-repositories"
 import { FUNNEL_DIR } from "@/modules/settings/funnel-settings-store"
-
-const CLAUDE_PID_DIR = join(FUNNEL_DIR, "claude")
 
 export type LaunchOptions = {
   channel: string
@@ -28,10 +27,13 @@ type Deps = {
   gateway: FunnelGateway
   process?: FunnelProcessRunner
   fs?: FunnelFileSystem
+  logger?: FunnelLogger
+  dir?: string
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
 const defaultFs = new NodeFunnelFileSystem()
+const defaultLogger = new NodeFunnelLogger()
 
 export class FunnelClaude {
   private readonly channels: FunnelChannels
@@ -40,6 +42,8 @@ export class FunnelClaude {
   private readonly gateway: FunnelGateway
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
+  private readonly logger: FunnelLogger
+  private readonly pidDir: string
 
   constructor(deps: Deps) {
     this.channels = deps.channels
@@ -48,6 +52,8 @@ export class FunnelClaude {
     this.gateway = deps.gateway
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
+    this.logger = deps.logger ?? defaultLogger
+    this.pidDir = join(deps.dir ?? FUNNEL_DIR, "claude")
     Object.freeze(this)
   }
 
@@ -69,11 +75,11 @@ export class FunnelClaude {
     if (!this.mcp.findInstalledName(cwd)) {
       this.mcp.install(cwd)
 
-      logger.info(`added funnel MCP to .mcp.json`, { cwd })
+      this.logger.info(`added funnel MCP to .mcp.json`, { cwd })
     }
 
     if (!this.gateway.isRunning()) {
-      logger.info(`starting gateway automatically`)
+      this.logger.info(`starting gateway automatically`)
       await this.gateway.start()
     }
 
@@ -85,7 +91,7 @@ export class FunnelClaude {
     const claudeArgs = this.buildArgs(options, cwd)
     const env = this.buildEnv(options, cwd)
 
-    logger.info(`claude launch`, {
+    this.logger.info(`claude launch`, {
       channel: options.channel,
       repo: options.repo,
       subAgent: options.subAgent,
@@ -108,7 +114,7 @@ export class FunnelClaude {
   }
 
   private pidPath(profileName: string): string {
-    return join(CLAUDE_PID_DIR, `${profileName}.pid`)
+    return join(this.pidDir, `${profileName}.pid`)
   }
 
   private readPid(profileName: string): number | null {
@@ -129,7 +135,7 @@ export class FunnelClaude {
   }
 
   private writePidFile(profileName: string): void {
-    this.fs.mkdirSync(CLAUDE_PID_DIR, { recursive: true })
+    this.fs.mkdirSync(this.pidDir, { recursive: true })
     this.fs.writeFileSync(this.pidPath(profileName), String(globalThis.process.pid))
   }
 
