@@ -11,6 +11,11 @@ type Deps = {
   profileRefUpdater: ProfileChannelRefUpdater
 }
 
+/**
+ * Subscription boxes that fan connector events out to Claude Code sessions.
+ * A channel attaches one or more connectors; the gateway's WebSocket clients
+ * subscribe by channel name. Name changes propagate to profile channel refs.
+ */
 export class FunnelChannels {
   private readonly store: FunnelSettingsReader
   private readonly connectorChecker: ConnectorExistenceChecker

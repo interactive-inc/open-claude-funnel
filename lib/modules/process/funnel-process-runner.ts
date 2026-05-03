@@ -19,6 +19,11 @@ export type DetachOptions = {
   env?: Record<string, string>
 }
 
+/**
+ * Process boundary covering one-shot runs, sync runs, foreground attach, and
+ * detached background spawns. Default is NodeFunnelProcessRunner (Bun.spawn);
+ * MemoryFunnelProcessRunner records calls and lets tests stub responses.
+ */
 export abstract class FunnelProcessRunner {
   abstract run(command: string[], options?: RunOptions): Promise<RunResult>
   abstract runSync(command: string[]): RunResult

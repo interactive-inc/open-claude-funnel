@@ -20,6 +20,11 @@ type Deps = {
 
 const defaultFs = new NodeFunnelFileSystem()
 
+/**
+ * Installs/uninstalls the funnel MCP entry into a target repository's
+ * `.mcp.json`. Detects an existing entry by command match so renaming is
+ * preserved across re-installs.
+ */
 export class FunnelMcp {
   private readonly fs: FunnelFileSystem
 

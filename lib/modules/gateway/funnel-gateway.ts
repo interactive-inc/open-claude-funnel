@@ -28,6 +28,11 @@ const defaultSleep = (ms: number): Promise<void> =>
     setTimeout(r, ms)
   })
 
+/**
+ * Manages the gateway daemon as a separate process via PID file.
+ * Use `start()` to spawn `bun daemon.ts` in the background and `stop()` to
+ * terminate it. For an in-process gateway, use `Funnel.gatewayServer` instead.
+ */
 export class FunnelGateway {
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem

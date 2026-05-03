@@ -31,6 +31,12 @@ type WsData = { channel: string; connectors: string[] }
 
 const defaultLogger = new NodeFunnelLogger()
 
+/**
+ * In-process gateway: runs `Bun.serve` (HTTP + WebSocket /ws), boots all
+ * connector listeners, fans events out via FunnelBroadcaster, and persists
+ * them via FunnelEventLogger. Useful for embedding the gateway in a custom
+ * host or driving it from tests.
+ */
 export class FunnelGatewayServer {
   private readonly connectors: FunnelConnectors
   private readonly settings: FunnelSettingsReader

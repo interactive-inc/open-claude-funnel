@@ -7,6 +7,11 @@ type Deps = {
   mcp: FunnelMcp
 }
 
+/**
+ * Repository registry. Each entry has a name + filesystem path; add/remove
+ * also writes/removes the funnel MCP entry in `<path>/.mcp.json` so Claude Code
+ * picks it up automatically when launched in that directory.
+ */
 export class FunnelRepositories {
   private readonly store: FunnelSettingsReader
   private readonly mcp: FunnelMcp

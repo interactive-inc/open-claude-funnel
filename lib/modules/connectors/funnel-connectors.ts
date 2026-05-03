@@ -18,6 +18,12 @@ type Deps = {
   refUpdater: ChannelConnectorRefUpdater
 }
 
+/**
+ * Aggregates per-type connector stores (slack / gh / discord / schedule) behind a single facade.
+ * Add / remove / rename mutate the underlying type-specific store and propagate name changes
+ * to channel references via `refUpdater`. Per-type APIs (`updateSlack`, `callDiscord`, ...) keep
+ * field-level operations type-narrowed without runtime defense.
+ */
 export class FunnelConnectors {
   private readonly slack: FunnelSlackStore
   private readonly gh: FunnelGhStore

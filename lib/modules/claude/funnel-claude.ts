@@ -35,6 +35,12 @@ const defaultProcess = new NodeFunnelProcessRunner()
 const defaultFs = new NodeFunnelFileSystem()
 const defaultLogger = new NodeFunnelLogger()
 
+/**
+ * Launches Claude Code with funnel pre-wired: ensures the gateway is running,
+ * installs the funnel MCP into the target repo's `.mcp.json` if missing,
+ * injects `FUNNEL_CHANNEL_ID` into the child env, and writes a per-profile
+ * PID file to enforce singleton launches.
+ */
 export class FunnelClaude {
   private readonly channels: FunnelChannels
   private readonly repositories: FunnelRepositories

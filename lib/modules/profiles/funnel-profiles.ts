@@ -5,6 +5,11 @@ type Deps = {
   store: FunnelSettingsReader
 }
 
+/**
+ * Named launch presets for `fnl claude` (channel + repo + sub-agent + env files).
+ * Implements ProfileChannelChecker / ProfileChannelRefUpdater so FunnelChannels
+ * can validate references without depending on the FunnelProfiles concrete type.
+ */
 export class FunnelProfiles {
   private readonly store: FunnelSettingsReader
 

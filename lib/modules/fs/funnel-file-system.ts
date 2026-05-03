@@ -2,6 +2,11 @@ export type FileStat = {
   mtimeMs: number
 }
 
+/**
+ * Filesystem boundary used everywhere funnel reads or writes.
+ * Default is NodeFunnelFileSystem (real `node:fs`); MemoryFunnelFileSystem
+ * provides a sandbox for tests and embedded use.
+ */
 export abstract class FunnelFileSystem {
   abstract existsSync(path: string): boolean
   abstract readFileSync(path: string): string

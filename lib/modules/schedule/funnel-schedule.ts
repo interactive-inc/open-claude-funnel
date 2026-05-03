@@ -5,6 +5,11 @@ type Deps = {
   store: FunnelScheduleStore
 }
 
+/**
+ * Cron entry CRUD for a schedule connector. The schedule connector itself
+ * is created via `connectors.add({ type: "schedule", ... })`; this class
+ * manages the JSONL entries inside it.
+ */
 export class FunnelSchedule {
   private readonly store: FunnelScheduleStore
 
