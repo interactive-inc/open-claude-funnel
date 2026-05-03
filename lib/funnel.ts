@@ -8,6 +8,7 @@ import { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
 import type { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 import { FunnelGateway } from "@/modules/gateway/funnel-gateway"
 import { FunnelMcp } from "@/modules/mcp/funnel-mcp"
+import type { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
 import { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
 import { FunnelRepositories } from "@/modules/repos/funnel-repositories"
 import { FunnelSchedule } from "@/modules/schedule/funnel-schedule"
@@ -16,6 +17,7 @@ import { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
 type Props = {
   store: FunnelSettingsReader
   fs?: FunnelFileSystem
+  process?: FunnelProcessRunner
   dir?: string
   connectorStores?: ConnectorStoresBundle
 }
@@ -82,14 +84,19 @@ export class Funnel {
       repositories: this.repositories,
       mcp: this.mcp,
       gateway: this.gateway,
+      fs: this.props.fs,
+      process: this.props.process,
     })
   }
 
   get gateway(): FunnelGateway {
-    return new FunnelGateway()
+    return new FunnelGateway({
+      fs: this.props.fs,
+      process: this.props.process,
+    })
   }
 
   get mcp(): FunnelMcp {
-    return new FunnelMcp()
+    return new FunnelMcp({ fs: this.props.fs })
   }
 }

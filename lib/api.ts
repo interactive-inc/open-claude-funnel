@@ -17,6 +17,10 @@ export { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
 export { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
 export { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
 
+export { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
+export { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
+export { MemoryFunnelProcessRunner } from "@/modules/process/memory-funnel-process-runner"
+
 export { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
 export { FunnelSettingsStore } from "@/modules/settings/funnel-settings-store"
 export { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"

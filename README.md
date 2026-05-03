@@ -184,18 +184,29 @@ funnel.channels.add({ name: "inbox", connectors: ["my-slack"] })
 for (const c of funnel.connectors.list()) console.log(c.type, c.name)
 ```
 
-For tests / sandbox use, swap the persistence layer with the in-memory implementations:
+All Funnel facets — `connectors` / `channels` / `profiles` / `repositories` / `schedule` / `gateway` / `mcp` / `claude` — are reachable from the same instance:
+
+```ts
+funnel.gateway.getStatus()                  // { running, pid, port }
+await funnel.gateway.start()                // spawns the daemon
+await funnel.claude.launch({ channel: "inbox" })
+funnel.mcp.install("/path/to/repo")         // writes .mcp.json
+```
+
+For tests / sandbox use, swap the persistence and process layers with the in-memory implementations:
 
 ```ts
 import {
   Funnel,
   MemoryFunnelFileSystem,
+  MemoryFunnelProcessRunner,
   MockFunnelSettingsReader,
 } from "@interactive-inc/claude-funnel"
 
 const funnel = new Funnel({
   store: new MockFunnelSettingsReader(),
   fs: new MemoryFunnelFileSystem(),
+  process: new MemoryFunnelProcessRunner(),
   dir: "/fake",
 })
 ```
