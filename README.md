@@ -160,6 +160,34 @@ Connectors are stored per type, one file per connector:
         → ~/.funnel/connectors/<type>/<name>.(json|jsonl)
 ```
 
+## Claude Code skill
+
+This repo ships a Claude Code skill at `.claude/skills/funnel/SKILL.md`. It briefs Claude on the architecture and command groups, and tells it to defer flag-level details to `funnel <command> --help`.
+
+### Project-scoped (auto)
+
+If you run `claude` inside this repo, the skill is picked up automatically — no install step.
+
+### Global (use the skill in any project)
+
+Claude Code does not currently provide a CLI to install skills from a remote URL, so copy the file into your personal skills directory:
+
+```bash
+# from a clone of this repo
+mkdir -p ~/.claude/skills/funnel
+cp .claude/skills/funnel/SKILL.md ~/.claude/skills/funnel/
+```
+
+Or fetch it directly without cloning:
+
+```bash
+mkdir -p ~/.claude/skills/funnel
+curl -fsSL https://raw.githubusercontent.com/interactive-inc/open-claude-funnel/main/.claude/skills/funnel/SKILL.md \
+  -o ~/.claude/skills/funnel/SKILL.md
+```
+
+After this, Claude Code will load the skill in any session.
+
 ## Discord bot setup
 
 - Create a bot in the Discord Developer Portal and obtain its token
