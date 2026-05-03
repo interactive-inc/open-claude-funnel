@@ -160,6 +160,48 @@ Connectors are stored per type, one file per connector:
         → ~/.funnel/connectors/<type>/<name>.(json|jsonl)
 ```
 
+## Programmable API (Bun)
+
+`funnel` is also usable as a library — the same `Funnel` facade the CLI uses is exported from the package root, with no CLI side effects.
+
+```ts
+import {
+  Funnel,
+  FunnelSettingsStore,
+} from "@interactive-inc/claude-funnel"
+
+const funnel = new Funnel({ store: new FunnelSettingsStore() })
+
+funnel.connectors.add({
+  type: "slack",
+  name: "my-slack",
+  botToken: "xoxb-...",
+  appToken: "xapp-...",
+})
+
+funnel.channels.add({ name: "inbox", connectors: ["my-slack"] })
+
+for (const c of funnel.connectors.list()) console.log(c.type, c.name)
+```
+
+For tests / sandbox use, swap the persistence layer with the in-memory implementations:
+
+```ts
+import {
+  Funnel,
+  MemoryFunnelFileSystem,
+  MockFunnelSettingsReader,
+} from "@interactive-inc/claude-funnel"
+
+const funnel = new Funnel({
+  store: new MockFunnelSettingsReader(),
+  fs: new MemoryFunnelFileSystem(),
+  dir: "/fake",
+})
+```
+
+The package ships TypeScript sources directly, so a Bun runtime is required. Importing `@interactive-inc/claude-funnel/cli` resolves to the CLI entry point (with side effects) — only do this if you're embedding the CLI rather than the library.
+
 ## Claude Code skill
 
 This repo ships a Claude Code skill at `.claude/skills/funnel/SKILL.md`. It briefs Claude on the architecture and command groups, and tells it to defer flag-level details to `funnel <command> --help`.

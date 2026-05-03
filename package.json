@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "license": "MIT",
   "author": "Interactive Inc.",
@@ -23,7 +23,18 @@
     "bun"
   ],
   "type": "module",
-  "module": "lib/index.ts",
+  "main": "./lib/api.ts",
+  "module": "./lib/api.ts",
+  "types": "./lib/api.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/api.ts",
+      "bun": "./lib/api.ts",
+      "default": "./lib/api.ts"
+    },
+    "./cli": "./lib/index.ts",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "fnl": "./lib/index.ts",
     "funnel": "./lib/index.ts"
