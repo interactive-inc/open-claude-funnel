@@ -4,13 +4,13 @@
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "license": "MIT",
   "author": "Interactive Inc.",
-  "homepage": "https://github.com/interactive-inc/claude-funnel#readme",
+  "homepage": "https://github.com/interactive-inc/open-claude-funnel#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/interactive-inc/claude-funnel.git"
+    "url": "git+https://github.com/interactive-inc/open-claude-funnel.git"
   },
   "bugs": {
-    "url": "https://github.com/interactive-inc/claude-funnel/issues"
+    "url": "https://github.com/interactive-inc/open-claude-funnel/issues"
   },
   "keywords": [
     "claude",

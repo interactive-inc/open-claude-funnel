@@ -187,15 +187,15 @@ Connectors are stored per type, one file per connector:
 
 ## Links
 
-- [GitHub](https://github.com/interactive-inc/claude-funnel)
-- [Issues](https://github.com/interactive-inc/claude-funnel/issues)
-- Coding rules and design principles: [CLAUDE.md](https://github.com/interactive-inc/claude-funnel/blob/main/CLAUDE.md)
-- Design notes: [`.docs/`](https://github.com/interactive-inc/claude-funnel/tree/main/.docs)
+- [GitHub](https://github.com/interactive-inc/open-claude-funnel)
+- [Issues](https://github.com/interactive-inc/open-claude-funnel/issues)
+- Coding rules and design principles: [CLAUDE.md](https://github.com/interactive-inc/open-claude-funnel/blob/main/CLAUDE.md)
+- Design notes: [`.docs/`](https://github.com/interactive-inc/open-claude-funnel/tree/main/.docs)
 
 ## Development
 
 ```bash
-git clone https://github.com/interactive-inc/claude-funnel.git
+git clone https://github.com/interactive-inc/open-claude-funnel.git
 cd claude-funnel
 bun install
 bun link            # register funnel / fnl globally
