@@ -36,3 +36,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Per-user Claude Code / Codex state
 .claude/settings.local.json
 .codex/
+.claude/skills/opentui
+.agents/

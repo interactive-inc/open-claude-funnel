@@ -1,0 +1,40 @@
+import type { FunnelScheduleStore } from "@/connectors/schedule-store";
+import type { ScheduleEntry } from "@/connectors/schedule-connector-schema";
+
+type Deps = {
+  store: FunnelScheduleStore;
+};
+
+/**
+ * Cron entry CRUD for a schedule connector. The schedule connector itself
+ * is created via `connectors.add({ type: "schedule", ... })`; this class
+ * manages the JSONL entries inside it.
+ */
+export class FunnelSchedule {
+  private readonly store: FunnelScheduleStore;
+
+  constructor(deps: Deps) {
+    this.store = deps.store;
+    Object.freeze(this);
+  }
+
+  listEntries(connector: string): ScheduleEntry[] {
+    const config = this.store.get(connector);
+
+    if (!config) throw new Error(`connector "${connector}" not found`);
+
+    return config.entries;
+  }
+
+  addEntry(
+    connector: string,
+    entry: Pick<ScheduleEntry, "cron" | "prompt"> &
+      Partial<Pick<ScheduleEntry, "id" | "enabled" | "catchupPolicy">>,
+  ): ScheduleEntry {
+    return this.store.addEntry(connector, entry);
+  }
+
+  removeEntry(connector: string, id: string): void {
+    this.store.removeEntry(connector, id);
+  }
+}

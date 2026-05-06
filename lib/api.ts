@@ -1,54 +1,72 @@
-export { Funnel } from "@/funnel"
+// Public API surface for the @interactive-inc/claude-funnel package.
+// Organized by layer so consumers can find what they need at a glance.
 
-export { FunnelChannels } from "@/modules/channels/funnel-channels"
-export { FunnelClaude } from "@/modules/claude/funnel-claude"
-export { FunnelConnectors } from "@/modules/connectors/funnel-connectors"
+// Facade
+export { Funnel } from "@/funnel";
+
+// Engine — domain
+export { FunnelChannels } from "@/engine/channels/channels";
+export { FunnelClaude } from "@/engine/claude/claude";
+export { FunnelMcp } from "@/engine/mcp/mcp";
+export { FunnelProfiles } from "@/engine/profiles/profiles";
+export { FunnelRepositories } from "@/engine/repos/repositories";
+export { FunnelSettingsReader } from "@/engine/settings/settings-reader";
+export { FunnelSettingsStore } from "@/engine/settings/settings-store";
+export { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader";
+
+// Engine — boundaries (abstract + Node / Memory implementations)
+export { FunnelFileSystem } from "@/engine/fs/file-system";
+export { NodeFunnelFileSystem } from "@/engine/fs/node-file-system";
+export { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system";
+
+export { FunnelProcessRunner } from "@/engine/process/process-runner";
+export { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner";
+export { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner";
+
+export { FunnelLogger } from "@/engine/logger/logger";
+export { NodeFunnelLogger } from "@/engine/logger/node-logger";
+export { MemoryFunnelLogger, type LogEntry } from "@/engine/logger/memory-logger";
+export { NoopFunnelLogger } from "@/engine/logger/noop-logger";
+
+export { FunnelClock } from "@/engine/time/clock";
+export { NodeFunnelClock } from "@/engine/time/node-clock";
+export { MemoryFunnelClock } from "@/engine/time/memory-clock";
+
+export { FunnelIdGenerator } from "@/engine/id/id-generator";
+export { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator";
+export { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator";
+
+// Connectors
+export { FunnelConnectors } from "@/connectors/connectors";
+export { type ConnectorStoresBundle, createConnectorStores } from "@/connectors/connector-stores";
+export { FunnelSchedule } from "@/connectors/schedule";
+
+// Gateway
+export { FunnelGateway } from "@/gateway/gateway";
+export { FunnelGatewayServer } from "@/gateway/gateway-server";
 export {
-  type ConnectorStoresBundle,
-  createConnectorStores,
-} from "@/modules/connectors/funnel-connector-stores"
-export { FunnelGateway } from "@/modules/gateway/funnel-gateway"
-export { FunnelGatewayServer } from "@/modules/gateway/funnel-gateway-server"
-export { FunnelBroadcaster } from "@/modules/gateway/funnel-broadcaster"
-export { FunnelEventLogger } from "@/modules/gateway/funnel-event-logger"
-export { FunnelMcp } from "@/modules/mcp/funnel-mcp"
-export { FunnelProfiles } from "@/modules/profiles/funnel-profiles"
-export { FunnelRepositories } from "@/modules/repos/funnel-repositories"
-export { FunnelSchedule } from "@/modules/schedule/funnel-schedule"
+  FunnelBroadcaster,
+  type BroadcastEvent,
+  type BroadcastSubscriber,
+} from "@/gateway/broadcaster";
+export { FunnelEventLogger } from "@/gateway/event-logger";
+export { FunnelListenerSupervisor } from "@/gateway/listener-supervisor";
+export {
+  FunnelListenersClient,
+  type ListenerEntry,
+  type ListenerOpResult,
+  type ListListenersResult,
+} from "@/gateway/listeners-client";
 
-export { FunnelFileSystem } from "@/modules/fs/funnel-file-system"
-export { NodeFunnelFileSystem } from "@/modules/fs/node-funnel-file-system"
-export { MemoryFunnelFileSystem } from "@/modules/fs/memory-funnel-file-system"
-
-export { FunnelProcessRunner } from "@/modules/process/funnel-process-runner"
-export { NodeFunnelProcessRunner } from "@/modules/process/node-funnel-process-runner"
-export { MemoryFunnelProcessRunner } from "@/modules/process/memory-funnel-process-runner"
-
-export { FunnelLogger } from "@/modules/logger/funnel-logger"
-export { NodeFunnelLogger } from "@/modules/logger/node-funnel-logger"
-export { MemoryFunnelLogger, type LogEntry } from "@/modules/logger/memory-funnel-logger"
-export { NoopFunnelLogger } from "@/modules/logger/noop-funnel-logger"
-
-export { FunnelClock } from "@/modules/time/funnel-clock"
-export { NodeFunnelClock } from "@/modules/time/node-funnel-clock"
-export { MemoryFunnelClock } from "@/modules/time/memory-funnel-clock"
-
-export { FunnelIdGenerator } from "@/modules/id/funnel-id-generator"
-export { NodeFunnelIdGenerator } from "@/modules/id/node-funnel-id-generator"
-export { MemoryFunnelIdGenerator } from "@/modules/id/memory-funnel-id-generator"
-
-export { FunnelSettingsReader } from "@/modules/settings/funnel-settings-reader"
-export { FunnelSettingsStore } from "@/modules/settings/funnel-settings-store"
-export { MockFunnelSettingsReader } from "@/modules/settings/mock-funnel-settings-reader"
-
-export type { ConnectorConfig } from "@/modules/connectors/connector-config-schema"
+// Schemas / config types
+export type { ConnectorConfig } from "@/connectors/connector-config-schema";
+export type {
+  ScheduleConnectorConfig,
+  ScheduleEntry,
+} from "@/connectors/schedule-connector-schema";
 export type {
   ChannelConfig,
   ProfileConfig,
   RepositoryConfig,
   Settings,
-} from "@/modules/settings/settings-schema"
-export type {
-  ScheduleConnectorConfig,
-  ScheduleEntry,
-} from "@/modules/connectors/schedule-connector-schema"
+} from "@/engine/settings/settings-schema";

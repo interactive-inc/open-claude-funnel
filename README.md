@@ -1,5 +1,3 @@
-# @interactive-inc/claude-funnel
-
 [![npm](https://img.shields.io/npm/v/@interactive-inc/claude-funnel.svg)](https://www.npmjs.com/package/@interactive-inc/claude-funnel)
 [![license](https://img.shields.io/npm/l/@interactive-inc/claude-funnel.svg)](./LICENSE)
 
@@ -23,6 +21,7 @@ External sources
             │
             ▼  WebSocket
        Gateway daemon
+  (port 9742: WS /ws + listener supervisor)
             │
             ▼  MCP (stdio)
        Claude Code
@@ -123,9 +122,10 @@ fnl claude --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
 fnl mcp                                     run as an MCP server (invoked from .mcp.json)
 
 fnl gateway                                 running status
-fnl gateway start / stop / restart / run / logs
+fnl gateway start / stop / restart / run / logs / listeners
 fnl update                                  update funnel via bun i -g
 fnl status                                  overall status (connectors / channels / profiles / repos / gateway)
+fnl                                         (no args) launch the OpenTUI TUI
 
 fnl --version
 fnl --help        (every subcommand has --help)
@@ -165,43 +165,55 @@ Connectors are stored per type, one file per connector:
 `funnel` is also usable as a library — the same `Funnel` facade the CLI uses is exported from the package root, with no CLI side effects.
 
 ```ts
-import {
-  Funnel,
-  FunnelSettingsStore,
-} from "@interactive-inc/claude-funnel"
+import { Funnel } from "@interactive-inc/claude-funnel";
 
-const funnel = new Funnel({ store: new FunnelSettingsStore() })
+const funnel = new Funnel(); // defaults to ~/.funnel + the local filesystem
 
 funnel.connectors.add({
   type: "slack",
   name: "my-slack",
   botToken: "xoxb-...",
   appToken: "xapp-...",
-})
+});
 
-funnel.channels.add({ name: "inbox", connectors: ["my-slack"] })
+funnel.channels.add({ name: "inbox", connectors: ["my-slack"] });
 
-for (const c of funnel.connectors.list()) console.log(c.type, c.name)
+for (const c of funnel.connectors.list()) console.log(c.type, c.name);
 ```
 
-All Funnel facets — `connectors` / `channels` / `profiles` / `repositories` / `schedule` / `gateway` / `mcp` / `claude` — are reachable from the same instance:
+All Funnel facets — `connectors` / `channels` / `profiles` / `repositories` / `schedule` / `gateway` / `listeners` / `mcp` / `claude` — are reachable from the same instance:
 
 ```ts
-funnel.gateway.getStatus()                  // { running, pid, port }
-await funnel.gateway.start()                // spawns the daemon as a separate process
-await funnel.claude.launch({ channel: "inbox" })
-funnel.mcp.install("/path/to/repo")         // writes .mcp.json
+funnel.gateway.getStatus(); // { running, pid, port }
+await funnel.gateway.start(); // spawns the daemon as a separate process
+
+// Talk to the running daemon over HTTP — no-ops gracefully when offline
+await funnel.listeners.list(); // { state: "ok", listeners: [...] } | { state: "offline" }
+await funnel.listeners.start("my-slack"); // hot-start a single listener
+await funnel.listeners.restart("my-slack");
+
+await funnel.claude.launch({ channel: "inbox" });
+funnel.mcp.install("/path/to/repo"); // writes .mcp.json
 ```
 
 Or run the gateway in-process (no daemon spawn — useful for tests, embedding, or custom hosts):
 
 ```ts
-const server = funnel.gatewayServer({ port: 9742 })
-await server.start()             // starts Bun.serve, boots all connector listeners
-server.getStatus()                // { clients, channels: [...] }
-server.getBroadcaster().broadcast("hello", { connector: "my-slack" })
-server.stop()
+const server = funnel.gatewayServer({ port: 9742 });
+await server.start(); // starts Bun.serve (HTTP + WS), boots all connector listeners
+server.getStatus(); // { clients, channels: [...] }
+server.getBroadcaster().broadcast("hello", { connector: "my-slack" });
+
+// Subscribe to every event without going through the WebSocket
+const unsubscribe = server.getBroadcaster().subscribe(({ content, meta }) => {
+  console.log(meta?.connector, content);
+});
+
+await server.stop();
+unsubscribe();
 ```
+
+The gateway daemon exposes `/health`, `/status`, `/listeners`, and `/listeners/:name/{start,stop,restart}` over HTTP plus the `/ws?channel=<name>` WebSocket for MCP clients. There is no SPA; for a visual operator view, run `fnl` with no arguments to launch the OpenTUI TUI.
 
 Every side-effecting boundary is a DI seam. For tests / sandbox use, swap them all with the in-memory implementations and Funnel will not touch real disk, real processes, real time, or real UUIDs:
 
@@ -214,7 +226,7 @@ import {
   MemoryFunnelLogger,
   MemoryFunnelProcessRunner,
   MockFunnelSettingsReader,
-} from "@interactive-inc/claude-funnel"
+} from "@interactive-inc/claude-funnel";
 
 const funnel = new Funnel({
   store: new MockFunnelSettingsReader(),
@@ -225,7 +237,7 @@ const funnel = new Funnel({
   idGenerator: new MemoryFunnelIdGenerator({ prefix: "test" }),
   dir: "/sandbox/.funnel",
   tmpDir: "/sandbox/tmp",
-})
+});
 ```
 
 Available abstractions (each has `Funnel*` interface, `Node*` default, and `Memory*` for tests): `FunnelFileSystem`, `FunnelProcessRunner`, `FunnelLogger`, `FunnelClock`, `FunnelIdGenerator`. Plus `NoopFunnelLogger` for silent operation.
@@ -268,11 +280,11 @@ After this, Claude Code will load the skill in any session.
 
 ## Environment variables
 
-| Variable             | Purpose                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `FUNNEL_CHANNEL_ID`  | Injected into the child process by `fnl claude`; funnel MCP uses it to subscribe.       |
-| `FUNNEL_PORT`        | Gateway port (default 9742).                                                            |
-| `FUNNEL_GATEWAY_URL` | Gateway WebSocket URL used by MCP (default `ws://localhost:9742/ws`).                   |
+| Variable             | Purpose                                                                           |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `FUNNEL_CHANNEL_ID`  | Injected into the child process by `fnl claude`; funnel MCP uses it to subscribe. |
+| `FUNNEL_PORT`        | Gateway port (default 9742).                                                      |
+| `FUNNEL_GATEWAY_URL` | Gateway WebSocket URL used by MCP (default `ws://localhost:9742/ws`).             |
 
 ## File layout
 
