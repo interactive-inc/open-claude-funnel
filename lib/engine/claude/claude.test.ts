@@ -1,0 +1,87 @@
+import { describe, expect, test } from "bun:test"
+import { FunnelConnectorFactory } from "@/connectors/connector-factory"
+import { FunnelChannels } from "@/engine/channels/channels"
+import { FunnelClaude } from "@/engine/claude/claude"
+import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
+import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
+import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
+import { FunnelMcp } from "@/engine/mcp/mcp"
+import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
+import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
+import { MemoryFunnelClock } from "@/engine/time/memory-clock"
+
+const profileChecker = { hasChannelRef: () => false }
+
+const buildClaude = () => {
+  const fs = new MemoryFunnelFileSystem()
+  const process = new MemoryFunnelProcessRunner().on(() => ({ exitCode: 0 }))
+  const store = new MockFunnelSettingsReader()
+  const factory = new FunnelConnectorFactory({
+    fs,
+    process,
+    logger: new NoopFunnelLogger(),
+    dir: "/funnel",
+  })
+  const channels = new FunnelChannels({
+    store,
+    factory,
+    profileChecker,
+    clock: new MemoryFunnelClock(),
+    idGenerator: new MemoryFunnelIdGenerator({ prefix: "ch" }),
+  })
+  const channel = channels.add({ name: "ops" })
+  const mcp = new FunnelMcp({ fs })
+  const gateway = {
+    isRunning: () => true,
+    start: async () => true,
+  }
+  const claude = new FunnelClaude({
+    channels,
+    mcp,
+    gateway,
+    fs,
+    process,
+    logger: new NoopFunnelLogger(),
+    dir: "/funnel",
+  })
+
+  return { claude, channels, channel, fs, process }
+}
+
+describe("FunnelClaude", () => {
+  test("launch injects FUNNEL_CHANNEL_ID with the channel id, not the name", async () => {
+    const { claude, channel, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work" })
+
+    const attachCall = process.calls.find((c) => c.kind === "attach")
+
+    if (attachCall?.kind !== "attach") {
+      throw new Error("expected attach call")
+    }
+
+    expect(attachCall.options.env?.FUNNEL_CHANNEL_ID).toBe(channel.id)
+  })
+
+  test("launch throws when the channel does not exist", async () => {
+    const { claude } = buildClaude()
+
+    await expect(claude.launch({ channel: "nope" })).rejects.toThrow(/not found/)
+  })
+
+  test("launch refuses to start a profile that already has a live PID file", async () => {
+    const { claude, fs, process } = buildClaude()
+
+    process.on(() => ({ exitCode: 0 }))
+    process.onSync(() => ({ exitCode: 0, stdout: "S\n", stderr: "" }))
+
+    fs.mkdirSync("/funnel/claude", { recursive: true })
+    fs.writeFileSync("/funnel/claude/dev.pid", String(globalThis.process.pid))
+
+    await expect(
+      claude.launch({ channel: "ops", profileName: "dev" }),
+    ).rejects.toThrow(/already running/)
+  })
+})

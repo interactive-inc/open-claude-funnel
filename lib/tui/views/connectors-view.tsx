@@ -1,11 +1,13 @@
-/** @jsxImportSource @opentui/react */
+import { AddRow } from "@/tui/components/add-row"
 import { Card } from "@/tui/components/card"
 import { EmptyState } from "@/tui/components/empty-state"
 import { PanelHeader } from "@/tui/components/panel-header"
 import { ReadonlyField } from "@/tui/components/readonly-field"
+import { HasciiButton } from "@/tui/components/ui/hascii/button"
 import { ViewShell } from "@/tui/components/view-shell"
 import { funnel } from "@/tui/theme"
 import type { Snapshot } from "@/tui/types"
+import { uniqueName } from "@/tui/unique-name"
 import type { Funnel } from "@/funnel"
 
 type Props = {
@@ -15,6 +17,9 @@ type Props = {
   focusedKey: string | null
   setFocusedKey: (key: string | null) => void
 }
+
+type Connector = Snapshot["connectors"][number]
+type ConnectorType = Connector["type"]
 
 const formatTimestamp = (iso: string | undefined): string => {
   if (!iso) return "—"
@@ -33,19 +38,81 @@ const formatTimestamp = (iso: string | undefined): string => {
 }
 
 /**
- * Read-only inspector for every channel-scoped connector. Mutations now go
- * through `fnl channels <ch> connectors ...` because the same connector name
- * can exist in different channels — making in-place TUI editing ambiguous.
+ * Channel-scoped connector inspector. Reads `funnel.channels.listAllConnectors()`
+ * (already flattened with channelName / channelId tags) and lets the user delete
+ * each connector or quickly add a new one to the first available channel via the
+ * AddRow buttons. Editing values is intentionally read-only — token / pollInterval
+ * mutation belongs to `fnl channels <ch> connectors set <conn> ...` because the
+ * same connector name can exist in multiple channels and inline edits would have
+ * to disambiguate.
  */
 export function ConnectorsView(props: Props) {
   const connectors = props.snapshot.connectors
+  const channels = props.snapshot.channels
+  const targetChannel = channels[0] ?? null
+
+  const logError = (error: unknown): void => {
+    props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+  }
+
+  const removeConnector = (connector: Connector): void => {
+    props.funnel.listeners.stop(connector.channelName, connector.name).catch(logError)
+
+    try {
+      props.funnel.channels.removeConnector(connector.channelName, connector.name)
+    } catch (error) {
+      logError(error)
+    }
+
+    props.refresh()
+  }
+
+  const addConnector = (type: ConnectorType): void => {
+    if (!targetChannel) {
+      logError(new Error("add a channel first before creating a connector"))
+
+      return
+    }
+
+    const existingNames = connectors
+      .filter((c) => c.channelId === targetChannel.id)
+      .map((c) => c.name)
+    const name = uniqueName(existingNames, type)
+
+    try {
+      if (type === "slack") {
+        props.funnel.channels.addConnector(targetChannel.name, {
+          type: "slack",
+          name,
+          botToken: "xoxb-PLACEHOLDER",
+          appToken: "xapp-PLACEHOLDER",
+        })
+      } else if (type === "gh") {
+        props.funnel.channels.addConnector(targetChannel.name, { type: "gh", name })
+      } else if (type === "discord") {
+        props.funnel.channels.addConnector(targetChannel.name, {
+          type: "discord",
+          name,
+          botToken: "PLACEHOLDER-PLACEHOLDER",
+        })
+      } else {
+        props.funnel.channels.addConnector(targetChannel.name, { type: "schedule", name })
+      }
+
+      props.funnel.listeners.start(targetChannel.name, name).catch(logError)
+    } catch (error) {
+      logError(error)
+    }
+
+    props.refresh()
+  }
 
   return (
     <ViewShell>
       <PanelHeader label="connectors" count={connectors.length} />
 
       {connectors.length === 0 ? (
-        <EmptyState message="(none — add via `fnl channels <channel> connectors add ...`)" />
+        <EmptyState message="(none — add via the buttons below or `fnl channels <ch> connectors add ...`)" />
       ) : (
         connectors.map((connector) => (
           <Card key={`${connector.channelId}::${connector.id}`} title={connector.name}>
@@ -68,10 +135,30 @@ export function ConnectorsView(props: Props) {
               <ReadonlyField label="entries" value={String(connector.entries.length)} />
             ) : null}
             <text fg={funnel.faint}>{`created  ${formatTimestamp(connector.createdAt)}`}</text>
-            <text fg={funnel.faint}>{`updated  ${formatTimestamp(connector.updatedAt)}`}</text>
+            <box style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <text fg={funnel.faint}>{`updated  ${formatTimestamp(connector.updatedAt)}`}</text>
+              <HasciiButton
+                variant="destructive"
+                size="sm"
+                onPress={() => removeConnector(connector)}
+              >
+                delete
+              </HasciiButton>
+            </box>
           </Card>
         ))
       )}
+
+      {targetChannel ? (
+        <text fg={funnel.faint}>{`add target channel: ${targetChannel.name}`}</text>
+      ) : (
+        <text fg={funnel.warn}>add a channel first to enable the buttons below</text>
+      )}
+
+      <AddRow label="add slack" onClick={() => addConnector("slack")} />
+      <AddRow label="add gh" onClick={() => addConnector("gh")} />
+      <AddRow label="add discord" onClick={() => addConnector("discord")} />
+      <AddRow label="add schedule" onClick={() => addConnector("schedule")} />
     </ViewShell>
   )
 }

@@ -1,4 +1,3 @@
-/** @jsxImportSource @opentui/react */
 import { HasciiFormItem } from "@/tui/components/ui/hascii/form-item"
 import { HasciiInput } from "@/tui/components/ui/hascii/input"
 
@@ -12,22 +11,21 @@ type Props = {
 }
 
 /**
- * Inline label + input row built on hascii primitives.
- *
- * Re-keying the input by `focused` forces it to re-mount on blur, so
- * Esc / click-away discards uncommitted typing and the displayed value
- * snaps back to `initialValue`. Click anywhere on the row to focus.
+ * Inline label + input row built on hascii primitives. The hascii Input fires
+ * `onChange` on every keystroke; we forward that to `onCommit` so callers
+ * persist live (re-keying by `focused` still forces a remount on blur so the
+ * input snaps back when the user clicks away without typing).
  */
 export function EditableField(props: Props) {
   return (
     <box style={{ flexDirection: "row" }} onMouseDown={props.onFocus}>
-      <HasciiFormItem label={props.label} direction="row" labelWidth={12}>
+      <HasciiFormItem label={props.label} labelWidth={12}>
         <HasciiInput
           key={props.focused ? "focused" : "blurred"}
           value={props.initialValue}
           placeholder={props.placeholder}
-          isFocused={props.focused}
-          onSubmit={props.onCommit}
+          defaultFocused={props.focused}
+          onChange={props.onCommit}
         />
       </HasciiFormItem>
     </box>

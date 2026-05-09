@@ -37,7 +37,13 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
     }
 
     const content = this.fs.readFileSync(this.path)
-    const parsed = JSON.parse(content)
+    const parsed: unknown = JSON.parse(content)
+
+    if (this.looksLikeLegacy(parsed)) {
+      throw new Error(
+        `legacy settings.json detected at ${this.path}. The schema changed (channel.connectors are now nested objects with ids; profile fields renamed). Migration is intentionally not provided. Back up and remove the old file:\n  mv ${this.path} ${this.path}.bak`,
+      )
+    }
 
     if (
       parsed &&
@@ -59,6 +65,41 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
     }
 
     return result.data
+  }
+
+  private looksLikeLegacy(parsed: unknown): boolean {
+    if (!parsed || typeof parsed !== "object") return false
+
+    const obj = parsed as Record<string, unknown>
+
+    if (Array.isArray(obj.channels)) {
+      for (const channel of obj.channels) {
+        if (!channel || typeof channel !== "object") continue
+        const ch = channel as Record<string, unknown>
+
+        if (Array.isArray(ch.connectors) && ch.connectors.some((x) => typeof x === "string")) {
+          return true
+        }
+
+        if (!("id" in ch) && "name" in ch) return true
+      }
+    }
+
+    if (Array.isArray(obj.connectors)) return true
+    if (Array.isArray(obj.repositories)) return true
+
+    if (Array.isArray(obj.profiles)) {
+      for (const profile of obj.profiles) {
+        if (!profile || typeof profile !== "object") continue
+        const p = profile as Record<string, unknown>
+
+        if ("repository" in p || "envFiles" in p || ("channel" in p && !("channelId" in p))) {
+          return true
+        }
+      }
+    }
+
+    return false
   }
 
   write(settings: Settings): void {

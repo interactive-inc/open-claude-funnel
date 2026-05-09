@@ -1,4 +1,4 @@
-import { hasciiTw } from "@/tui/utils/hascii/tw-token"
+import { hasciiTw } from "@/tui/utils/hascii/theme"
 
 /**
  * Funnel-specific TUI tokens that hascii does not cover.

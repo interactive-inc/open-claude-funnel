@@ -7,9 +7,12 @@ const DEFAULT_FILE_LIMIT = 7
 const DEFAULT_MAX_EVENTS = 1000
 
 type Deps = {
+  /** System-wide daily-rotated log directory (gateway lifecycle). */
   logDir: string
+  /** Funnel home dir; per-connector logs live under <funnelDir>/channels/<id>/connectors/<id>/logs.jsonl. */
+  funnelDir?: string
   fs?: FunnelFileSystem
-  /** Cap on how many days of jsonl files we scan during replay. Default 7. */
+  /** Cap on how many days of system jsonl files we scan during replay. Default 7. */
   fileLimit?: number
   /** Cap on how many events we return from a single replay request. Default 1000. */
   maxEvents?: number
@@ -34,12 +37,14 @@ const defaultFs = new NodeFunnelFileSystem()
  */
 export class JsonlReplaySource {
   private readonly logDir: string
+  private readonly funnelDir: string | null
   private readonly fs: FunnelFileSystem
   private readonly fileLimit: number
   private readonly maxEvents: number
 
   constructor(deps: Deps) {
     this.logDir = deps.logDir
+    this.funnelDir = deps.funnelDir ?? null
     this.fs = deps.fs ?? defaultFs
     this.fileLimit = Math.max(1, deps.fileLimit ?? DEFAULT_FILE_LIMIT)
     this.maxEvents = Math.max(1, deps.maxEvents ?? DEFAULT_MAX_EVENTS)
@@ -88,15 +93,45 @@ export class JsonlReplaySource {
   }
 
   private recentFiles(): string[] {
-    if (!this.fs.existsSync(this.logDir)) return []
+    const files: string[] = []
 
-    const names = this.fs
-      .readdirSync(this.logDir)
-      .filter((n) => n.endsWith(".jsonl"))
-      .sort()
-    const tail = names.slice(-this.fileLimit)
+    if (this.fs.existsSync(this.logDir)) {
+      const names = this.fs
+        .readdirSync(this.logDir)
+        .filter((n) => n.endsWith(".jsonl"))
+        .sort()
+      const tail = names.slice(-this.fileLimit)
 
-    return tail.map((n) => join(this.logDir, n))
+      for (const name of tail) files.push(join(this.logDir, name))
+    }
+
+    files.push(...this.connectorLogFiles())
+
+    return files
+  }
+
+  private connectorLogFiles(): string[] {
+    if (!this.funnelDir) return []
+
+    const channelsDir = join(this.funnelDir, "channels")
+
+    if (!this.fs.existsSync(channelsDir)) return []
+
+    const out: string[] = []
+
+    for (const channelId of this.fs.readdirSync(channelsDir)) {
+      const connectorsDir = join(channelsDir, channelId, "connectors")
+
+      if (!this.fs.existsSync(connectorsDir)) continue
+
+      for (const connectorId of this.fs.readdirSync(connectorsDir)) {
+        const path = join(connectorsDir, connectorId, "logs.jsonl")
+
+        if (this.fs.existsSync(path)) out.push(path)
+      }
+    }
+
+    return out
   }
 
   private *iterEntries(path: string): IterableIterator<LoggedEntry> {

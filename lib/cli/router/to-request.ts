@@ -8,13 +8,12 @@ const STRIPPED_METHOD_KEYWORDS: Record<string, string> = {
   add: "POST",
   remove: "DELETE",
   set: "PUT",
-  attach: "PUT",
-  detach: "DELETE",
 }
 
 const KEPT_METHOD_KEYWORDS: Record<string, string> = {
   rename: "PUT",
   "as-default": "PUT",
+  request: "POST",
 }
 
 const API_CALL_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"])

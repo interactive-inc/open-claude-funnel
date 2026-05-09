@@ -15,7 +15,11 @@ const byteLengthOf = (event: { content: string; meta?: Record<string, string> })
 }
 
 type ClientData = {
+  /** Stable channel id (uuid) that the WS client subscribed to. */
   channel: string
+  /** Human-facing channel name resolved at upgrade time, kept for log readability. */
+  channelName?: string | null
+  /** Connector names belonging to that channel; used by tap-all replay filtering. */
   connectors: string[]
   tapAll?: boolean
   /** Routing mode resolved from channel config at upgrade time. Defaults to fanout. */
@@ -160,6 +164,10 @@ export class FunnelBroadcaster {
 
   private matchesClient(event: BroadcastEvent, data: ClientData): boolean {
     if (data.tapAll) return true
+
+    const channelId = event.meta?.channelId
+
+    if (channelId && channelId !== data.channel) return false
 
     const connector = event.meta?.connector
 

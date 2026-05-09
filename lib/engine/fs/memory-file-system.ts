@@ -57,7 +57,8 @@ export class MemoryFunnelFileSystem extends FunnelFileSystem {
     this.modes.delete(path)
   }
 
-  mkdirSync(path: string): void {
+  mkdirSync(path: string, options?: { recursive?: boolean }): void {
+    void options
     this.dirs.add(path)
   }
 

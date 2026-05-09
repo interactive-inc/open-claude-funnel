@@ -177,6 +177,7 @@ export class Funnel {
       settings: this.store,
       port: options.port,
       logDir: options.logDir,
+      funnelDir: this.props.dir ?? FUNNEL_DIR,
       fs: this.props.fs,
       process: this.props.process,
       clock: this.props.clock,

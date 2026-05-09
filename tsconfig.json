@@ -5,7 +5,7 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
-    "jsxImportSource": "react",
+    "jsxImportSource": "@opentui/react",
     "allowJs": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

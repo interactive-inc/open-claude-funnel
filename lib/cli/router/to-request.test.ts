@@ -30,17 +30,24 @@ describe("toRequest", () => {
     expect(new URL(req.url).searchParams.get("bot-token")).toBe("xoxb-z")
   })
 
-  test("attach is PUT and drops the keyword from path", () => {
-    expect(toRequest(["channels", "x", "connectors", "attach", "s"])).toMatchObject({
-      method: "PUT",
+  test("nested connector add is POST and drops the keyword from path", () => {
+    expect(toRequest(["channels", "x", "connectors", "add", "s"])).toMatchObject({
+      method: "POST",
       path: "/channels/x/connectors/s",
     })
   })
 
-  test("detach is DELETE and drops the keyword from path", () => {
-    expect(toRequest(["channels", "x", "connectors", "detach", "s"])).toMatchObject({
+  test("nested connector remove is DELETE and drops the keyword from path", () => {
+    expect(toRequest(["channels", "x", "connectors", "remove", "s"])).toMatchObject({
       method: "DELETE",
       path: "/channels/x/connectors/s",
+    })
+  })
+
+  test("request is POST and keeps the keyword in path", () => {
+    expect(toRequest(["channels", "x", "connectors", "s", "request"])).toMatchObject({
+      method: "POST",
+      path: "/channels/x/connectors/s/request",
     })
   })
 

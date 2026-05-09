@@ -24,6 +24,8 @@ type Deps = {
   settings: FunnelSettingsReader
   port?: number
   logDir?: string
+  /** Funnel home dir for per-channel/per-connector log storage. Defaults to ~/.funnel. */
+  funnelDir?: string
   fs?: FunnelFileSystem
   process?: FunnelProcessRunner
   clock?: FunnelClock
@@ -35,7 +37,11 @@ type Deps = {
 }
 
 type WsData = {
+  /** Stable channel id (uuid) the client subscribed to. "" for tap-all clients. */
   channel: string
+  /** Resolved channel name (for log readability). null for tap-all or unknown. */
+  channelName: string | null
+  /** Connector names belonging to that channel; used by tap-all replay filtering. */
   connectors: string[]
   tapAll?: boolean
   /** Routing mode for this channel; resolved at upgrade time from settings. */
@@ -57,6 +63,7 @@ export class FunnelGatewayServer {
   private readonly settings: FunnelSettingsReader
   private readonly port: number
   private readonly logDir: string
+  private readonly funnelDir: string | null
   private readonly fs?: FunnelFileSystem
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger
@@ -75,6 +82,7 @@ export class FunnelGatewayServer {
     this.settings = deps.settings
     this.port = deps.port ?? DEFAULT_PORT
     this.logDir = deps.logDir ?? DEFAULT_LOG_DIR
+    this.funnelDir = deps.funnelDir ?? null
     this.fs = deps.fs
     this.process = deps.process
     this.logger = deps.logger ?? defaultLogger
@@ -83,7 +91,11 @@ export class FunnelGatewayServer {
     this.token = deps.token ?? ""
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
-    const persistentReplay = new JsonlReplaySource({ logDir: this.logDir, fs: this.fs })
+    const persistentReplay = new JsonlReplaySource({
+      logDir: this.logDir,
+      ...(this.funnelDir ? { funnelDir: this.funnelDir } : {}),
+      fs: this.fs,
+    })
     this.broadcaster = new FunnelBroadcaster({
       logger: this.logger,
       now: this.nowMs,
@@ -92,6 +104,7 @@ export class FunnelGatewayServer {
     this.broadcaster.seedLatestOffset(persistentReplay.findMaxOffset())
     this.eventLogger = new FunnelEventLogger({
       logDir: this.logDir,
+      ...(this.funnelDir ? { funnelDir: this.funnelDir } : {}),
       fs: this.fs,
       now: this.nowMs,
     })
@@ -166,15 +179,24 @@ export class FunnelGatewayServer {
       }
 
       const tapAll = url.searchParams.get("tap") === "all"
-      const channelName = tapAll ? "*tap*" : (url.searchParams.get("channel") ?? "")
-      const channel = !tapAll && channelName ? this.resolveChannel(channelName) : null
+      const requestedChannel = tapAll ? "" : (url.searchParams.get("channel") ?? "")
+      const channel = !tapAll && requestedChannel ? this.resolveChannel(requestedChannel) : null
+      const channelId = tapAll ? "" : (channel?.id ?? requestedChannel)
+      const channelName = tapAll ? null : (channel?.name ?? null)
       const connectors = channel?.connectors ?? []
       const delivery = channel?.delivery ?? "fanout"
       const sinceRaw = url.searchParams.get("since")
       const sinceParsed = sinceRaw === null ? Number.NaN : Number.parseInt(sinceRaw, 10)
       const since = Number.isFinite(sinceParsed) && sinceParsed >= 0 ? sinceParsed : undefined
       const upgraded = server.upgrade(request, {
-        data: { channel: channelName, connectors, tapAll, delivery, since },
+        data: {
+          channel: channelId,
+          channelName,
+          connectors,
+          tapAll,
+          delivery,
+          since,
+        },
       })
 
       if (upgraded) return undefined
@@ -193,22 +215,45 @@ export class FunnelGatewayServer {
     }
 
     this.broadcaster.addClient(ws, ws.data)
-    this.eventLogger.log("channel connected", {
-      event_type: "system",
-      action: "channel_connect",
-      channel: ws.data.channel,
-      connectors: ws.data.connectors.join(","),
-      total: String(this.broadcaster.getClientCount()),
-    })
+
+    if (ws.data.channelName) {
+      const meta: Record<string, string> = {
+        event_type: "system",
+        action: "channel_connect",
+        channel: ws.data.channelName,
+        channelId: ws.data.channel,
+        connectors: ws.data.connectors.join(","),
+        total: String(this.broadcaster.getClientCount()),
+      }
+
+      this.eventLogger.logChannel(ws.data.channel, "channel connected", meta)
+    } else {
+      this.eventLogger.log("tap-all client connected", {
+        event_type: "system",
+        action: "tap_connect",
+        total: String(this.broadcaster.getClientCount()),
+      })
+    }
   }
 
   private handleWsClose(ws: ServerWebSocket<WsData>): void {
     this.broadcaster.removeClient(ws)
-    this.eventLogger.log("channel disconnected", {
-      event_type: "system",
-      action: "channel_disconnect",
-      total: String(this.broadcaster.getClientCount()),
-    })
+
+    if (ws.data.channelName) {
+      this.eventLogger.logChannel(ws.data.channel, "channel disconnected", {
+        event_type: "system",
+        action: "channel_disconnect",
+        channel: ws.data.channelName,
+        channelId: ws.data.channel,
+        total: String(this.broadcaster.getClientCount()),
+      })
+    } else {
+      this.eventLogger.log("tap-all client disconnected", {
+        event_type: "system",
+        action: "tap_disconnect",
+        total: String(this.broadcaster.getClientCount()),
+      })
+    }
   }
 
   private logServerStarted(): void {
@@ -278,14 +323,19 @@ export class FunnelGatewayServer {
   }
 
   private resolveChannel(
-    channelName: string,
-  ): { connectors: string[]; delivery: "fanout" | "exclusive" } | null {
+    requested: string,
+  ): { id: string; name: string; connectors: string[]; delivery: "fanout" | "exclusive" } | null {
     const settings = this.settings.read()
-    const channel = settings?.channels.find((c) => c.name === channelName)
+    const channel = settings?.channels.find((c) => c.id === requested || c.name === requested)
 
     if (!channel) return null
 
-    return { connectors: channel.connectors.map((c) => c.name), delivery: channel.delivery }
+    return {
+      id: channel.id,
+      name: channel.name,
+      connectors: channel.connectors.map((c) => c.name),
+      delivery: channel.delivery,
+    }
   }
 
   private async bootListeners(): Promise<void> {
@@ -328,13 +378,36 @@ export class FunnelGatewayServer {
     content: string,
     meta?: Record<string, string>,
   ): Promise<void> {
+    const channelId = this.lookupChannelId(channelName)
+    const connectorId = channelId ? this.lookupConnectorId(channelId, connectorName) : null
     const enriched: Record<string, string> = {
       ...meta,
       channel: channelName,
       connector: connectorName,
     }
+
+    if (channelId) enriched.channelId = channelId
+    if (connectorId) enriched.connectorId = connectorId
+
     const event = this.broadcaster.broadcast(content, enriched)
 
-    this.eventLogger.log(content, enriched, event.offset)
+    if (channelId && connectorId) {
+      this.eventLogger.logConnector(channelId, connectorId, content, enriched, event.offset)
+    } else {
+      this.eventLogger.log(content, enriched, event.offset)
+    }
+  }
+
+  private lookupChannelId(channelName: string): string | null {
+    const channel = this.settings.read().channels.find((c) => c.name === channelName)
+
+    return channel?.id ?? null
+  }
+
+  private lookupConnectorId(channelId: string, connectorName: string): string | null {
+    const channel = this.settings.read().channels.find((c) => c.id === channelId)
+    const connector = channel?.connectors.find((c) => c.name === connectorName)
+
+    return connector?.id ?? null
   }
 }
