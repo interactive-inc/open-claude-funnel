@@ -1,22 +1,22 @@
-import { useEffect, useState } from "react";
-import { z } from "zod";
-import type { StreamEvent, StreamStatus } from "@/tui/types";
+import { useEffect, useState } from "react"
+import { z } from "zod"
+import type { StreamEvent, StreamStatus } from "@/tui/types"
 
-const MAX_BUFFER = 200;
-const RECONNECT_BASE_MS = 500;
-const RECONNECT_MAX_MS = 8000;
+const MAX_BUFFER = 200
+const RECONNECT_BASE_MS = 500
+const RECONNECT_MAX_MS = 8000
 
 const eventPayloadSchema = z.object({
   content: z.string(),
   meta: z.record(z.string(), z.string()).optional(),
   offset: z.number().int().nonnegative().optional(),
-});
+})
 
 type Result = {
-  events: StreamEvent[];
-  status: StreamStatus;
-  reset: () => void;
-};
+  events: StreamEvent[]
+  status: StreamStatus
+  reset: () => void
+}
 
 /**
  * Opens a `tap=all` WebSocket against the gateway daemon and accumulates
@@ -30,54 +30,54 @@ export const useEventStream = (
   daemonReachable: boolean,
   token: string | null,
 ): Result => {
-  const [events, setEvents] = useState<StreamEvent[]>([]);
-  const [status, setStatus] = useState<StreamStatus>("disabled");
-  const [resetTick, setResetTick] = useState(0);
+  const [events, setEvents] = useState<StreamEvent[]>([])
+  const [status, setStatus] = useState<StreamStatus>("disabled")
+  const [resetTick, setResetTick] = useState(0)
 
   useEffect(() => {
     if (!daemonReachable) {
-      setStatus("disabled");
-      return;
+      setStatus("disabled")
+      return
     }
 
-    let cancelled = false;
-    let socket: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    let nextId = events.length > 0 ? Math.max(...events.map((e) => e.id)) + 1 : 1;
-    let lastOffset = 0;
+    let cancelled = false
+    let socket: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let attempt = 0
+    let nextId = events.length > 0 ? Math.max(...events.map((e) => e.id)) + 1 : 1
+    let lastOffset = 0
 
     const connect = () => {
-      if (cancelled) return;
+      if (cancelled) return
 
-      setStatus("connecting");
-      const sinceQuery = lastOffset > 0 ? `&since=${lastOffset}` : "";
-      const protocols = token ? [`funnel.token.${token}`] : undefined;
-      socket = new WebSocket(`ws://localhost:${port}/ws?tap=all${sinceQuery}`, protocols);
+      setStatus("connecting")
+      const sinceQuery = lastOffset > 0 ? `&since=${lastOffset}` : ""
+      const protocols = token ? [`funnel.token.${token}`] : undefined
+      socket = new WebSocket(`ws://localhost:${port}/ws?tap=all${sinceQuery}`, protocols)
 
       socket.addEventListener("open", () => {
-        if (cancelled) return;
+        if (cancelled) return
 
-        attempt = 0;
-        setStatus("open");
-      });
+        attempt = 0
+        setStatus("open")
+      })
 
       socket.addEventListener("message", (event) => {
-        if (cancelled) return;
+        if (cancelled) return
 
         const raw: unknown = (() => {
           try {
-            return JSON.parse(String(event.data));
+            return JSON.parse(String(event.data))
           } catch {
-            return null;
+            return null
           }
-        })();
-        const parsed = eventPayloadSchema.safeParse(raw);
+        })()
+        const parsed = eventPayloadSchema.safeParse(raw)
 
-        if (!parsed.success) return;
+        if (!parsed.success) return
 
         if (typeof parsed.data.offset === "number") {
-          lastOffset = parsed.data.offset;
+          lastOffset = parsed.data.offset
         }
 
         const next: StreamEvent = {
@@ -85,49 +85,49 @@ export const useEventStream = (
           receivedAt: Date.now(),
           content: parsed.data.content,
           meta: parsed.data.meta ?? {},
-        };
-        nextId += 1;
+        }
+        nextId += 1
 
         setEvents((prev) => {
-          const merged = [next, ...prev];
-          return merged.length > MAX_BUFFER ? merged.slice(0, MAX_BUFFER) : merged;
-        });
-      });
+          const merged = [next, ...prev]
+          return merged.length > MAX_BUFFER ? merged.slice(0, MAX_BUFFER) : merged
+        })
+      })
 
       socket.addEventListener("close", () => {
-        if (cancelled) return;
+        if (cancelled) return
 
-        setStatus("closed");
-        attempt += 1;
+        setStatus("closed")
+        attempt += 1
 
-        const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
+        const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS)
 
-        reconnectTimer = setTimeout(connect, delay);
-      });
+        reconnectTimer = setTimeout(connect, delay)
+      })
 
       socket.addEventListener("error", () => {
         // close fires after error; reconnect happens there.
-      });
-    };
+      })
+    }
 
-    connect();
+    connect()
 
     return () => {
-      cancelled = true;
+      cancelled = true
 
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (socket) socket.close();
-    };
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (socket) socket.close()
+    }
     // events / nextId intentionally captured at hook entry
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [port, daemonReachable, resetTick, token]);
+  }, [port, daemonReachable, resetTick, token])
 
   return {
     events,
     status,
     reset: () => {
-      setEvents([]);
-      setResetTick((value) => value + 1);
+      setEvents([])
+      setResetTick((value) => value + 1)
     },
-  };
-};
+  }
+}

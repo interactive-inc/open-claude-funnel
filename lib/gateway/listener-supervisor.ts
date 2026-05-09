@@ -1,293 +1,336 @@
-import type { ConnectorConfig } from "@/connectors/connector-config-schema";
-import type { FunnelConnectorListener } from "@/connectors/connector-listener";
-import { FunnelLogger } from "@/engine/logger/logger";
-import { NodeFunnelLogger } from "@/engine/logger/node-logger";
+import type { ConnectorConfig } from "@/connectors/connector-config-schema"
+import type { FunnelConnectorListener } from "@/connectors/connector-listener"
+import type { ChannelConnectorView } from "@/engine/channels/channels"
+import { FunnelLogger } from "@/engine/logger/logger"
+import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 
 export type ConnectorRegistry = {
-  list(): ConnectorConfig[];
-  createListenerFor(
-    name: string,
-  ): { config: ConnectorConfig; listener: FunnelConnectorListener } | null;
-};
+  listAllConnectors(): ChannelConnectorView[]
+  createListener(
+    channelName: string,
+    connectorName: string,
+  ): { config: ConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null
+}
 
 export type SupervisorNotify = (
+  channelName: string,
   connectorName: string,
   content: string,
   meta?: Record<string, string>,
-) => Promise<void>;
+) => Promise<void>
 
 type RunningEntry = {
-  config: ConnectorConfig;
-  listener: FunnelConnectorListener;
-};
+  config: ConnectorConfig
+  channelName: string
+  channelId: string
+  listener: FunnelConnectorListener
+}
 
 type ListenerStats = {
-  events: number;
-  errors: number;
-  failureCount: number;
-  lastEventAt: string | null;
-};
+  events: number
+  errors: number
+  failureCount: number
+  lastEventAt: string | null
+}
 
 type Deps = {
-  connectors: ConnectorRegistry;
-  notify: SupervisorNotify;
-  logger?: FunnelLogger;
-  healthCheckIntervalMs?: number;
-  maxBackoffMs?: number;
-  sleep?: (ms: number) => Promise<void>;
-  now?: () => number;
-};
+  channels: ConnectorRegistry
+  notify: SupervisorNotify
+  logger?: FunnelLogger
+  healthCheckIntervalMs?: number
+  maxBackoffMs?: number
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
+}
 
-const defaultLogger = new NodeFunnelLogger();
-const DEFAULT_HEALTH_INTERVAL_MS = 30_000;
-const DEFAULT_MAX_BACKOFF_MS = 60_000;
+const defaultLogger = new NodeFunnelLogger()
+const DEFAULT_HEALTH_INTERVAL_MS = 30_000
+const DEFAULT_MAX_BACKOFF_MS = 60_000
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((r) => {
-    setTimeout(r, ms);
-  });
+    setTimeout(r, ms)
+  })
+
+export type ListenerEntryStatus = {
+  channelName: string
+  channelId: string
+  name: string
+  type: ConnectorConfig["type"]
+  alive: boolean
+  events: number
+  errors: number
+  failureCount: number
+  lastEventAt: string | null
+}
 
 /**
  * Owns the running listener instances and their lifecycle.
  *
  * Lives in the gateway process and is the only place that calls
- * `listener.start()` / `listener.stop()`. The CLI mutates the connector
- * stores; the gateway then asks the supervisor to start / stop / restart
- * individual listeners by name without restarting the whole daemon.
+ * `listener.start()` / `listener.stop()`. Each entry is keyed by
+ * `${channelName}/${connectorName}` so the same connector name can exist in
+ * multiple channels without colliding.
  *
  * Periodically polls each running listener's `isAlive()` and auto-restarts
  * dead listeners with exponential backoff (1s, 2s, 4s, ... capped). Resets
  * the backoff counter on successful restart.
  */
-export type ListenerEntryStatus = {
-  name: string;
-  type: ConnectorConfig["type"];
-  alive: boolean;
-  events: number;
-  errors: number;
-  failureCount: number;
-  lastEventAt: string | null;
-};
-
 export class FunnelListenerSupervisor {
-  private readonly connectors: ConnectorRegistry;
-  private readonly notify: SupervisorNotify;
-  private readonly logger: FunnelLogger;
-  private readonly running = new Map<string, RunningEntry>();
-  private readonly failureCounts = new Map<string, number>();
-  private readonly stats = new Map<string, ListenerStats>();
-  private readonly healthCheckIntervalMs: number;
-  private readonly maxBackoffMs: number;
-  private readonly sleep: (ms: number) => Promise<void>;
-  private readonly now: () => number;
-  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
-  private healthCheckInFlight = false;
+  private readonly channels: ConnectorRegistry
+  private readonly notify: SupervisorNotify
+  private readonly logger: FunnelLogger
+  private readonly running = new Map<string, RunningEntry>()
+  private readonly failureCounts = new Map<string, number>()
+  private readonly stats = new Map<string, ListenerStats>()
+  private readonly healthCheckIntervalMs: number
+  private readonly maxBackoffMs: number
+  private readonly sleep: (ms: number) => Promise<void>
+  private readonly now: () => number
+  private healthCheckTimer: ReturnType<typeof setInterval> | null = null
+  private healthCheckInFlight = false
 
   constructor(deps: Deps) {
-    this.connectors = deps.connectors;
-    this.notify = deps.notify;
-    this.logger = deps.logger ?? defaultLogger;
-    this.healthCheckIntervalMs = deps.healthCheckIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS;
-    this.maxBackoffMs = deps.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
-    this.sleep = deps.sleep ?? defaultSleep;
-    this.now = deps.now ?? (() => Date.now());
+    this.channels = deps.channels
+    this.notify = deps.notify
+    this.logger = deps.logger ?? defaultLogger
+    this.healthCheckIntervalMs = deps.healthCheckIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
+    this.maxBackoffMs = deps.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
+    this.sleep = deps.sleep ?? defaultSleep
+    this.now = deps.now ?? (() => Date.now())
   }
 
-  isRunning(name: string): boolean {
-    return this.running.has(name);
+  static keyOf(channelName: string, connectorName: string): string {
+    return `${channelName}/${connectorName}`
+  }
+
+  isRunning(channelName: string, connectorName: string): boolean {
+    return this.running.has(FunnelListenerSupervisor.keyOf(channelName, connectorName))
   }
 
   list(): ListenerEntryStatus[] {
-    return [...this.running.entries()].map(([name, entry]) => {
-      const stats = this.stats.get(name);
+    return [...this.running.entries()].map(([key, entry]) => {
+      const stats = this.stats.get(key)
 
       return {
-        name,
+        channelName: entry.channelName,
+        channelId: entry.channelId,
+        name: entry.config.name,
         type: entry.config.type,
         alive: entry.listener.isAlive(),
         events: stats?.events ?? 0,
         errors: stats?.errors ?? 0,
-        failureCount: this.failureCounts.get(name) ?? 0,
+        failureCount: this.failureCounts.get(key) ?? 0,
         lastEventAt: stats?.lastEventAt ?? null,
-      };
-    });
+      }
+    })
   }
 
-  async start(name: string): Promise<{ ok: boolean; reason?: string }> {
-    if (this.running.has(name)) {
-      return { ok: true, reason: "already running" };
+  async start(
+    channelName: string,
+    connectorName: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
+
+    if (this.running.has(key)) {
+      return { ok: true, reason: "already running" }
     }
 
-    const created = this.connectors.createListenerFor(name);
+    const created = this.channels.createListener(channelName, connectorName)
 
     if (!created) {
-      return { ok: false, reason: `connector "${name}" not found` };
+      return {
+        ok: false,
+        reason: `connector "${connectorName}" not found in channel "${channelName}"`,
+      }
     }
 
     const bind = async (content: string, meta?: Record<string, string>) => {
       try {
-        await this.notify(name, content, meta);
-        this.recordEvent(name);
+        await this.notify(channelName, connectorName, content, meta)
+        this.recordEvent(key)
       } catch (error) {
-        this.recordError(name);
-        throw error;
+        this.recordError(key)
+        throw error
       }
-    };
+    }
 
     try {
-      await created.listener.start(bind);
-      this.running.set(name, created);
-      this.ensureStats(name);
-      this.logger.info(`${created.config.type} listener started`, { connector: name });
+      await created.listener.start(bind)
+      this.running.set(key, {
+        config: created.config,
+        channelName,
+        channelId: created.channelId,
+        listener: created.listener,
+      })
+      this.ensureStats(key)
+      this.logger.info(`${created.config.type} listener started`, {
+        channel: channelName,
+        connector: connectorName,
+      })
 
-      return { ok: true };
+      return { ok: true }
     } catch (error) {
       this.logger.error(`${created.config.type} listener failed to start`, {
-        connector: name,
+        channel: channelName,
+        connector: connectorName,
         error: error instanceof Error ? error.message : String(error),
-      });
+      })
 
       return {
         ok: false,
         reason: error instanceof Error ? error.message : String(error),
-      };
+      }
     }
   }
 
-  private ensureStats(name: string): ListenerStats {
-    const existing = this.stats.get(name);
+  async stop(channelName: string, connectorName: string): Promise<{ ok: boolean; reason?: string }> {
+    const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
+    const entry = this.running.get(key)
 
-    if (existing) return existing;
-
-    const fresh: ListenerStats = { events: 0, errors: 0, failureCount: 0, lastEventAt: null };
-
-    this.stats.set(name, fresh);
-
-    return fresh;
-  }
-
-  private recordEvent(name: string): void {
-    const stats = this.ensureStats(name);
-
-    stats.events += 1;
-    stats.lastEventAt = new Date(this.now()).toISOString();
-  }
-
-  private recordError(name: string): void {
-    this.ensureStats(name).errors += 1;
-  }
-
-  async stop(name: string): Promise<{ ok: boolean; reason?: string }> {
-    const entry = this.running.get(name);
-
-    if (!entry) {
-      return { ok: true, reason: "not running" };
-    }
+    if (!entry) return { ok: true, reason: "not running" }
 
     try {
-      await entry.listener.stop();
-      this.running.delete(name);
-      this.failureCounts.delete(name);
-      this.logger.info(`${entry.config.type} listener stopped`, { connector: name });
+      await entry.listener.stop()
+      this.running.delete(key)
+      this.failureCounts.delete(key)
+      this.logger.info(`${entry.config.type} listener stopped`, {
+        channel: channelName,
+        connector: connectorName,
+      })
 
-      return { ok: true };
+      return { ok: true }
     } catch (error) {
       this.logger.error(`${entry.config.type} listener failed to stop`, {
-        connector: name,
+        channel: channelName,
+        connector: connectorName,
         error: error instanceof Error ? error.message : String(error),
-      });
+      })
 
       return {
         ok: false,
         reason: error instanceof Error ? error.message : String(error),
-      };
+      }
     }
   }
 
-  async restart(name: string): Promise<{ ok: boolean; reason?: string }> {
-    const stopped = await this.stop(name);
+  async restart(
+    channelName: string,
+    connectorName: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const stopped = await this.stop(channelName, connectorName)
 
-    if (!stopped.ok) return stopped;
+    if (!stopped.ok) return stopped
 
-    return await this.start(name);
+    return await this.start(channelName, connectorName)
   }
 
   async startAll(): Promise<void> {
-    const all = this.connectors.list();
+    const all = this.channels.listAllConnectors()
 
-    for (const config of all) {
-      await this.start(config.name);
+    for (const view of all) {
+      await this.start(view.channelName, view.name)
     }
 
-    this.startHealthCheck();
+    this.startHealthCheck()
   }
 
   async stopAll(): Promise<void> {
-    this.stopHealthCheck();
+    this.stopHealthCheck()
 
-    const names = [...this.running.keys()];
-
-    for (const name of names) {
-      await this.stop(name);
+    for (const [, entry] of [...this.running.entries()]) {
+      await this.stop(entry.channelName, entry.config.name)
     }
+  }
+
+  private ensureStats(key: string): ListenerStats {
+    const existing = this.stats.get(key)
+
+    if (existing) return existing
+
+    const fresh: ListenerStats = { events: 0, errors: 0, failureCount: 0, lastEventAt: null }
+
+    this.stats.set(key, fresh)
+
+    return fresh
+  }
+
+  private recordEvent(key: string): void {
+    const stats = this.ensureStats(key)
+
+    stats.events += 1
+    stats.lastEventAt = new Date(this.now()).toISOString()
+  }
+
+  private recordError(key: string): void {
+    this.ensureStats(key).errors += 1
   }
 
   private startHealthCheck(): void {
-    if (this.healthCheckTimer) return;
+    if (this.healthCheckTimer) return
 
     this.healthCheckTimer = setInterval(() => {
-      void this.runHealthCheck();
-    }, this.healthCheckIntervalMs);
+      void this.runHealthCheck()
+    }, this.healthCheckIntervalMs)
 
-    this.healthCheckTimer.unref();
+    this.healthCheckTimer.unref()
   }
 
   private stopHealthCheck(): void {
-    if (!this.healthCheckTimer) return;
+    if (!this.healthCheckTimer) return
 
-    clearInterval(this.healthCheckTimer);
-    this.healthCheckTimer = null;
+    clearInterval(this.healthCheckTimer)
+    this.healthCheckTimer = null
   }
 
   private async runHealthCheck(): Promise<void> {
-    if (this.healthCheckInFlight) return;
+    if (this.healthCheckInFlight) return
 
-    this.healthCheckInFlight = true;
+    this.healthCheckInFlight = true
 
     try {
-      for (const [name, entry] of [...this.running.entries()]) {
+      for (const [key, entry] of [...this.running.entries()]) {
         if (entry.listener.isAlive()) {
-          this.failureCounts.delete(name);
-          continue;
+          this.failureCounts.delete(key)
+          continue
         }
 
-        await this.recoverDead(name, entry.config.type);
+        await this.recoverDead(entry.channelName, entry.config.name, entry.config.type)
       }
     } finally {
-      this.healthCheckInFlight = false;
+      this.healthCheckInFlight = false
     }
   }
 
-  private async recoverDead(name: string, type: ConnectorConfig["type"]): Promise<void> {
-    const failureCount = this.failureCounts.get(name) ?? 0;
-    const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs);
+  private async recoverDead(
+    channelName: string,
+    connectorName: string,
+    type: ConnectorConfig["type"],
+  ): Promise<void> {
+    const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
+    const failureCount = this.failureCounts.get(key) ?? 0
+    const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
 
     this.logger.warn(`${type} listener unhealthy, restarting`, {
-      connector: name,
+      channel: channelName,
+      connector: connectorName,
       attempt: failureCount + 1,
       backoffMs,
-    });
+    })
 
-    await this.stop(name);
-    await this.sleep(backoffMs);
+    await this.stop(channelName, connectorName)
+    await this.sleep(backoffMs)
 
-    const result = await this.start(name);
+    const result = await this.start(channelName, connectorName)
 
     if (result.ok) {
-      this.failureCounts.delete(name);
-      this.logger.info(`${type} listener recovered`, { connector: name });
+      this.failureCounts.delete(key)
+      this.logger.info(`${type} listener recovered`, {
+        channel: channelName,
+        connector: connectorName,
+      })
     } else {
-      this.failureCounts.set(name, failureCount + 1);
+      this.failureCounts.set(key, failureCount + 1)
     }
   }
 }

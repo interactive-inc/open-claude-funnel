@@ -13,4 +13,4 @@ subcommands:
 examples:
   funnel channels add prod-inbox
   funnel channels prod-inbox connectors attach prod-slack
-  funnel channels prod-inbox`;
+  funnel channels prod-inbox`

@@ -1,45 +1,38 @@
 /** @jsxImportSource @opentui/react */
-import { useState } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 
-type Variant = "default" | "outline";
+type Variant = "default" | "outline"
 
 export type Props = {
-  variant?: Variant;
-  placeholder?: string;
-  value?: string;
-  width?: number;
-  focused?: boolean;
-  onInput?: (value: string) => void;
-  onChange?: (value: string) => void;
-  onSubmit?: (value: string) => void;
-};
+  variant?: Variant
+  placeholder?: string
+  value?: string
+  width?: number
+  isFocused?: boolean
+  onInput?: (value: string) => void
+  onChange?: (value: string) => void
+  onSubmit?: (value: string) => void
+}
 
 /** Single-line text input. Background (default) or border (outline) cycles rest → hover → pressed → focused. */
 export function HasciiInput(props: Props) {
-  const variant = props.variant ?? "default";
-  const width = props.width ?? 32;
-  const focused = props.focused ?? false;
-  const placeholder = props.placeholder ?? "";
+  const variant = props.variant ?? "default"
+  const width = props.width ?? 32
+  const isFocused = props.isFocused ?? false
+  const placeholder = props.placeholder ?? ""
 
-  const theme = useHasciiTheme();
-
-  const hoveredState = useState(false);
-  const hovered = hoveredState[0];
-  const setHovered = hoveredState[1];
-
-  const pressedState = useState(false);
-  const pressed = pressedState[0];
-  const setPressed = pressedState[1];
+  const theme = useHasciiTheme()
+  const press = usePressable()
 
   if (variant === "outline") {
-    const borderColor = pressed
+    const borderColor = press.isPressed
       ? theme.color.foreground
-      : focused
+      : isFocused
         ? theme.color.ring
-        : hovered
+        : press.isHovered
           ? theme.color.mutedForeground
-          : theme.color.input;
+          : theme.color.input
 
     return (
       <box
@@ -52,16 +45,10 @@ export function HasciiInput(props: Props) {
         paddingRight={1}
         backgroundColor={theme.color.background}
         justifyContent="center"
-        onMouseOver={() => setHovered(true)}
-        onMouseOut={() => {
-          setHovered(false);
-          setPressed(false);
-        }}
-        onMouseDown={() => setPressed(true)}
-        onMouseUp={() => setPressed(false)}
+        {...press.bind}
       >
         <input
-          focused={focused}
+          focused={isFocused}
           placeholder={placeholder}
           value={props.value}
           textColor={theme.color.foreground}
@@ -70,20 +57,20 @@ export function HasciiInput(props: Props) {
           onInput={props.onInput}
           onChange={props.onChange}
           onSubmit={(value: unknown) => {
-            if (typeof value === "string") props.onSubmit?.(value);
+            if (typeof value === "string") props.onSubmit?.(value)
           }}
         />
       </box>
-    );
+    )
   }
 
-  const bg = pressed
+  const bg = press.isPressed
     ? theme.color.mutedForeground
-    : focused
+    : isFocused
       ? theme.color.secondaryActive
-      : hovered
+      : press.isHovered
         ? theme.color.secondaryHover
-        : theme.color.muted;
+        : theme.color.muted
 
   return (
     <box
@@ -93,16 +80,10 @@ export function HasciiInput(props: Props) {
       paddingRight={2}
       backgroundColor={bg}
       justifyContent="center"
-      onMouseOver={() => setHovered(true)}
-      onMouseOut={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
+      {...press.bind}
     >
       <input
-        focused={focused}
+        focused={isFocused}
         placeholder={placeholder}
         value={props.value}
         textColor={theme.color.foreground}
@@ -111,9 +92,9 @@ export function HasciiInput(props: Props) {
         onInput={props.onInput}
         onChange={props.onChange}
         onSubmit={(value: unknown) => {
-          if (typeof value === "string") props.onSubmit?.(value);
+          if (typeof value === "string") props.onSubmit?.(value)
         }}
       />
     </box>
-  );
+  )
 }

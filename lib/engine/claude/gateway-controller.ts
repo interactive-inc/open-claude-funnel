@@ -1,4 +1,4 @@
 export type GatewayController = {
-  isRunning(): boolean;
-  start(options?: { caffeinate?: boolean }): Promise<boolean>;
-};
+  isRunning(): boolean
+  start(options?: { caffeinate?: boolean }): Promise<boolean>
+}

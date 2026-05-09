@@ -1,4 +1,4 @@
-export type NotifyFn = (content: string, meta?: Record<string, string>) => Promise<void>;
+export type NotifyFn = (content: string, meta?: Record<string, string>) => Promise<void>
 
 /**
  * Long-lived event source for one connector.
@@ -12,9 +12,9 @@ export type NotifyFn = (content: string, meta?: Record<string, string>) => Promi
  * that self-heal.
  */
 export abstract class FunnelConnectorListener {
-  abstract start(notify: NotifyFn): Promise<void>;
-  abstract stop(): Promise<void>;
+  abstract start(notify: NotifyFn): Promise<void>
+  abstract stop(): Promise<void>
   isAlive(): boolean {
-    return true;
+    return true
   }
 }

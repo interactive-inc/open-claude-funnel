@@ -1,16 +1,16 @@
 /** @jsxImportSource @opentui/react */
-import { useState } from "react";
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { funnel } from "@/tui/theme"
+import { usePressable } from "@/tui/hooks/hascii/use-pressable"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 type Props = {
-  label: string;
-  active: boolean;
-  count?: number;
-  onSelect: () => void;
-};
+  label: string
+  active: boolean
+  count?: number
+  onSelect: () => void
+}
 
-const ROW_HEIGHT = funnel.paddingY * 2 + 1;
+const ROW_HEIGHT = funnel.paddingY * 2 + 1
 
 /**
  * One row in the sidebar nav.
@@ -18,23 +18,27 @@ const ROW_HEIGHT = funnel.paddingY * 2 + 1;
  * Active state: a thin `▏` (U+258F LEFT ONE EIGHTH BLOCK) rule painted
  * in the primary color, stacked to fill the row height. The rule is
  * narrower than a full character cell so it reads as a delicate accent
- * instead of a heavy block. Hover and active share the same elevated
- * background; the rule is what disambiguates the two.
+ * instead of a heavy block. The sidebar's own background is `muted`,
+ * so hover/active lift the row to `secondaryHover` / `secondaryActive`
+ * to read against it.
  */
 export function MenuItem(props: Props) {
-  const [hovered, setHovered] = useState(false);
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
+  const press = usePressable({ onPress: props.onSelect })
 
-  const showRaised = props.active || hovered;
-  const bg = showRaised ? theme.color.muted : undefined;
-  const fg = showRaised ? theme.color.foreground : theme.color.foreground;
-  const countFg = showRaised ? theme.color.foreground : funnel.faint;
+  const bg = press.isPressed
+    ? theme.color.secondaryActive
+    : props.active || press.isHovered
+      ? theme.color.secondaryHover
+      : undefined
+
+  const isLifted = props.active || press.isHovered || press.isPressed
+  const fg = isLifted ? theme.color.foreground : theme.color.foreground
+  const countFg = isLifted ? theme.color.foreground : funnel.faint
 
   return (
     <box
-      onMouseDown={props.onSelect}
-      onMouseOver={() => setHovered(true)}
-      onMouseOut={() => setHovered(false)}
+      {...press.bind}
       style={{
         flexDirection: "row",
         justifyContent: "space-between",
@@ -65,5 +69,5 @@ export function MenuItem(props: Props) {
       <text fg={fg}>{props.label}</text>
       {props.count !== undefined ? <text fg={countFg}>{String(props.count)}</text> : null}
     </box>
-  );
+  )
 }

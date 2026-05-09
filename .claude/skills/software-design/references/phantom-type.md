@@ -9,28 +9,28 @@ TypeScript は構造的型付けなので、同じ形の型は互換と見なさ
 
 ```ts
 type Props = {
-  amount: number;
-};
+  amount: number
+}
 
 export class Money<Currency> {
-  private readonly _phantom!: Currency;
+  private readonly _phantom!: Currency
 
   constructor(private readonly props: Props) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   add(other: Money<Currency>): Money<Currency> {
-    return new Money<Currency>({ amount: this.props.amount + other.props.amount });
+    return new Money<Currency>({ amount: this.props.amount + other.props.amount })
   }
 }
 
-type USD = { currency: "USD" };
-type JPY = { currency: "JPY" };
+type USD = { currency: "USD" }
+type JPY = { currency: "JPY" }
 
-const dollars = new Money<USD>({ amount: 100 });
-const yen = new Money<JPY>({ amount: 1000 });
+const dollars = new Money<USD>({ amount: 100 })
+const yen = new Money<JPY>({ amount: 1000 })
 
-dollars.add(yen); // コンパイルエラー: USD と JPY は混ぜられない
+dollars.add(yen) // コンパイルエラー: USD と JPY は混ぜられない
 ```
 
 ## バリデーション前後の区別
@@ -38,26 +38,26 @@ dollars.add(yen); // コンパイルエラー: USD と JPY は混ぜられない
 未検証データと検証済みデータを型で分けて、未検証のまま使うことをコンパイル時に防ぐ。
 
 ```ts
-type Unvalidated = { validated: false };
-type Validated = { validated: true };
+type Unvalidated = { validated: false }
+type Validated = { validated: true }
 
 type Props = {
-  data: Record<string, string>;
-};
+  data: Record<string, string>
+}
 
 export class UserInput<State> {
-  private readonly _phantom!: State;
+  private readonly _phantom!: State
 
   constructor(private readonly props: Props) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   static raw(data: Record<string, string>): UserInput<Unvalidated> {
-    return new UserInput<Unvalidated>({ data });
+    return new UserInput<Unvalidated>({ data })
   }
 
   validate(this: UserInput<Unvalidated>): UserInput<Validated> {
-    return new UserInput<Validated>(this.props);
+    return new UserInput<Validated>(this.props)
   }
 
   save(this: UserInput<Validated>): void {
@@ -65,9 +65,9 @@ export class UserInput<State> {
   }
 }
 
-const input = UserInput.raw({ name: "Alice" });
-input.save(); // コンパイルエラー: 未検証
-input.validate().save(); // OK
+const input = UserInput.raw({ name: "Alice" })
+input.save() // コンパイルエラー: 未検証
+input.validate().save() // OK
 ```
 
 ## いつ使うか

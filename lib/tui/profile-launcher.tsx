@@ -1,15 +1,15 @@
 /** @jsxImportSource @opentui/react */
-import { HasciiSeparator } from "@/tui/components/ui/hascii/separator";
-import { EmptyState } from "@/tui/components/empty-state";
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
-import type { ProfileConfig } from "@/engine/settings/settings-schema";
+import { HasciiSeparator } from "@/tui/components/ui/hascii/separator"
+import { EmptyState } from "@/tui/components/empty-state"
+import { funnel } from "@/tui/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import type { ProfileConfig } from "@/engine/settings/settings-schema"
 
 type Props = {
-  active: boolean;
-  profiles: ProfileConfig[];
-  selectedIndex: number;
-};
+  active: boolean
+  profiles: ProfileConfig[]
+  selectedIndex: number
+}
 
 /**
  * Modal-style overlay: pick a profile and launch Claude Code via the same
@@ -17,9 +17,9 @@ type Props = {
  * exec'ing so Claude takes over the terminal.
  */
 export function ProfileLauncher(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
-  if (!props.active) return null;
+  if (!props.active) return null
 
   return (
     <box
@@ -44,18 +44,18 @@ export function ProfileLauncher(props: Props) {
         <EmptyState message="(no profiles — `fnl profiles add` first)" />
       ) : (
         props.profiles.map((profile, index) => {
-          const selected = index === props.selectedIndex;
+          const selected = index === props.selectedIndex
 
           return (
             <text key={profile.name} bg={selected ? theme.color.muted : undefined}>
               <span fg={theme.color.foreground}>{profile.name}</span>
               <span fg={funnel.faint}>
-                {`  → channel ${profile.channel}${profile.repo ? ` · repo ${profile.repo}` : ""}`}
+                {`  → channel ${profile.channelId} · path ${profile.path} · sub-agent ${profile.subAgent}`}
               </span>
             </text>
-          );
+          )
         })
       )}
     </box>
-  );
+  )
 }

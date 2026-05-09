@@ -10,4 +10,4 @@ Output is formatted as YAML.
 
 examples:
   funnel gateway logs
-  funnel gateway logs -n 100`;
+  funnel gateway logs -n 100`

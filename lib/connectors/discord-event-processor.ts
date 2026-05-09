@@ -1,37 +1,37 @@
 export type DiscordInboundMessage = {
-  authorId: string;
-  authorIsBot: boolean;
-  channelId: string;
-  guildId: string | null;
-  mentionedUserIds: string[];
-  raw: unknown;
-};
+  authorId: string
+  authorIsBot: boolean
+  channelId: string
+  guildId: string | null
+  mentionedUserIds: string[]
+  raw: unknown
+}
 
-export type DiscordProcessedSkip = { skip: true };
+export type DiscordProcessedSkip = { skip: true }
 
 export type DiscordProcessedEmit = {
-  skip: false;
-  content: string;
-  meta: Record<string, string>;
-};
+  skip: false
+  content: string
+  meta: Record<string, string>
+}
 
-export type DiscordProcessed = DiscordProcessedSkip | DiscordProcessedEmit;
+export type DiscordProcessed = DiscordProcessedSkip | DiscordProcessedEmit
 
 type Props = {
-  ownUserId: string;
-};
+  ownUserId: string
+}
 
 export class FunnelDiscordEventProcessor {
-  private readonly ownUserId: string;
+  private readonly ownUserId: string
 
   constructor(props: Props) {
-    this.ownUserId = props.ownUserId;
+    this.ownUserId = props.ownUserId
   }
 
   process(message: DiscordInboundMessage): DiscordProcessed {
-    if (message.authorIsBot) return { skip: true };
+    if (message.authorIsBot) return { skip: true }
 
-    const mentioned = this.ownUserId ? message.mentionedUserIds.includes(this.ownUserId) : false;
+    const mentioned = this.ownUserId ? message.mentionedUserIds.includes(this.ownUserId) : false
 
     return {
       skip: false,
@@ -43,6 +43,6 @@ export class FunnelDiscordEventProcessor {
         mentioned: String(mentioned),
         guild_id: message.guildId ?? "",
       },
-    };
+    }
   }
 }

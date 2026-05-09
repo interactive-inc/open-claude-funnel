@@ -1,7 +1,7 @@
-import { factory } from "@/gateway/factory";
-import { healthHandler } from "@/gateway/routes/health-route";
-import { listenersRoutes } from "@/gateway/routes/listeners/routes";
-import { statusHandler } from "@/gateway/routes/status-route";
+import { factory } from "@/gateway/factory"
+import { healthHandler } from "@/gateway/routes/health-route"
+import { listenersRoutes } from "@/gateway/routes/listeners/routes"
+import { statusHandler } from "@/gateway/routes/status-route"
 
 /**
  * Top-level Hono app for the gateway daemon. Mounts every HTTP route
@@ -13,4 +13,4 @@ export const gatewayRoutes = factory
   .createApp()
   .get("/health", ...healthHandler)
   .get("/status", ...statusHandler)
-  .route("/", listenersRoutes);
+  .route("/", listenersRoutes)

@@ -4,20 +4,20 @@
 
 ```ts
 type Props = {
-  fileSystem: FileSystem;
-  parser: Parser;
-  validator: Validator;
-};
+  fileSystem: FileSystem
+  parser: Parser
+  validator: Validator
+}
 
 export class DocumentService {
   constructor(private readonly props: Props) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   async process(path: string): Promise<Document> {
-    const content = await this.props.fileSystem.read(path);
-    const parsed = this.props.parser.parse(content);
-    return new Document(this.props.validator.validate(parsed));
+    const content = await this.props.fileSystem.read(path)
+    const parsed = this.props.parser.parse(content)
+    return new Document(this.props.validator.validate(parsed))
   }
 }
 ```

@@ -1,3 +1,6 @@
+// TailwindCSS v4 default color palette (subset).
+// Use these as raw color primitives — wire them into theme tokens, not directly into components.
+
 export const hasciiTw = {
   colors: {
     neutral: {
@@ -40,6 +43,6 @@ export const hasciiTw = {
       950: "#450a0a",
     },
   },
-} as const;
+} as const
 
-export type HasciiTw = typeof hasciiTw;
+export type HasciiTw = typeof hasciiTw

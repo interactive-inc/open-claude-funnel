@@ -1,14 +1,14 @@
 /** @jsxImportSource @opentui/react */
-import { HasciiButton } from "@/tui/components/ui/hascii/button";
-import { funnel } from "@/tui/theme";
-import type { Snapshot } from "@/tui/types";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { HasciiButton } from "@/tui/components/ui/hascii/button"
+import { funnel } from "@/tui/theme"
+import type { Snapshot } from "@/tui/types"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 type Props = {
-  gateway: Snapshot["gateway"];
-  busy: boolean;
-  onToggle: () => void;
-};
+  gateway: Snapshot["gateway"]
+  busy: boolean
+  onToggle: () => void
+}
 
 /**
  * Compact running/stopped indicator with pid and port for the sidebar.
@@ -23,7 +23,7 @@ type Props = {
  * in flight so rapid clicks don't stack daemon spawns.
  */
 export function GatewayStatus(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <box
@@ -62,5 +62,5 @@ export function GatewayStatus(props: Props) {
         </>
       )}
     </box>
-  );
+  )
 }

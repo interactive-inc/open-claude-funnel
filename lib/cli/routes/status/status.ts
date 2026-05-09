@@ -1,18 +1,18 @@
-import { z } from "zod";
-import { factory } from "@/cli/factory";
-import { zValidator } from "@/cli/router/validator";
-import { help } from "@/cli/routes/status/status.help";
+import { z } from "zod"
+import { factory } from "@/cli/factory"
+import { zValidator } from "@/cli/router/validator"
+import { help } from "@/cli/routes/status/status.help"
 
-type GatewayClient = { channel: string; connectors: string[] };
+type GatewayClient = { channel: string; connectors: string[] }
 
 type GatewayStatus = {
-  ok: boolean;
-  clients: GatewayClient[];
-};
+  ok: boolean
+  clients: GatewayClient[]
+}
 
 const isGatewayStatus = (value: unknown): value is GatewayStatus => {
-  if (value === null || typeof value !== "object") return false;
-  if (!("clients" in value) || !Array.isArray(value.clients)) return false;
+  if (value === null || typeof value !== "object") return false
+  if (!("clients" in value) || !Array.isArray(value.clients)) return false
 
   return value.clients.every(
     (client: unknown) =>
@@ -22,76 +22,66 @@ const isGatewayStatus = (value: unknown): value is GatewayStatus => {
       typeof client.channel === "string" &&
       "connectors" in client &&
       Array.isArray(client.connectors),
-  );
-};
+  )
+}
 
 export const statusHandler = factory.createHandlers(
   zValidator("query", z.object({}), help),
   async (c) => {
-    const funnel = c.var.funnel;
-    const connectors = funnel.connectors.list();
-    const channels = funnel.channels.list();
-    const profiles = funnel.profiles.list();
-    const repos = funnel.repositories.list();
-    const gatewayStatus = funnel.gateway.getStatus();
+    const funnel = c.var.funnel
+    const channels = funnel.channels.list()
+    const profiles = funnel.profiles.list()
+    const gatewayStatus = funnel.gateway.getStatus()
 
-    const lines: string[] = [];
+    const lines: string[] = []
 
-    lines.push("= funnel status =");
-    lines.push("");
+    lines.push("= funnel status =")
+    lines.push("")
 
-    lines.push(`connectors: ${connectors.length}`);
-    for (const con of connectors) {
-      lines.push(`  - ${con.name} (${con.type})`);
-    }
-    lines.push("");
-
-    lines.push(`channels: ${channels.length}`);
+    lines.push(`channels: ${channels.length}`)
     for (const ch of channels) {
-      const attached = ch.connectors.length > 0 ? ch.connectors.join(", ") : "(none)";
-      lines.push(`  - ${ch.name} [${attached}]`);
+      const attached =
+        ch.connectors.length > 0
+          ? ch.connectors.map((c) => `${c.name}:${c.type}`).join(", ")
+          : "(none)"
+      lines.push(`  - ${ch.name} [${attached}]`)
     }
-    lines.push("");
+    lines.push("")
 
-    lines.push(`profiles: ${profiles.length}`);
-    for (const profile of profiles) {
-      const parts = [`channel=${profile.channel}`];
+    lines.push(`profiles: ${profiles.length}`)
+    for (const [index, profile] of profiles.entries()) {
+      const tag = index === 0 ? " (default)" : ""
+      const channel = funnel.channels.getById(profile.channelId)
+      const channelLabel = channel ? channel.name : `id:${profile.channelId}`
 
-      if (profile.repo) parts.push(`repo=${profile.repo}`);
-      if (profile.subAgent) parts.push(`subAgent=${profile.subAgent}`);
-
-      lines.push(`  - ${profile.name} [${parts.join(", ")}]`);
+      lines.push(
+        `  - ${profile.name}${tag} [path=${profile.path}, sub-agent=${profile.subAgent}, channel=${channelLabel}]`,
+      )
     }
-    lines.push("");
-
-    lines.push(`repos: ${repos.length}`);
-    for (const repo of repos) {
-      lines.push(`  - ${repo.name}  ${repo.path}`);
-    }
-    lines.push("");
+    lines.push("")
 
     if (!gatewayStatus.running) {
-      lines.push("gateway: not running");
+      lines.push("gateway: not running")
     } else {
-      lines.push(`gateway: running (pid ${gatewayStatus.pid}, port ${gatewayStatus.port})`);
+      lines.push(`gateway: running (pid ${gatewayStatus.pid}, port ${gatewayStatus.port})`)
 
-      const res = await fetch(`http://localhost:${gatewayStatus.port}/status`).catch(() => null);
+      const res = await fetch(`http://localhost:${gatewayStatus.port}/status`).catch(() => null)
 
       if (res && res.ok) {
-        const body: unknown = await res.json();
+        const body: unknown = await res.json()
 
         if (isGatewayStatus(body)) {
-          lines.push(`  clients: ${body.clients.length}`);
+          lines.push(`  clients: ${body.clients.length}`)
 
           for (const client of body.clients) {
             const connectorList =
-              client.connectors.length > 0 ? client.connectors.join(", ") : "(none)";
-            lines.push(`    - channel=${client.channel || "(unset)"} [${connectorList}]`);
+              client.connectors.length > 0 ? client.connectors.join(", ") : "(none)"
+            lines.push(`    - channel=${client.channel || "(unset)"} [${connectorList}]`)
           }
         }
       }
     }
 
-    return c.text(lines.join("\n"));
+    return c.text(lines.join("\n"))
   },
-);
+)

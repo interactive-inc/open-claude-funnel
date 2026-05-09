@@ -1,7 +1,7 @@
-import { FunnelLogger } from "@/engine/logger/logger";
+import { FunnelLogger } from "@/engine/logger/logger"
 
 export class NoopFunnelLogger extends FunnelLogger {
-  readonly file = null;
+  readonly file = null
 
   info(): void {}
   warn(): void {}

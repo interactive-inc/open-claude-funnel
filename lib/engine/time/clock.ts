@@ -3,13 +3,13 @@
  * is settable and `advance(ms)`-able for deterministic schedule / timeout tests.
  */
 export abstract class FunnelClock {
-  abstract now(): Date;
+  abstract now(): Date
 
   millis(): number {
-    return this.now().getTime();
+    return this.now().getTime()
   }
 
   iso(): string {
-    return this.now().toISOString();
+    return this.now().toISOString()
   }
 }

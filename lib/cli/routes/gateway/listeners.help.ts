@@ -5,4 +5,4 @@ usage: funnel gateway listeners
 Reads /listeners from the running gateway daemon and prints the live registry.
 
 examples:
-  funnel gateway listeners`;
+  funnel gateway listeners`

@@ -1,14 +1,14 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
+import type { ReactNode } from "react"
 
 export type Props = {
-  isFocused?: boolean;
-  children?: ReactNode;
-};
+  isFocused?: boolean
+  children?: ReactNode
+}
 
 /** Scrollable middle region of a HasciiSidebar. Wheel + arrow keys scroll vertically. */
 export function HasciiSidebarContent(props: Props) {
-  const isFocused = props.isFocused ?? true;
+  const isFocused = props.isFocused ?? true
 
   return (
     <scrollbox
@@ -20,5 +20,5 @@ export function HasciiSidebarContent(props: Props) {
     >
       {props.children}
     </scrollbox>
-  );
+  )
 }

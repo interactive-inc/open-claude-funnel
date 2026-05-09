@@ -3,28 +3,28 @@
 プリミティブ値: Zod でバリデーション、getter で判定ロジック。
 
 ```ts
-const emailSchema = z.string().email();
+const emailSchema = z.string().email()
 
 export class Email {
   constructor(private readonly value: string) {
-    emailSchema.parse(value);
-    Object.freeze(this);
+    emailSchema.parse(value)
+    Object.freeze(this)
   }
 
   get isCompanyEmail(): boolean {
-    return this.value.endsWith("@example.co.jp");
+    return this.value.endsWith("@example.co.jp")
   }
 
   get domain(): string {
-    return this.value.split("@")[1];
+    return this.value.split("@")[1]
   }
 
   equals(other: Email): boolean {
-    return this.value === other.value;
+    return this.value === other.value
   }
 
   toString(): string {
-    return this.value;
+    return this.value
   }
 }
 ```
@@ -35,26 +35,26 @@ export class Email {
 const personNameSchema = z.object({
   first: z.string().min(1),
   last: z.string().min(1),
-});
+})
 
-type Props = z.infer<typeof personNameSchema>;
+type Props = z.infer<typeof personNameSchema>
 
 export class PersonName {
   constructor(private readonly props: Props) {
-    personNameSchema.parse(props);
-    Object.freeze(this);
+    personNameSchema.parse(props)
+    Object.freeze(this)
   }
 
   get fullName(): string {
-    return `${this.props.last} ${this.props.first}`;
+    return `${this.props.last} ${this.props.first}`
   }
 
   withFirst(first: string): PersonName {
-    return new PersonName({ ...this.props, first });
+    return new PersonName({ ...this.props, first })
   }
 
   equals(other: PersonName): boolean {
-    return this.props.first === other.props.first && this.props.last === other.props.last;
+    return this.props.first === other.props.first && this.props.last === other.props.last
   }
 }
 ```

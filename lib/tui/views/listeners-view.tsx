@@ -1,29 +1,29 @@
 /** @jsxImportSource @opentui/react */
-import { Card } from "@/tui/components/card";
-import { EmptyState } from "@/tui/components/empty-state";
-import { Keymap } from "@/tui/components/keymap";
-import { PanelHeader } from "@/tui/components/panel-header";
-import { ViewShell } from "@/tui/components/view-shell";
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
-import type { Snapshot, StreamEvent } from "@/tui/types";
+import { Card } from "@/tui/components/card"
+import { EmptyState } from "@/tui/components/empty-state"
+import { Keymap } from "@/tui/components/keymap"
+import { PanelHeader } from "@/tui/components/panel-header"
+import { ViewShell } from "@/tui/components/view-shell"
+import { funnel } from "@/tui/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import type { Snapshot, StreamEvent } from "@/tui/types"
 
 type Props = {
-  snapshot: Snapshot;
-  events: StreamEvent[];
-  selectedIndex: number;
-  busy: boolean;
-};
+  snapshot: Snapshot
+  events: StreamEvent[]
+  selectedIndex: number
+  busy: boolean
+}
 
 const eventCountBy = (events: StreamEvent[], connectorName: string): number => {
-  let count = 0;
+  let count = 0
 
   for (const event of events) {
-    if (event.meta.connector === connectorName) count += 1;
+    if (event.meta.connector === connectorName) count += 1
   }
 
-  return count;
-};
+  return count
+}
 
 /**
  * Listener registry — one Card per listener. The Card title shows the
@@ -34,8 +34,8 @@ const eventCountBy = (events: StreamEvent[], connectorName: string): number => {
  * register / remove a connector instead.
  */
 export function ListenersView(props: Props) {
-  const theme = useHasciiTheme();
-  const listeners = props.snapshot.listeners;
+  const theme = useHasciiTheme()
+  const listeners = props.snapshot.listeners
 
   return (
     <ViewShell>
@@ -51,8 +51,8 @@ export function ListenersView(props: Props) {
         <EmptyState message="(no listeners — register a connector first)" />
       ) : (
         listeners.map((entry, index) => {
-          const aliveColor = entry.alive ? funnel.alive : funnel.dead;
-          const count = eventCountBy(props.events, entry.name);
+          const aliveColor = entry.alive ? funnel.alive : funnel.dead
+          const count = eventCountBy(props.events, entry.name)
 
           return (
             <Card key={entry.name} title={entry.name} selected={index === props.selectedIndex}>
@@ -63,7 +63,7 @@ export function ListenersView(props: Props) {
                 {count > 0 ? <span fg={theme.color.mutedForeground}>{`  ${count}↓`}</span> : null}
               </text>
             </Card>
-          );
+          )
         })
       )}
 
@@ -76,5 +76,5 @@ export function ListenersView(props: Props) {
         ]}
       />
     </ViewShell>
-  );
+  )
 }

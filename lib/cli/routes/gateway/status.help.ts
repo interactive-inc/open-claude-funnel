@@ -6,4 +6,4 @@ When running, prints PID, port, and connected channel count. When not running, e
 
 examples:
   funnel gateway status
-  funnel gateway`;
+  funnel gateway`

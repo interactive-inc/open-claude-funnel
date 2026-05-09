@@ -1,3 +1,3 @@
 export const help = `funnel profiles add — add a profile
 
-usage: funnel profiles add <name> --channel <ch> [--repo <r>] [--sub-agent <s>] [--env-file <f>]`;
+usage: funnel profiles add <name> --path <path> --sub-agent <agent> --channel <channel>`

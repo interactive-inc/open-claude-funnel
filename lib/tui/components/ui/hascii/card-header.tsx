@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
+import type { ReactNode } from "react"
 
 export type Props = {
-  children?: ReactNode;
-};
+  children?: ReactNode
+}
 
 /** Vertical heading group typically holding HasciiCardTitle and HasciiCardDescription. */
 export function HasciiCardHeader(props: Props) {
@@ -11,5 +11,5 @@ export function HasciiCardHeader(props: Props) {
     <box flexDirection="column" gap={0}>
       {props.children}
     </box>
-  );
+  )
 }

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
-import { funnel } from "@/tui/theme";
+import { funnel } from "@/tui/theme"
 
-const RULE_LENGTH = 20;
+const RULE_LENGTH = 20
 
 /**
  * A thin `▏` (U+258F) primary-colour rule pinned to the left edge of
@@ -28,5 +28,5 @@ export function SelectionAccent() {
         </text>
       ))}
     </box>
-  );
+  )
 }

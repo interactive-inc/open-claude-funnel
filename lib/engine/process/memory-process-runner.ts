@@ -4,85 +4,85 @@ import {
   FunnelProcessRunner,
   type RunOptions,
   type RunResult,
-} from "@/engine/process/process-runner";
+} from "@/engine/process/process-runner"
 
 export type MemoryProcessResponse = {
-  exitCode?: number;
-  stdout?: string;
-  stderr?: string;
-};
+  exitCode?: number
+  stdout?: string
+  stderr?: string
+}
 
 export type MemoryProcessHandler = (
   command: string[],
-) => MemoryProcessResponse | Promise<MemoryProcessResponse>;
+) => MemoryProcessResponse | Promise<MemoryProcessResponse>
 
-export type MemoryProcessSyncHandler = (command: string[]) => MemoryProcessResponse;
+export type MemoryProcessSyncHandler = (command: string[]) => MemoryProcessResponse
 
 export type MemoryProcessCall =
   | { kind: "run"; command: string[]; options: RunOptions }
   | { kind: "runSync"; command: string[] }
   | { kind: "attach"; command: string[]; options: AttachOptions }
   | { kind: "detach"; command: string[]; options: DetachOptions }
-  | { kind: "kill"; command: string[] };
+  | { kind: "kill"; command: string[] }
 
-const empty: MemoryProcessResponse = { exitCode: 0, stdout: "", stderr: "" };
+const empty: MemoryProcessResponse = { exitCode: 0, stdout: "", stderr: "" }
 
 export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
-  readonly calls: MemoryProcessCall[] = [];
-  readonly killed: { pid: number; signal: string }[] = [];
-  private handler: MemoryProcessHandler = () => empty;
-  private syncHandler: MemoryProcessSyncHandler = () => empty;
+  readonly calls: MemoryProcessCall[] = []
+  readonly killed: { pid: number; signal: string }[] = []
+  private handler: MemoryProcessHandler = () => empty
+  private syncHandler: MemoryProcessSyncHandler = () => empty
 
   on(handler: MemoryProcessHandler): this {
-    this.handler = handler;
+    this.handler = handler
 
-    return this;
+    return this
   }
 
   onSync(handler: MemoryProcessSyncHandler): this {
-    this.syncHandler = handler;
+    this.syncHandler = handler
 
-    return this;
+    return this
   }
 
   async run(command: string[], options: RunOptions = {}): Promise<RunResult> {
-    this.calls.push({ kind: "run", command, options });
+    this.calls.push({ kind: "run", command, options })
 
-    const result = await this.handler(command);
+    const result = await this.handler(command)
 
     return {
       exitCode: result.exitCode ?? 0,
       stdout: result.stdout ?? "",
       stderr: result.stderr ?? "",
-    };
+    }
   }
 
   runSync(command: string[]): RunResult {
-    this.calls.push({ kind: "runSync", command });
+    this.calls.push({ kind: "runSync", command })
 
-    const result = this.syncHandler(command);
+    const result = this.syncHandler(command)
 
     return {
       exitCode: result.exitCode ?? 0,
       stdout: result.stdout ?? "",
       stderr: result.stderr ?? "",
-    };
+    }
   }
 
   async attach(command: string[], options: AttachOptions = {}): Promise<number> {
-    this.calls.push({ kind: "attach", command, options });
+    this.calls.push({ kind: "attach", command, options })
 
-    const result = await this.handler(command);
+    const result = await this.handler(command)
 
-    return result.exitCode ?? 0;
+    return result.exitCode ?? 0
   }
 
   detach(command: string[], options: DetachOptions = {}): void {
-    this.calls.push({ kind: "detach", command, options });
+    this.calls.push({ kind: "detach", command, options })
   }
 
   kill(pid: number, signal: string = "SIGTERM"): void {
-    this.calls.push({ kind: "kill", command: [String(pid), signal] });
-    this.killed.push({ pid, signal });
+    this.calls.push({ kind: "kill", command: [String(pid), signal] })
+    this.killed.push({ pid, signal })
   }
 }

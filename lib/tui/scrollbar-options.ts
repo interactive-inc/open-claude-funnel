@@ -1,5 +1,5 @@
-import { funnel } from "@/tui/theme";
-import type { HasciiTheme } from "@/tui/utils/hascii/theme";
+import { funnel } from "@/tui/theme"
+import type { HasciiTheme } from "@/tui/utils/hascii/theme"
 
 /**
  * Shared OpenTUI scrollbar styling. Used by `ViewShell` and `DetailBar`
@@ -16,4 +16,4 @@ export const verticalScrollbarOptions = (theme: HasciiTheme) =>
       backgroundColor: funnel.surface,
       foregroundColor: theme.color.mutedForeground,
     },
-  }) as const;
+  }) as const

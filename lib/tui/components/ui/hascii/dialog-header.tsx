@@ -1,30 +1,23 @@
 /** @jsxImportSource @opentui/react */
-import { useState } from "react";
-import type { ReactNode } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 
 export type Props = {
-  onClose?: () => void;
-  children?: ReactNode;
-};
+  onClose?: () => void
+  children?: ReactNode
+}
 
 /** Dialog header row. Children rendered on the left; an x close button is rendered top-right when onClose is provided. */
 export function HasciiDialogHeader(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
+  const press = usePressable({ onPress: props.onClose })
 
-  const hoveredState = useState(false);
-  const hovered = hoveredState[0];
-  const setHovered = hoveredState[1];
-
-  const pressedState = useState(false);
-  const pressed = pressedState[0];
-  const setPressed = pressedState[1];
-
-  const closeFg = pressed
+  const closeFg = press.isPressed
     ? theme.color.primaryActive
-    : hovered
+    : press.isHovered
       ? theme.color.foreground
-      : theme.color.mutedForeground;
+      : theme.color.mutedForeground
 
   return (
     <box flexDirection="row" alignItems="flex-start" justifyContent="space-between">
@@ -32,23 +25,10 @@ export function HasciiDialogHeader(props: Props) {
         {props.children}
       </box>
       {props.onClose ? (
-        <box
-          paddingLeft={1}
-          paddingRight={1}
-          onMouseOver={() => setHovered(true)}
-          onMouseOut={() => {
-            setHovered(false);
-            setPressed(false);
-          }}
-          onMouseDown={() => setPressed(true)}
-          onMouseUp={() => {
-            if (pressed) props.onClose?.();
-            setPressed(false);
-          }}
-        >
+        <box paddingLeft={1} paddingRight={1} {...press.bind}>
           <text fg={closeFg}>x</text>
         </box>
       ) : null}
     </box>
-  );
+  )
 }

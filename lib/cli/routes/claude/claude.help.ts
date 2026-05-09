@@ -1,16 +1,14 @@
 export const help = `funnel claude — launch Claude Code
 
 usage:
-  funnel claude                          launch "default" profile (or the first profile)
-  funnel claude --profile <name>         launch a named profile
-  funnel claude --channel <name> [opts]  raw launch (no profile)
+  funnel claude                          launch the default profile (first in the list)
+  funnel claude -p <name>                launch a named profile
+  funnel claude --profile <name>         (long form)
+  funnel claude --channel <name>         raw launch (no profile, cwd = current dir)
 
-options (override profile / raw):
-  --profile        profile name to launch
-  --channel        channel name to subscribe to
-  --repo           switch working directory to the named repo
-  --sub-agent      sub-agent name (passed to claude --agent)
-  --env-file       additional env file to load (relative path)
+options:
+  -p, --profile      profile name to launch
+  --channel          channel name (raw launch, ignored when --profile is given)
 
 Any other arguments are forwarded to the claude CLI.
-On launch the FUNNEL_CHANNEL_ID env var is set and MCP connects to the gateway.`;
+On launch the FUNNEL_CHANNEL_ID env var is set and MCP connects to the gateway.`

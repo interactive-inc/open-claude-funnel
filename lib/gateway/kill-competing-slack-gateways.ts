@@ -1,56 +1,56 @@
-import { FunnelLogger } from "@/engine/logger/logger";
-import { NodeFunnelLogger } from "@/engine/logger/node-logger";
-import { FunnelProcessRunner } from "@/engine/process/process-runner";
-import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner";
+import { FunnelLogger } from "@/engine/logger/logger"
+import { NodeFunnelLogger } from "@/engine/logger/node-logger"
+import { FunnelProcessRunner } from "@/engine/process/process-runner"
+import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 
 type Props = {
-  selfPid: number;
-  process?: FunnelProcessRunner;
-  logger?: FunnelLogger;
-};
+  selfPid: number
+  process?: FunnelProcessRunner
+  logger?: FunnelLogger
+}
 
-const defaultProcess = new NodeFunnelProcessRunner();
-const defaultLogger = new NodeFunnelLogger();
+const defaultProcess = new NodeFunnelProcessRunner()
+const defaultLogger = new NodeFunnelLogger()
 
 const isBun = (args: string): boolean => {
-  return args.includes("bun ") || /\/bun(\s|$)/.test(args);
-};
+  return args.includes("bun ") || /\/bun(\s|$)/.test(args)
+}
 
 const looksLikeSlackGateway = (args: string): boolean => {
-  return /(gateway|bolt|slack)/i.test(args);
-};
+  return /(gateway|bolt|slack)/i.test(args)
+}
 
 export const killCompetingSlackGateways = async (props: Props): Promise<number[]> => {
-  const runner = props.process ?? defaultProcess;
-  const logger = props.logger ?? defaultLogger;
-  const result = await runner.run(["ps", "-e", "-o", "pid=,args="]);
+  const runner = props.process ?? defaultProcess
+  const logger = props.logger ?? defaultLogger
+  const result = await runner.run(["ps", "-e", "-o", "pid=,args="])
 
-  if (result.exitCode !== 0) return [];
+  if (result.exitCode !== 0) return []
 
-  const killed: number[] = [];
+  const killed: number[] = []
 
   for (const raw of result.stdout.split("\n")) {
-    const line = raw.trim();
+    const line = raw.trim()
 
-    if (!line) continue;
+    if (!line) continue
 
-    const match = /^(\d+)\s+(.+)$/.exec(line);
+    const match = /^(\d+)\s+(.+)$/.exec(line)
 
-    if (!match) continue;
+    if (!match) continue
 
-    const pid = Number(match[1]);
-    const args = match[2]!;
+    const pid = Number(match[1])
+    const args = match[2]!
 
-    if (!Number.isInteger(pid) || pid <= 0) continue;
-    if (pid === props.selfPid) continue;
-    if (!isBun(args)) continue;
-    if (!looksLikeSlackGateway(args)) continue;
+    if (!Number.isInteger(pid) || pid <= 0) continue
+    if (pid === props.selfPid) continue
+    if (!isBun(args)) continue
+    if (!looksLikeSlackGateway(args)) continue
 
-    runner.kill(pid, "SIGTERM");
-    killed.push(pid);
+    runner.kill(pid, "SIGTERM")
+    killed.push(pid)
 
-    logger.info("killed competing Slack gateway process", { pid, args: args.slice(0, 160) });
+    logger.info("killed competing Slack gateway process", { pid, args: args.slice(0, 160) })
   }
 
-  return killed;
-};
+  return killed
+}

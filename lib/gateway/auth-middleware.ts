@@ -1,10 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
-import type { MiddlewareHandler } from "hono";
-import type { Env } from "@/gateway/factory";
+import { timingSafeEqual } from "node:crypto"
+import type { MiddlewareHandler } from "hono"
+import type { Env } from "@/gateway/factory"
 
 type Deps = {
-  expected: string;
-};
+  expected: string
+}
 
 /**
  * Verifies `Authorization: Bearer <token>` against the daemon's gateway token.
@@ -14,31 +14,31 @@ type Deps = {
  */
 export const requireBearerToken = (deps: Deps): MiddlewareHandler<Env> => {
   return async (c, next) => {
-    const header = c.req.header("authorization") ?? "";
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    const presented = match?.[1] ?? "";
+    const header = c.req.header("authorization") ?? ""
+    const match = header.match(/^Bearer\s+(.+)$/i)
+    const presented = match?.[1] ?? ""
 
     if (!constantTimeEqual(presented, deps.expected)) {
-      return c.text("unauthorized", 401);
+      return c.text("unauthorized", 401)
     }
 
-    return await next();
-  };
-};
+    return await next()
+  }
+}
 
 export const constantTimeEqual = (a: string, b: string): boolean => {
-  const bufA = Buffer.from(a, "utf-8");
-  const bufB = Buffer.from(b, "utf-8");
-  const maxLen = Math.max(bufA.length, bufB.length, 1);
-  const padA = Buffer.alloc(maxLen);
-  const padB = Buffer.alloc(maxLen);
+  const bufA = Buffer.from(a, "utf-8")
+  const bufB = Buffer.from(b, "utf-8")
+  const maxLen = Math.max(bufA.length, bufB.length, 1)
+  const padA = Buffer.alloc(maxLen)
+  const padB = Buffer.alloc(maxLen)
 
-  bufA.copy(padA);
-  bufB.copy(padB);
+  bufA.copy(padA)
+  bufB.copy(padB)
 
   // timingSafeEqual on equal-length padded buffers, then AND with length match
   // so a length-only probe still requires the full comparison time.
-  const equal = timingSafeEqual(padA, padB);
+  const equal = timingSafeEqual(padA, padB)
 
-  return equal && bufA.length === bufB.length;
-};
+  return equal && bufA.length === bufB.length
+}

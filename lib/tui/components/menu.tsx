@@ -1,12 +1,12 @@
 /** @jsxImportSource @opentui/react */
-import { MenuItem } from "@/tui/components/menu-item";
-import type { MenuItem as MenuItemType, View } from "@/tui/types";
+import { MenuItem } from "@/tui/components/menu-item"
+import type { MenuItem as MenuItemType, View } from "@/tui/types"
 
 type Props = {
-  items: MenuItemType[];
-  active: View;
-  onSelect: (view: View) => void;
-};
+  items: MenuItemType[]
+  active: View
+  onSelect: (view: View) => void
+}
 
 /** Vertical list of clickable nav rows. Each row is a `MenuItem`. */
 export function Menu(props: Props) {
@@ -22,5 +22,5 @@ export function Menu(props: Props) {
         />
       ))}
     </box>
-  );
+  )
 }

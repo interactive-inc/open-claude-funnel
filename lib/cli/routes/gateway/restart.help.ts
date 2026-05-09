@@ -7,4 +7,4 @@ On macOS wraps with caffeinate -i by default. Use --no-caffeine to disable.
 
 examples:
   funnel gateway restart
-  funnel gateway restart --no-caffeine`;
+  funnel gateway restart --no-caffeine`

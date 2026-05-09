@@ -1,7 +1,7 @@
-import { z } from "zod";
-import { factory } from "@/cli/factory";
-import { zValidator } from "@/cli/router/validator";
-import { help } from "@/cli/routes/gateway/restart.help";
+import { z } from "zod"
+import { factory } from "@/cli/factory"
+import { zValidator } from "@/cli/router/validator"
+import { help } from "@/cli/routes/gateway/restart.help"
 
 export const gatewayRestartHandler = factory.createHandlers(
   zValidator(
@@ -12,24 +12,24 @@ export const gatewayRestartHandler = factory.createHandlers(
     help,
   ),
   async (c) => {
-    const query = c.req.valid("query");
-    const funnel = c.var.funnel;
+    const query = c.req.valid("query")
+    const funnel = c.var.funnel
 
     const result = await funnel.gateway.restart({
       caffeinate: query["no-caffeine"] !== "true",
-    });
-    const lines: string[] = [];
+    })
+    const lines: string[] = []
 
     if (result.wasRunning) {
-      lines.push(result.stopped ? "funnel gateway: stopped" : "funnel gateway: failed to stop");
+      lines.push(result.stopped ? "funnel gateway: stopped" : "funnel gateway: failed to stop")
     }
 
     if (result.stopped) {
-      lines.push(result.started ? "funnel gateway: started" : "funnel gateway: failed to start");
+      lines.push(result.started ? "funnel gateway: started" : "funnel gateway: failed to start")
     }
 
-    const body = lines.join("\n");
+    const body = lines.join("\n")
 
-    return result.ok ? c.text(body) : c.text(body, 500);
+    return result.ok ? c.text(body) : c.text(body, 500)
   },
-);
+)

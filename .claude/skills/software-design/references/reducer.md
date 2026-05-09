@@ -8,22 +8,22 @@ Action は Union Type で定義。Reducer は純粋関数。非同期処理は R
 
 ```ts
 type State = {
-  items: ReadonlyArray<Item>;
-  total: number;
-};
+  items: ReadonlyArray<Item>
+  total: number
+}
 
-type Action = { type: "add"; item: Item } | { type: "remove"; index: number } | { type: "clear" };
+type Action = { type: "add"; item: Item } | { type: "remove"; index: number } | { type: "clear" }
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "add":
-      const items = [...state.items, action.item];
-      return { items, total: calcTotal(items) };
+      const items = [...state.items, action.item]
+      return { items, total: calcTotal(items) }
     case "remove":
-      const remaining = state.items.filter((_, i) => i !== action.index);
-      return { items: remaining, total: calcTotal(remaining) };
+      const remaining = state.items.filter((_, i) => i !== action.index)
+      return { items: remaining, total: calcTotal(remaining) }
     case "clear":
-      return { items: [], total: 0 };
+      return { items: [], total: 0 }
   }
 }
 ```

@@ -1,32 +1,46 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
-import { useHasciiToggleGroup } from "@/tui/components/ui/hascii/toggle-group";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { useHasciiToggleGroup } from "@/tui/components/ui/hascii/toggle-group"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 
 export type Props = {
-  value: string;
-  children?: ReactNode;
-};
+  value: string
+  children?: ReactNode
+}
 
 /** Pressable cell inside HasciiToggleGroup. Pressed state is controlled by the surrounding group. */
 export function HasciiToggleGroupItem(props: Props) {
-  const theme = useHasciiTheme();
-  const ctx = useHasciiToggleGroup();
+  const theme = useHasciiTheme()
+  const ctx = useHasciiToggleGroup()
 
-  const isPressed = ctx?.isPressed(props.value) ?? false;
+  const isSelected = ctx?.isPressed(props.value) ?? false
 
-  const bg = isPressed ? theme.color.primary : theme.color.muted;
-  const fg = isPressed ? theme.color.primaryForeground : theme.color.mutedForeground;
+  const press = usePressable({
+    onPress: () => ctx?.toggle(props.value),
+  })
+
+  const bg = isSelected
+    ? press.isPressed
+      ? theme.color.primaryActive
+      : press.isHovered
+        ? theme.color.primaryHover
+        : theme.color.primary
+    : press.isPressed
+      ? theme.color.secondaryActive
+      : press.isHovered
+        ? theme.color.secondaryHover
+        : theme.color.muted
+
+  const fg = isSelected
+    ? theme.color.primaryForeground
+    : press.isHovered
+      ? theme.color.foreground
+      : theme.color.mutedForeground
 
   return (
-    <box
-      height={1}
-      paddingLeft={2}
-      paddingRight={2}
-      backgroundColor={bg}
-      onMouseUp={() => ctx?.toggle(props.value)}
-    >
+    <box height={1} paddingLeft={2} paddingRight={2} backgroundColor={bg} {...press.bind}>
       <text fg={fg}>{props.children}</text>
     </box>
-  );
+  )
 }

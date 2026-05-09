@@ -1,12 +1,15 @@
-import { factory } from "@/gateway/factory";
+import { factory } from "@/gateway/factory"
 
-/** POST /listeners/:name/restart — stop + start a connector listener. */
+/** POST /listeners/:channel/:connector/restart — stop + start a connector listener. */
 export const listenersRestartHandler = factory.createHandlers(async (c) => {
-  const name = c.req.param("name");
+  const channel = c.req.param("channel")
+  const connector = c.req.param("connector")
 
-  if (!name) return c.json({ ok: false, reason: "name required" }, 400);
+  if (!channel || !connector) {
+    return c.json({ ok: false, reason: "channel and connector required" }, 400)
+  }
 
-  const result = await c.var.deps.supervisor.restart(name);
+  const result = await c.var.deps.supervisor.restart(channel, connector)
 
-  return c.json(result, result.ok ? 200 : 400);
-});
+  return c.json(result, result.ok ? 200 : 400)
+})

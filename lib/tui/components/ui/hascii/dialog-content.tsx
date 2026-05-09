@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
+import type { ReactNode } from "react"
 
 export type Props = {
-  children?: ReactNode;
-};
+  children?: ReactNode
+}
 
 /** Vertical body region inside a HasciiDialog. */
 export function HasciiDialogContent(props: Props) {
@@ -11,5 +11,5 @@ export function HasciiDialogContent(props: Props) {
     <box flexDirection="column" gap={1}>
       {props.children}
     </box>
-  );
+  )
 }

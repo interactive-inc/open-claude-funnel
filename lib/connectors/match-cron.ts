@@ -1,65 +1,65 @@
-type Field = { min: number; max: number; values: Set<number> };
+type Field = { min: number; max: number; values: Set<number> }
 
 const parseField = (expr: string, min: number, max: number): Field => {
-  const values = new Set<number>();
+  const values = new Set<number>()
 
   for (const part of expr.split(",")) {
-    const [rangePart, stepPart] = part.split("/");
-    const step = stepPart ? Number(stepPart) : 1;
+    const [rangePart, stepPart] = part.split("/")
+    const step = stepPart ? Number(stepPart) : 1
 
     if (!Number.isFinite(step) || step <= 0) {
-      throw new Error(`invalid cron step: "${stepPart}"`);
+      throw new Error(`invalid cron step: "${stepPart}"`)
     }
 
-    let lo = min;
-    let hi = max;
+    let lo = min
+    let hi = max
 
     if (rangePart === "*" || rangePart === undefined || rangePart === "") {
-      lo = min;
-      hi = max;
+      lo = min
+      hi = max
     } else if (rangePart.includes("-")) {
-      const [aStr, bStr] = rangePart.split("-");
-      const a = Number(aStr);
-      const b = Number(bStr);
+      const [aStr, bStr] = rangePart.split("-")
+      const a = Number(aStr)
+      const b = Number(bStr)
 
       if (!Number.isFinite(a) || !Number.isFinite(b)) {
-        throw new Error(`invalid cron range: "${rangePart}"`);
+        throw new Error(`invalid cron range: "${rangePart}"`)
       }
 
-      lo = a;
-      hi = b;
+      lo = a
+      hi = b
     } else {
-      const n = Number(rangePart);
+      const n = Number(rangePart)
 
-      if (!Number.isFinite(n)) throw new Error(`invalid cron value: "${rangePart}"`);
+      if (!Number.isFinite(n)) throw new Error(`invalid cron value: "${rangePart}"`)
 
-      lo = n;
-      hi = stepPart ? max : n;
+      lo = n
+      hi = stepPart ? max : n
     }
 
     if (lo < min || hi > max || lo > hi) {
-      throw new Error(`cron value out of range: ${rangePart} (must be ${min}-${max})`);
+      throw new Error(`cron value out of range: ${rangePart} (must be ${min}-${max})`)
     }
 
     for (let i = lo; i <= hi; i += step) {
-      values.add(i);
+      values.add(i)
     }
   }
 
-  return { min, max, values };
-};
+  return { min, max, values }
+}
 
 export const matchCron = (expr: string, date: Date): boolean => {
-  const parts = expr.trim().split(/\s+/);
+  const parts = expr.trim().split(/\s+/)
 
   if (parts.length !== 5) {
-    throw new Error(`cron must have 5 fields (got ${parts.length}): "${expr}"`);
+    throw new Error(`cron must have 5 fields (got ${parts.length}): "${expr}"`)
   }
 
-  const [minute, hour, dom, month, dow] = parts;
+  const [minute, hour, dom, month, dow] = parts
 
   if (!minute || !hour || !dom || !month || !dow) {
-    throw new Error(`cron has empty fields: "${expr}"`);
+    throw new Error(`cron has empty fields: "${expr}"`)
   }
 
   const fields = [
@@ -68,11 +68,11 @@ export const matchCron = (expr: string, date: Date): boolean => {
     { field: parseField(dom, 1, 31), value: date.getDate() },
     { field: parseField(month, 1, 12), value: date.getMonth() + 1 },
     { field: parseField(dow, 0, 6), value: date.getDay() },
-  ];
+  ]
 
   for (const { field, value } of fields) {
-    if (!field.values.has(value)) return false;
+    if (!field.values.has(value)) return false
   }
 
-  return true;
-};
+  return true
+}

@@ -1,19 +1,19 @@
 /** @jsxImportSource @opentui/react */
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { funnel } from "@/tui/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 type Hint = {
-  key: string;
-  label: string;
-};
+  key: string
+  label: string
+}
 
 type Props = {
-  hints: Hint[];
-};
+  hints: Hint[]
+}
 
 /** Inline keymap row — used at the bottom of each interactive view. */
 export function Keymap(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <text fg={theme.color.mutedForeground}>
@@ -25,5 +25,5 @@ export function Keymap(props: Props) {
         </span>
       ))}
     </text>
-  );
+  )
 }

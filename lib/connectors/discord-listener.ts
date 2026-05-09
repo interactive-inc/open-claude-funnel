@@ -1,26 +1,26 @@
-import { Client, GatewayIntentBits, Partials } from "discord.js";
-import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener";
-import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor";
-import { FunnelLogger } from "@/engine/logger/logger";
-import { NodeFunnelLogger } from "@/engine/logger/node-logger";
-import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema";
+import { Client, GatewayIntentBits, Partials } from "discord.js"
+import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
+import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor"
+import { FunnelLogger } from "@/engine/logger/logger"
+import { NodeFunnelLogger } from "@/engine/logger/node-logger"
+import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
 
 type Deps = {
-  config: DiscordConnectorConfig;
-  logger?: FunnelLogger;
-};
+  config: DiscordConnectorConfig
+  logger?: FunnelLogger
+}
 
-const defaultLogger = new NodeFunnelLogger();
+const defaultLogger = new NodeFunnelLogger()
 
 export class FunnelDiscordListener extends FunnelConnectorListener {
-  private readonly config: DiscordConnectorConfig;
-  private readonly logger: FunnelLogger;
-  private client: Client | null = null;
+  private readonly config: DiscordConnectorConfig
+  private readonly logger: FunnelLogger
+  private client: Client | null = null
 
   constructor(deps: Deps) {
-    super();
-    this.config = deps.config;
-    this.logger = deps.logger ?? defaultLogger;
+    super()
+    this.config = deps.config
+    this.logger = deps.logger ?? defaultLogger
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -32,10 +32,10 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
         GatewayIntentBits.DirectMessages,
       ],
       partials: [Partials.Channel],
-    });
+    })
 
     client.on("messageCreate", async (message) => {
-      const processor = new FunnelDiscordEventProcessor({ ownUserId: client.user?.id ?? "" });
+      const processor = new FunnelDiscordEventProcessor({ ownUserId: client.user?.id ?? "" })
 
       const result = processor.process({
         authorId: message.author.id,
@@ -44,44 +44,44 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
         guildId: message.guildId,
         mentionedUserIds: [...message.mentions.users.keys()],
         raw: message.toJSON(),
-      });
+      })
 
-      if (result.skip) return;
+      if (result.skip) return
 
       try {
-        await notify(result.content, result.meta);
+        await notify(result.content, result.meta)
       } catch (error) {
         this.logger.error("discord notify error", {
           error: error instanceof Error ? error.message : String(error),
-        });
+        })
       }
-    });
+    })
 
     client.on("error", (error) => {
       this.logger.error("discord client error", {
         error: error instanceof Error ? error.message : String(error),
-      });
-    });
+      })
+    })
 
-    await client.login(this.config.botToken);
-    this.client = client;
+    await client.login(this.config.botToken)
+    this.client = client
   }
 
   async stop(): Promise<void> {
-    if (!this.client) return;
+    if (!this.client) return
 
     try {
-      await this.client.destroy();
+      await this.client.destroy()
     } catch (error) {
       this.logger.error("discord stop error", {
         error: error instanceof Error ? error.message : String(error),
-      });
+      })
     } finally {
-      this.client = null;
+      this.client = null
     }
   }
 
   override isAlive(): boolean {
-    return this.client !== null;
+    return this.client !== null
   }
 }

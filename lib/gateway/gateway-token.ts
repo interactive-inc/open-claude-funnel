@@ -1,26 +1,26 @@
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { FunnelFileSystem } from "@/engine/fs/file-system";
-import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system";
-import { FUNNEL_DIR } from "@/engine/settings/settings-store";
+import { homedir } from "node:os"
+import { dirname, join } from "node:path"
+import { FunnelFileSystem } from "@/engine/fs/file-system"
+import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
+import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 
-const TOKEN_FILE_NAME = "gateway.token";
-const TOKEN_BYTES = 32;
+const TOKEN_FILE_NAME = "gateway.token"
+const TOKEN_BYTES = 32
 
 type Deps = {
-  fs?: FunnelFileSystem;
-  dir?: string;
-  generate?: () => string;
-};
+  fs?: FunnelFileSystem
+  dir?: string
+  generate?: () => string
+}
 
-const defaultFs = new NodeFunnelFileSystem();
+const defaultFs = new NodeFunnelFileSystem()
 
 const defaultGenerate = (): string => {
-  const buf = new Uint8Array(TOKEN_BYTES);
-  crypto.getRandomValues(buf);
+  const buf = new Uint8Array(TOKEN_BYTES)
+  crypto.getRandomValues(buf)
 
-  return [...buf].map((b) => b.toString(16).padStart(2, "0")).join("");
-};
+  return [...buf].map((b) => b.toString(16).padStart(2, "0")).join("")
+}
 
 /**
  * Reads / generates the gateway daemon token used to authenticate
@@ -31,23 +31,23 @@ const defaultGenerate = (): string => {
  * the file directly; the token never leaves the user's home directory.
  */
 export class FunnelGatewayToken {
-  private readonly fs: FunnelFileSystem;
-  private readonly path: string;
-  private readonly generate: () => string;
+  private readonly fs: FunnelFileSystem
+  private readonly path: string
+  private readonly generate: () => string
 
   constructor(deps: Deps = {}) {
-    this.fs = deps.fs ?? defaultFs;
-    this.path = join(deps.dir ?? FUNNEL_DIR, TOKEN_FILE_NAME);
-    this.generate = deps.generate ?? defaultGenerate;
-    Object.freeze(this);
+    this.fs = deps.fs ?? defaultFs
+    this.path = join(deps.dir ?? FUNNEL_DIR, TOKEN_FILE_NAME)
+    this.generate = deps.generate ?? defaultGenerate
+    Object.freeze(this)
   }
 
   read(): string | null {
-    if (!this.fs.existsSync(this.path)) return null;
+    if (!this.fs.existsSync(this.path)) return null
 
-    const value = this.fs.readFileSync(this.path).trim();
+    const value = this.fs.readFileSync(this.path).trim()
 
-    return value.length > 0 ? value : null;
+    return value.length > 0 ? value : null
   }
 
   /**
@@ -59,21 +59,21 @@ export class FunnelGatewayToken {
    * take a file lock around this call externally.
    */
   ensure(): string {
-    const existing = this.read();
+    const existing = this.read()
 
-    if (existing) return existing;
+    if (existing) return existing
 
-    const token = this.generate();
+    const token = this.generate()
 
-    this.fs.mkdirSync(dirname(this.path), { recursive: true });
-    this.fs.writeSecretFileSync(this.path, `${token}\n`);
+    this.fs.mkdirSync(dirname(this.path), { recursive: true })
+    this.fs.writeSecretFileSync(this.path, `${token}\n`)
 
-    return token;
+    return token
   }
 
   getPath(): string {
-    return this.path;
+    return this.path
   }
 }
 
-export const DEFAULT_GATEWAY_TOKEN_PATH = join(homedir(), ".funnel", TOKEN_FILE_NAME);
+export const DEFAULT_GATEWAY_TOKEN_PATH = join(homedir(), ".funnel", TOKEN_FILE_NAME)

@@ -1,10 +1,10 @@
-import { createFactory } from "hono/factory";
-import type { GatewayRouteDeps } from "@/gateway/routes/route-deps";
+import { createFactory } from "hono/factory"
+import type { GatewayRouteDeps } from "@/gateway/routes/route-deps"
 
 export type Env = {
   Variables: {
-    deps: GatewayRouteDeps;
-  };
-};
+    deps: GatewayRouteDeps
+  }
+}
 
-export const factory = createFactory<Env>();
+export const factory = createFactory<Env>()

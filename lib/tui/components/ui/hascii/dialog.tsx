@@ -1,19 +1,19 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
-type Variant = "default" | "outline";
+type Variant = "default" | "outline"
 
 export type Props = {
-  variant?: Variant;
-  width?: number;
-  children?: ReactNode;
-};
+  variant?: Variant
+  width?: number
+  children?: ReactNode
+}
 
 /** Floating dialog container. variant="default" uses a filled background; "outline" uses a bordered transparent surface. */
 export function HasciiDialog(props: Props) {
-  const variant = props.variant ?? "default";
-  const theme = useHasciiTheme();
+  const variant = props.variant ?? "default"
+  const theme = useHasciiTheme()
 
   if (variant === "outline") {
     return (
@@ -31,7 +31,7 @@ export function HasciiDialog(props: Props) {
       >
         {props.children}
       </box>
-    );
+    )
   }
 
   return (
@@ -47,5 +47,5 @@ export function HasciiDialog(props: Props) {
     >
       {props.children}
     </box>
-  );
+  )
 }

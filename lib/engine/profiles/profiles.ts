@@ -1,128 +1,126 @@
-import { FunnelSettingsReader } from "@/engine/settings/settings-reader";
-import type { ProfileConfig } from "@/engine/settings/settings-schema";
+import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
+import type { ProfileConfig } from "@/engine/settings/settings-schema"
 
 type Deps = {
-  store: FunnelSettingsReader;
-};
+  store: FunnelSettingsReader
+}
 
 /**
- * Named launch presets for `fnl claude` (channel + repo + sub-agent + env files).
- * Implements ProfileChannelChecker / ProfileChannelRefUpdater so FunnelChannels
- * can validate references without depending on the FunnelProfiles concrete type.
+ * Named launch presets for `fnl claude`. Each profile bundles a working
+ * directory, a sub-agent name, and the channel id its Claude instance will
+ * subscribe to. Implements ProfileChannelChecker so FunnelChannels can refuse
+ * to remove a channel that is still referenced.
+ *
+ * The first entry in the persisted array is treated as the default profile;
+ * `asDefault` reorders the array to put a named profile first.
+ *
+ * `channelId` always stores the channel's stable id (uuid). CLI surfaces
+ * resolve channel name → id before calling `add`/`update` here.
  */
 export class FunnelProfiles {
-  private readonly store: FunnelSettingsReader;
+  private readonly store: FunnelSettingsReader
 
   constructor(deps: Deps) {
-    this.store = deps.store;
-    Object.freeze(this);
+    this.store = deps.store
+    Object.freeze(this)
   }
 
   list(): ProfileConfig[] {
-    return this.store.read().profiles;
+    return this.store.read().profiles
   }
 
   get(name: string): ProfileConfig | null {
-    return this.list().find((p) => p.name === name) ?? null;
+    return this.list().find((p) => p.name === name) ?? null
+  }
+
+  getDefault(): ProfileConfig | null {
+    return this.list()[0] ?? null
   }
 
   add(config: ProfileConfig): void {
-    const settings = this.store.read();
+    const settings = this.store.read()
 
     if (settings.profiles.some((p) => p.name === config.name)) {
-      throw new Error(`profile "${config.name}" already exists`);
+      throw new Error(`profile "${config.name}" already exists`)
     }
 
-    if (!settings.channels.some((c) => c.name === config.channel)) {
-      throw new Error(`channel "${config.channel}" not found`);
+    if (!settings.channels.some((c) => c.id === config.channelId)) {
+      throw new Error(`channel id "${config.channelId}" not found`)
     }
 
-    if (config.repo && !settings.repositories.some((r) => r.name === config.repo)) {
-      throw new Error(`repo "${config.repo}" not found`);
-    }
+    settings.profiles.push(config)
 
-    settings.profiles.push(config);
-
-    this.store.write(settings);
+    this.store.write(settings)
   }
 
   remove(name: string): void {
-    const settings = this.store.read();
+    const settings = this.store.read()
 
-    const index = settings.profiles.findIndex((p) => p.name === name);
+    const index = settings.profiles.findIndex((p) => p.name === name)
 
-    if (index < 0) throw new Error(`profile "${name}" not found`);
+    if (index < 0) throw new Error(`profile "${name}" not found`)
 
-    settings.profiles.splice(index, 1);
+    settings.profiles.splice(index, 1)
 
-    this.store.write(settings);
+    this.store.write(settings)
   }
 
   rename(oldName: string, newName: string): void {
-    const settings = this.store.read();
+    const settings = this.store.read()
 
-    const profile = settings.profiles.find((p) => p.name === oldName);
+    const profile = settings.profiles.find((p) => p.name === oldName)
 
-    if (!profile) throw new Error(`profile "${oldName}" not found`);
+    if (!profile) throw new Error(`profile "${oldName}" not found`)
 
     if (settings.profiles.some((p) => p.name === newName)) {
-      throw new Error(`profile "${newName}" already exists`);
+      throw new Error(`profile "${newName}" already exists`)
     }
 
-    profile.name = newName;
+    profile.name = newName
 
-    this.store.write(settings);
+    this.store.write(settings)
   }
 
-  hasChannelRef(channelName: string): boolean {
-    return this.store.read().profiles.some((p) => p.channel === channelName);
+  asDefault(name: string): void {
+    const settings = this.store.read()
+
+    const index = settings.profiles.findIndex((p) => p.name === name)
+
+    if (index < 0) throw new Error(`profile "${name}" not found`)
+
+    if (index === 0) return
+
+    const [profile] = settings.profiles.splice(index, 1)
+
+    if (!profile) return
+
+    settings.profiles.unshift(profile)
+
+    this.store.write(settings)
   }
 
-  renameChannelRef(oldName: string, newName: string): void {
-    const settings = this.store.read();
-    let changed = false;
-
-    for (const profile of settings.profiles) {
-      if (profile.channel === oldName) {
-        profile.channel = newName;
-        changed = true;
-      }
-    }
-
-    if (changed) this.store.write(settings);
+  hasChannelRef(channelId: string): boolean {
+    return this.store.read().profiles.some((p) => p.channelId === channelId)
   }
 
   update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {
-    const settings = this.store.read();
+    const settings = this.store.read()
 
-    const profile = settings.profiles.find((p) => p.name === name);
+    const profile = settings.profiles.find((p) => p.name === name)
 
-    if (!profile) throw new Error(`profile "${name}" not found`);
+    if (!profile) throw new Error(`profile "${name}" not found`)
 
-    if (fields.channel !== undefined) {
-      if (!settings.channels.some((c) => c.name === fields.channel)) {
-        throw new Error(`channel "${fields.channel}" not found`);
+    if (fields.channelId !== undefined) {
+      if (!settings.channels.some((c) => c.id === fields.channelId)) {
+        throw new Error(`channel id "${fields.channelId}" not found`)
       }
 
-      profile.channel = fields.channel;
+      profile.channelId = fields.channelId
     }
 
-    if (fields.repo !== undefined) {
-      if (fields.repo && !settings.repositories.some((r) => r.name === fields.repo)) {
-        throw new Error(`repo "${fields.repo}" not found`);
-      }
+    if (fields.path !== undefined) profile.path = fields.path
+    if (fields.subAgent !== undefined) profile.subAgent = fields.subAgent
 
-      profile.repo = fields.repo || undefined;
-    }
-
-    if (fields.subAgent !== undefined) {
-      profile.subAgent = fields.subAgent || undefined;
-    }
-
-    if (fields.envFiles !== undefined) {
-      profile.envFiles = fields.envFiles;
-    }
-
-    this.store.write(settings);
+    this.store.write(settings)
   }
 }

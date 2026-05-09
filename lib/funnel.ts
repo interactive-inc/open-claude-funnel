@@ -1,46 +1,41 @@
-import { join } from "node:path";
-import { FunnelChannels } from "@/engine/channels/channels";
-import { FunnelClaude } from "@/engine/claude/claude";
-import { type ConnectorStoresBundle, createConnectorStores } from "@/connectors/connector-stores";
-import { FunnelConnectors } from "@/connectors/connectors";
-import type { FunnelFileSystem } from "@/engine/fs/file-system";
-import { FunnelGateway } from "@/gateway/gateway";
-import { FunnelGatewayServer } from "@/gateway/gateway-server";
-import { FunnelGatewayToken } from "@/gateway/gateway-token";
-import { FunnelListenersClient } from "@/gateway/listeners-client";
-import type { FunnelIdGenerator } from "@/engine/id/id-generator";
-import { FunnelLogger } from "@/engine/logger/logger";
-import { NodeFunnelLogger } from "@/engine/logger/node-logger";
-import { FunnelMcp } from "@/engine/mcp/mcp";
-import { FunnelProcessRunner } from "@/engine/process/process-runner";
-import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner";
-import { FunnelProfiles } from "@/engine/profiles/profiles";
-import { FunnelRepositories } from "@/engine/repos/repositories";
-import { FunnelSchedule } from "@/connectors/schedule";
-import { FunnelSettingsReader } from "@/engine/settings/settings-reader";
-import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store";
-import type { FunnelClock } from "@/engine/time/clock";
+import { join } from "node:path"
+import { FunnelConnectorFactory } from "@/connectors/connector-factory"
+import { FunnelChannels } from "@/engine/channels/channels"
+import { FunnelClaude } from "@/engine/claude/claude"
+import type { FunnelFileSystem } from "@/engine/fs/file-system"
+import type { FunnelIdGenerator } from "@/engine/id/id-generator"
+import { FunnelLogger } from "@/engine/logger/logger"
+import { NodeFunnelLogger } from "@/engine/logger/node-logger"
+import { FunnelMcp } from "@/engine/mcp/mcp"
+import { FunnelProcessRunner } from "@/engine/process/process-runner"
+import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
+import { FunnelProfiles } from "@/engine/profiles/profiles"
+import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
+import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store"
+import type { FunnelClock } from "@/engine/time/clock"
+import { FunnelGateway } from "@/gateway/gateway"
+import { FunnelGatewayServer } from "@/gateway/gateway-server"
+import { FunnelGatewayToken } from "@/gateway/gateway-token"
+import { FunnelListenersClient } from "@/gateway/listeners-client"
 
 type Props = {
-  /** Settings persistence (channels / repositories / profiles). Defaults to a FunnelSettingsStore rooted at `dir`. */
-  store?: FunnelSettingsReader;
+  /** Settings persistence (channels with nested connectors / profiles). Defaults to a FunnelSettingsStore rooted at `dir`. */
+  store?: FunnelSettingsReader
   /** Filesystem boundary. Replace with MemoryFunnelFileSystem to sandbox all disk I/O. */
-  fs?: FunnelFileSystem;
+  fs?: FunnelFileSystem
   /** Process runner used by gateway / claude / gh listener. Replace with MemoryFunnelProcessRunner for tests. */
-  process?: FunnelProcessRunner;
+  process?: FunnelProcessRunner
   /** Logger flowed into every facet. Replace with MemoryFunnelLogger or NoopFunnelLogger to silence/inspect. */
-  logger?: FunnelLogger;
+  logger?: FunnelLogger
   /** Clock used by schedule listener, gh poll watermarks, and gateway timeouts. */
-  clock?: FunnelClock;
-  /** ID generator for schedule entry ids. Use MemoryFunnelIdGenerator for deterministic tests. */
-  idGenerator?: FunnelIdGenerator;
-  /** Funnel home directory (settings.json + connectors/<type>/). Defaults to ~/.funnel. */
-  dir?: string;
+  clock?: FunnelClock
+  /** ID generator for channel and connector ids. Use MemoryFunnelIdGenerator for deterministic tests. */
+  idGenerator?: FunnelIdGenerator
+  /** Funnel home directory (settings.json + per-channel/per-connector dirs). Defaults to ~/.funnel. */
+  dir?: string
   /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to /tmp/funnel. */
-  tmpDir?: string;
-  /** Pre-built connector stores. Useful when sharing stores between multiple Funnel instances. */
-  connectorStores?: ConnectorStoresBundle;
-};
+  tmpDir?: string
+}
 
 /**
  * Facade exposing every funnel facet as a getter.
@@ -50,17 +45,20 @@ type Props = {
  * injectable via `Props` — passing memory implementations gives a fully sandboxed
  * Funnel that touches no real disk, processes, or wall-clock time.
  *
+ * Connectors live nested inside their owning channel (channels[].connectors[]),
+ * so connector CRUD is reached via `funnel.channels.addConnector(...)` etc.
+ *
  * @example
  * ```ts
  * const funnel = new Funnel({})
- * funnel.connectors.add({ type: "slack", name: "ops", botToken, appToken })
- * funnel.channels.add({ name: "inbox", connectors: ["ops"] })
+ * const channel = funnel.channels.add({ name: "inbox" })
+ * funnel.channels.addConnector("inbox", { type: "slack", name: "ops", botToken, appToken })
  * await funnel.gatewayServer({ port: 9742 }).start()
  * ```
  */
 export class Funnel {
   constructor(private readonly props: Props = {}) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   /** Settings reader. If not injected, a FunnelSettingsStore rooted at `dir` is created. */
@@ -71,76 +69,61 @@ export class Funnel {
         path: join(this.props.dir ?? FUNNEL_DIR, "settings.json"),
         fs: this.props.fs,
       })
-    );
+    )
   }
 
   /** Process runner boundary. Defaults to NodeFunnelProcessRunner. */
   get process(): FunnelProcessRunner {
-    return this.props.process ?? new NodeFunnelProcessRunner();
+    return this.props.process ?? new NodeFunnelProcessRunner()
   }
 
   /** Logger boundary. Defaults to NodeFunnelLogger. */
   get logger(): FunnelLogger {
-    return this.props.logger ?? new NodeFunnelLogger();
+    return this.props.logger ?? new NodeFunnelLogger()
   }
 
-  /** Per-type connector stores (slack / gh / discord / schedule), all DI'd from Props. */
-  get stores(): ConnectorStoresBundle {
-    return (
-      this.props.connectorStores ??
-      createConnectorStores({
-        fs: this.props.fs,
-        process: this.props.process,
-        logger: this.props.logger,
-        clock: this.props.clock,
-        idGenerator: this.props.idGenerator,
-        dir: this.props.dir,
-      })
-    );
+  /** Pure factory that constructs per-type listeners and adapters from connector configs. */
+  get factory(): FunnelConnectorFactory {
+    return new FunnelConnectorFactory({
+      fs: this.props.fs,
+      process: this.props.process,
+      logger: this.props.logger,
+      dir: this.props.dir,
+    })
   }
 
-  /** Connector CRUD + per-type call/listener APIs. Wired with channels in a forward-const closure. */
-  get connectors(): FunnelConnectors {
-    return this.wirePair().connectors;
-  }
-
-  /** Channel CRUD + connector attach/detach. Wired with connectors and profiles via DI. */
+  /** Channel CRUD + nested connector CRUD + schedule entries + listener/adapter dispatch. */
   get channels(): FunnelChannels {
-    return this.wirePair().channels;
+    return new FunnelChannels({
+      store: this.store,
+      factory: this.factory,
+      profileChecker: this.profiles,
+      clock: this.props.clock,
+      idGenerator: this.props.idGenerator,
+    })
   }
 
-  /** Schedule connector entry CRUD (cron lines). */
-  get schedule(): FunnelSchedule {
-    return new FunnelSchedule({ store: this.stores.schedule });
-  }
-
-  /** Launch profiles (named presets for `fnl claude`). */
+  /** Launch profiles (named presets for `fnl claude`: path + sub-agent + channel id). */
   get profiles(): FunnelProfiles {
-    return new FunnelProfiles({ store: this.store });
-  }
-
-  /** Repository registry; writes the funnel MCP entry into each repo's .mcp.json. */
-  get repositories(): FunnelRepositories {
-    return new FunnelRepositories({ store: this.store, mcp: this.mcp });
+    return new FunnelProfiles({ store: this.store })
   }
 
   /** funnel MCP installer (writes/removes `.mcp.json` entries in target repos). */
   get mcp(): FunnelMcp {
-    return new FunnelMcp({ fs: this.props.fs });
+    return new FunnelMcp({ fs: this.props.fs })
   }
 
   /** Launch Claude Code with a channel injected via env, MCP installed, gateway ensured. */
   get claude(): FunnelClaude {
     return new FunnelClaude({
       channels: this.channels,
-      repositories: this.repositories,
       mcp: this.mcp,
       gateway: this.gateway,
       fs: this.props.fs,
       process: this.props.process,
       logger: this.props.logger,
       dir: this.props.dir,
-    });
+    })
   }
 
   /** Gateway daemon controller (PID-file, start/stop the separate `bun daemon.ts` process). */
@@ -151,12 +134,12 @@ export class Funnel {
       clock: this.props.clock,
       dir: this.props.dir,
       tmpDir: this.props.tmpDir,
-    });
+    })
   }
 
   /** Read / generate the daemon's gateway token (mode 0600 file under `dir`). */
   get gatewayToken(): FunnelGatewayToken {
-    return new FunnelGatewayToken({ fs: this.props.fs, dir: this.props.dir });
+    return new FunnelGatewayToken({ fs: this.props.fs, dir: this.props.dir })
   }
 
   /**
@@ -165,14 +148,14 @@ export class Funnel {
    * paths stay write-only without parsing strings.
    */
   get listeners(): FunnelListenersClient {
-    const gateway = this.gateway;
-    const token = this.gatewayToken;
+    const gateway = this.gateway
+    const token = this.gatewayToken
 
     return new FunnelListenersClient({
       port: gateway.getPort(),
       isDaemonRunning: () => gateway.isRunning(),
       getToken: () => token.read(),
-    });
+    })
   }
 
   /**
@@ -182,15 +165,15 @@ export class Funnel {
    */
   gatewayServer(
     options: {
-      port?: number;
-      logDir?: string;
-      killCompetingSlack?: boolean;
+      port?: number
+      logDir?: string
+      killCompetingSlack?: boolean
       /** Override the auth token. Defaults to the persisted gateway.token. Pass "" to disable auth (tests). */
-      token?: string;
+      token?: string
     } = {},
   ): FunnelGatewayServer {
     return new FunnelGatewayServer({
-      connectors: this.connectors,
+      channels: this.channels,
       settings: this.store,
       port: options.port,
       logDir: options.logDir,
@@ -200,36 +183,6 @@ export class Funnel {
       logger: this.props.logger,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
-    });
-  }
-
-  /**
-   * Wires the Channels ↔ Connectors cycle.
-   *
-   * Channels need to ask "does this connector exist?" (ConnectorExistenceChecker)
-   * and Connectors need to ask "rename / detach me from any channel that points
-   * at me" (ChannelConnectorRefUpdater). Each side only sees the other through a
-   * narrow type interface, so there is no module-level cycle.
-   *
-   * The forward const closure below gives Channels' checker a reference to
-   * `connectors` *before* `connectors` is constructed — at construction time the
-   * closure is captured but never called; calls only happen later, at which
-   * point both objects exist. This is the cheapest way to break the cycle
-   * without introducing a builder phase.
-   */
-  private wirePair(): { channels: FunnelChannels; connectors: FunnelConnectors } {
-    const stores = this.stores;
-    const profiles = this.profiles;
-    const channels: FunnelChannels = new FunnelChannels({
-      store: this.store,
-      connectorChecker: { has: (name) => connectors.has(name) },
-      profileChecker: profiles,
-      profileRefUpdater: profiles,
-    });
-    const connectors: FunnelConnectors = new FunnelConnectors({
-      ...stores,
-      refUpdater: channels,
-    });
-    return { channels, connectors };
+    })
   }
 }

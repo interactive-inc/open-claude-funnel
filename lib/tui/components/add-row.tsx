@@ -1,10 +1,10 @@
 /** @jsxImportSource @opentui/react */
-import { HasciiButton } from "@/tui/components/ui/hascii/button";
+import { HasciiButton } from "@/tui/components/ui/hascii/button"
 
 type Props = {
-  label: string;
-  onClick: () => void;
-};
+  label: string
+  onClick: () => void
+}
 
 /**
  * "+ add …" row used at the foot of an entity list.
@@ -14,5 +14,5 @@ type Props = {
  * on-hover feel.
  */
 export function AddRow(props: Props) {
-  return <HasciiButton onPress={props.onClick}>{`+ ${props.label}`}</HasciiButton>;
+  return <HasciiButton onPress={props.onClick}>{`+ ${props.label}`}</HasciiButton>
 }

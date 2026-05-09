@@ -1,54 +1,54 @@
 /** @jsxImportSource @opentui/react */
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { useEffect, useState } from "react"
+import type { ReactNode } from "react"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
-type Variant = "default" | "secondary" | "destructive";
+type Variant = "default" | "secondary" | "destructive"
 
 export type Props = {
-  variant?: Variant;
-  width?: number;
-  slideMs?: number;
-  isOpen?: boolean;
-  children?: ReactNode;
-};
+  variant?: Variant
+  width?: number
+  slideMs?: number
+  isOpen?: boolean
+  children?: ReactNode
+}
 
 /** Toast-like overlay that slides in from the right edge. Render inside an end-aligned column to anchor bottom-right. */
 export function HasciiSnackbar(props: Props) {
-  const variant = props.variant ?? "default";
-  const width = props.width ?? 28;
-  const slideMs = props.slideMs ?? 90;
-  const isOpen = props.isOpen ?? true;
+  const variant = props.variant ?? "default"
+  const width = props.width ?? 28
+  const slideMs = props.slideMs ?? 90
+  const isOpen = props.isOpen ?? true
 
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
-  const offsetState = useState(width);
-  const offset = offsetState[0];
-  const setOffset = offsetState[1];
+  const offsetState = useState(width)
+  const offset = offsetState[0]
+  const setOffset = offsetState[1]
 
   // useEffect drives the slide animation by stepping marginRight from `width` to 0 (or back).
   useEffect(() => {
-    const target = isOpen ? 0 : width;
-    if (offset === target) return;
+    const target = isOpen ? 0 : width
+    if (offset === target) return
 
-    const start = performance.now();
-    const from = offset;
-    let frame = 0;
+    const start = performance.now()
+    const from = offset
+    let frame = 0
 
     const tick = () => {
-      const progress = Math.min(1, (performance.now() - start) / slideMs);
-      const next = Math.round(from + (target - from) * progress);
-      setOffset(next);
+      const progress = Math.min(1, (performance.now() - start) / slideMs)
+      const next = Math.round(from + (target - from) * progress)
+      setOffset(next)
 
       if (progress < 1) {
-        frame = setTimeout(tick, 16) as unknown as number;
+        frame = setTimeout(tick, 16) as unknown as number
       }
-    };
+    }
 
-    tick();
+    tick()
 
-    return () => clearTimeout(frame);
-  }, [isOpen, width, slideMs, offset, setOffset]);
+    return () => clearTimeout(frame)
+  }, [isOpen, width, slideMs, offset, setOffset])
 
   const palette = {
     default: { bg: theme.color.primary, fg: theme.color.primaryForeground },
@@ -57,7 +57,7 @@ export function HasciiSnackbar(props: Props) {
       bg: theme.color.destructive,
       fg: theme.color.destructiveForeground,
     },
-  }[variant];
+  }[variant]
 
   return (
     <box
@@ -72,5 +72,5 @@ export function HasciiSnackbar(props: Props) {
     >
       <text fg={palette.fg}>{props.children}</text>
     </box>
-  );
+  )
 }

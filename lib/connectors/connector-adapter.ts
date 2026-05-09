@@ -1,9 +1,9 @@
 export type CallInput = {
-  method: string;
-  path: string;
-  body?: unknown;
-};
+  method: string
+  path: string
+  body?: unknown
+}
 
 export abstract class FunnelConnectorAdapter {
-  abstract call(input: CallInput): Promise<unknown>;
+  abstract call(input: CallInput): Promise<unknown>
 }

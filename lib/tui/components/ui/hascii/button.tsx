@@ -1,27 +1,30 @@
 /** @jsxImportSource @opentui/react */
-import { useKeyboard } from "@opentui/react";
-import { useState } from "react";
-import type { ReactNode } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { useKeyboard } from "@opentui/react"
+import { useState } from "react"
+import type { ReactNode } from "react"
+import { useHasciiFocus } from "@/tui/components/ui/hascii/focus-group"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 
-type Variant = "default" | "secondary" | "outline" | "ghost" | "destructive";
-type Size = "default" | "sm" | "md" | "lg";
+type Variant = "default" | "secondary" | "outline" | "ghost" | "destructive"
+type Size = "default" | "sm" | "md" | "lg"
 
 export type Props = {
-  variant?: Variant;
-  size?: Size;
-  isFocused?: boolean;
-  isDisabled?: boolean;
-  onPress?: () => void;
-  children?: ReactNode;
-};
+  variant?: Variant
+  size?: Size
+  focusId?: string
+  isFocused?: boolean
+  isDisabled?: boolean
+  onPress?: () => void
+  children?: ReactNode
+}
 
 const sizeDims: Record<Size, { paddingX: number; height: number }> = {
   default: { paddingX: 2, height: 1 },
   sm: { paddingX: 1, height: 1 },
   md: { paddingX: 2, height: 1 },
   lg: { paddingX: 3, height: 3 },
-};
+}
 
 const pickBg = (
   rest: string | undefined,
@@ -30,65 +33,40 @@ const pickBg = (
   isHover: boolean,
   isActive: boolean,
 ): string | undefined => {
-  if (isActive) return active;
-  if (isHover) return hover;
-  return rest;
-};
+  if (isActive) return active
+  if (isHover) return hover
+  return rest
+}
 
 /** A focusable terminal button. Background cycles through rest, hover, and active states. */
 export function HasciiButton(props: Props) {
-  const variant = props.variant ?? "default";
-  const size = props.size ?? "default";
-  const isFocused = props.isFocused ?? false;
-  const isDisabled = props.isDisabled ?? false;
+  const variant = props.variant ?? "default"
+  const size = props.size ?? "default"
+  const groupFocused = useHasciiFocus(props.focusId)
+  const isFocused = props.isFocused ?? groupFocused
+  const isDisabled = props.isDisabled ?? false
 
-  const theme = useHasciiTheme();
-  const dims = sizeDims[size];
+  const theme = useHasciiTheme()
+  const dims = sizeDims[size]
 
-  const hoveredState = useState(false);
-  const hovered = hoveredState[0];
-  const setHovered = hoveredState[1];
+  const press = usePressable({ isDisabled, onPress: props.onPress })
 
-  const pressedState = useState(false);
-  const pressed = pressedState[0];
-  const setPressed = pressedState[1];
+  const flashState = useState(false)
+  const flashed = flashState[0]
+  const setFlashed = flashState[1]
 
-  const isHover = !isDisabled && hovered && !pressed;
-  const isActive = !isDisabled && pressed;
-
-  const flashKeyboardPress = () => {
-    setPressed(true);
-    setTimeout(() => setPressed(false), 120);
-  };
+  const isHover = press.isHovered && !press.isPressed && !flashed
+  const isActive = press.isPressed || flashed
 
   useKeyboard((key) => {
-    if (!isFocused || isDisabled) return;
+    if (!isFocused || isDisabled) return
 
     if (key.name === "return" || key.name === "space") {
-      flashKeyboardPress();
-      props.onPress?.();
+      setFlashed(true)
+      props.onPress?.()
+      setTimeout(() => setFlashed(false), 120)
     }
-  });
-
-  const onMouseOver = () => {
-    if (!isDisabled) setHovered(true);
-  };
-
-  const onMouseOut = () => {
-    setHovered(false);
-    setPressed(false);
-  };
-
-  const onMouseDown = () => {
-    if (!isDisabled) setPressed(true);
-  };
-
-  const onMouseUp = () => {
-    if (isDisabled) return;
-
-    if (pressed) props.onPress?.();
-    setPressed(false);
-  };
+  })
 
   if (variant === "outline") {
     const tone = isDisabled
@@ -97,11 +75,11 @@ export function HasciiButton(props: Props) {
         ? theme.color.primaryActive
         : isHover
           ? theme.color.primaryHover
-          : theme.color.primary;
+          : theme.color.primary
 
-    const isMedium = size === "md" || size === "default";
-    const outlinePaddingX = size === "sm" ? 0 : isMedium ? 1 : size === "lg" ? 2 : dims.paddingX;
-    const outlineHeight = size === "sm" || isMedium ? 3 : dims.height;
+    const isMedium = size === "md" || size === "default"
+    const outlinePaddingX = size === "sm" ? 0 : isMedium ? 1 : size === "lg" ? 2 : dims.paddingX
+    const outlineHeight = size === "sm" || isMedium ? 3 : dims.height
 
     return (
       <box
@@ -113,19 +91,16 @@ export function HasciiButton(props: Props) {
         borderColor={tone}
         alignItems="center"
         justifyContent="center"
-        onMouseOver={onMouseOver}
-        onMouseOut={onMouseOut}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
+        {...press.bind}
       >
         <text fg={tone}>{props.children}</text>
       </box>
-    );
+    )
   }
 
   if (variant === "ghost") {
-    const fg = isDisabled ? theme.color.mutedForeground : theme.color.foreground;
-    const bg = pickBg(undefined, theme.color.accentHover, theme.color.accent, isHover, isActive);
+    const fg = isDisabled ? theme.color.mutedForeground : theme.color.foreground
+    const bg = pickBg(undefined, theme.color.accentHover, theme.color.accent, isHover, isActive)
 
     return (
       <box
@@ -135,25 +110,22 @@ export function HasciiButton(props: Props) {
         backgroundColor={bg}
         alignItems="center"
         justifyContent="center"
-        onMouseOver={onMouseOver}
-        onMouseOut={onMouseOut}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
+        {...press.bind}
       >
         <text fg={fg}>{props.children}</text>
       </box>
-    );
+    )
   }
 
   if (variant === "secondary") {
-    const fg = isDisabled ? theme.color.mutedForeground : theme.color.secondaryForeground;
+    const fg = isDisabled ? theme.color.mutedForeground : theme.color.secondaryForeground
     const bg = pickBg(
       theme.color.secondary,
       theme.color.secondaryHover,
       theme.color.secondaryActive,
       isHover,
       isActive,
-    );
+    )
 
     return (
       <box
@@ -163,25 +135,22 @@ export function HasciiButton(props: Props) {
         backgroundColor={bg}
         alignItems="center"
         justifyContent="center"
-        onMouseOver={onMouseOver}
-        onMouseOut={onMouseOut}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
+        {...press.bind}
       >
         <text fg={fg}>{props.children}</text>
       </box>
-    );
+    )
   }
 
   if (variant === "destructive") {
-    const fg = isDisabled ? theme.color.mutedForeground : theme.color.destructiveForeground;
+    const fg = isDisabled ? theme.color.mutedForeground : theme.color.destructiveForeground
     const bg = pickBg(
       theme.color.destructive,
       theme.color.destructiveHover,
       theme.color.destructiveActive,
       isHover,
       isActive,
-    );
+    )
 
     return (
       <box
@@ -191,24 +160,21 @@ export function HasciiButton(props: Props) {
         backgroundColor={bg}
         alignItems="center"
         justifyContent="center"
-        onMouseOver={onMouseOver}
-        onMouseOut={onMouseOut}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
+        {...press.bind}
       >
         <text fg={fg}>{props.children}</text>
       </box>
-    );
+    )
   }
 
-  const fg = isDisabled ? theme.color.mutedForeground : theme.color.primaryForeground;
+  const fg = isDisabled ? theme.color.mutedForeground : theme.color.primaryForeground
   const bg = pickBg(
     theme.color.primary,
     theme.color.primaryHover,
     theme.color.primaryActive,
     isHover,
     isActive,
-  );
+  )
 
   return (
     <box
@@ -218,12 +184,9 @@ export function HasciiButton(props: Props) {
       backgroundColor={bg}
       alignItems="center"
       justifyContent="center"
-      onMouseOver={onMouseOver}
-      onMouseOut={onMouseOut}
-      onMouseDown={onMouseDown}
-      onMouseUp={onMouseUp}
+      {...press.bind}
     >
       <text fg={fg}>{props.children}</text>
     </box>
-  );
+  )
 }

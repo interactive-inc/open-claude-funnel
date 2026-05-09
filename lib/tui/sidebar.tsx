@@ -1,22 +1,22 @@
 /** @jsxImportSource @opentui/react */
-import { Brand } from "@/tui/components/brand";
-import { GatewayStatus } from "@/tui/components/gateway-status";
-import { Menu } from "@/tui/components/menu";
-import { SectionHeader } from "@/tui/components/section-header";
-import { SessionList } from "@/tui/components/session-list";
-import { HasciiSidebar } from "@/tui/components/ui/hascii/sidebar";
-import { HasciiSidebarHeader } from "@/tui/components/ui/hascii/sidebar-header";
-import { funnel } from "@/tui/theme";
-import type { MenuItem, Snapshot, View } from "@/tui/types";
+import { Brand } from "@/tui/components/brand"
+import { GatewayStatus } from "@/tui/components/gateway-status"
+import { Menu } from "@/tui/components/menu"
+import { SectionHeader } from "@/tui/components/section-header"
+import { SessionList } from "@/tui/components/session-list"
+import { HasciiSidebar } from "@/tui/components/ui/hascii/sidebar"
+import { HasciiSidebarHeader } from "@/tui/components/ui/hascii/sidebar-header"
+import { funnel } from "@/tui/theme"
+import type { MenuItem, Snapshot, View } from "@/tui/types"
 
 type Props = {
-  snapshot: Snapshot;
-  menuItems: MenuItem[];
-  view: View;
-  onSelect: (view: View) => void;
-  busy: boolean;
-  onToggleGateway: () => void;
-};
+  snapshot: Snapshot
+  menuItems: MenuItem[]
+  view: View
+  onSelect: (view: View) => void
+  busy: boolean
+  onToggleGateway: () => void
+}
 
 /**
  * Left rail built on hascii's HasciiSidebar shell.
@@ -46,5 +46,5 @@ export function Sidebar(props: Props) {
 
       <Menu items={props.menuItems} active={props.view} onSelect={props.onSelect} />
     </HasciiSidebar>
-  );
+  )
 }

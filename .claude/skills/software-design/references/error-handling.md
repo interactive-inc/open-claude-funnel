@@ -7,22 +7,22 @@ throw しない。戻り値を `T | Error` にして、呼び出し側が `insta
 ```ts
 export class PaymentFailedError extends Error {
   constructor(message: string) {
-    super(message);
-    this.name = "PaymentFailedError";
+    super(message)
+    this.name = "PaymentFailedError"
   }
 }
 
 export class PaymentService {
   constructor(private readonly props: Props) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   async execute(data: PaymentData): Promise<Payment | PaymentFailedError> {
-    const result = await this.props.gateway.charge(data);
+    const result = await this.props.gateway.charge(data)
     if (result instanceof Error) {
-      return new PaymentFailedError(result.message);
+      return new PaymentFailedError(result.message)
     }
-    return result;
+    return result
   }
 }
 ```
@@ -30,7 +30,7 @@ export class PaymentService {
 呼び出し側:
 
 ```ts
-const result = await service.execute(data);
+const result = await service.execute(data)
 if (result instanceof PaymentFailedError) {
   // エラー処理
 }

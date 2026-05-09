@@ -1,8 +1,8 @@
 export type FileStat = {
-  mtimeMs: number;
+  mtimeMs: number
   /** POSIX mode bits (e.g. 0o600). `null` when the underlying FS does not expose mode. */
-  mode: number | null;
-};
+  mode: number | null
+}
 
 /**
  * Filesystem boundary used everywhere funnel reads or writes.
@@ -10,14 +10,14 @@ export type FileStat = {
  * provides a sandbox for tests and embedded use.
  */
 export abstract class FunnelFileSystem {
-  abstract existsSync(path: string): boolean;
-  abstract readFileSync(path: string): string;
-  abstract writeFileSync(path: string, data: string): void;
+  abstract existsSync(path: string): boolean
+  abstract readFileSync(path: string): string
+  abstract writeFileSync(path: string, data: string): void
   /** Write `data` and ensure the resulting file is owner-only (0600). Use for tokens and any file that may contain secrets. */
-  abstract writeSecretFileSync(path: string, data: string): void;
-  abstract appendFileSync(path: string, data: string): void;
-  abstract unlink(path: string): void;
-  abstract mkdirSync(path: string, options?: { recursive?: boolean }): void;
-  abstract readdirSync(path: string): string[];
-  abstract statSync(path: string): FileStat;
+  abstract writeSecretFileSync(path: string, data: string): void
+  abstract appendFileSync(path: string, data: string): void
+  abstract unlink(path: string): void
+  abstract mkdirSync(path: string, options?: { recursive?: boolean }): void
+  abstract readdirSync(path: string): string[]
+  abstract statSync(path: string): FileStat
 }

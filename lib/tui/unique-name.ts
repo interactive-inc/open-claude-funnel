@@ -9,10 +9,10 @@
  */
 export function uniqueName(existing: string[], prefix: string): string {
   for (let i = 1; i < 10000; i += 1) {
-    const candidate = `${prefix}-${i}`;
+    const candidate = `${prefix}-${i}`
 
-    if (!existing.includes(candidate)) return candidate;
+    if (!existing.includes(candidate)) return candidate
   }
 
-  return `${prefix}-${Date.now()}`;
+  return `${prefix}-${Date.now()}`
 }

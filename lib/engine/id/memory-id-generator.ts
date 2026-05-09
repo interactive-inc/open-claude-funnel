@@ -1,20 +1,20 @@
-import { FunnelIdGenerator } from "@/engine/id/id-generator";
+import { FunnelIdGenerator } from "@/engine/id/id-generator"
 
 type Props = {
-  prefix?: string;
-};
+  prefix?: string
+}
 
 export class MemoryFunnelIdGenerator extends FunnelIdGenerator {
-  private counter = 0;
-  private readonly prefix: string;
+  private counter = 0
+  private readonly prefix: string
 
   constructor(props: Props = {}) {
-    super();
-    this.prefix = props.prefix ?? "id";
+    super()
+    this.prefix = props.prefix ?? "id"
   }
 
   generate(): string {
-    this.counter++;
-    return `${this.prefix}-${this.counter}`;
+    this.counter++
+    return `${this.prefix}-${this.counter}`
   }
 }

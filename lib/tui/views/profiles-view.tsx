@@ -1,28 +1,27 @@
 /** @jsxImportSource @opentui/react */
-import { AddRow } from "@/tui/components/add-row";
-import { Card } from "@/tui/components/card";
-import { EditableField } from "@/tui/components/editable-field";
-import { EmptyState } from "@/tui/components/empty-state";
-import { Keymap } from "@/tui/components/keymap";
-import { PanelHeader } from "@/tui/components/panel-header";
-import { ViewShell } from "@/tui/components/view-shell";
-import { parseCommaList } from "@/tui/parse-comma-list";
-import type { Snapshot } from "@/tui/types";
-import { uniqueName } from "@/tui/unique-name";
-import type { Funnel } from "@/funnel";
+import { AddRow } from "@/tui/components/add-row"
+import { Card } from "@/tui/components/card"
+import { EditableField } from "@/tui/components/editable-field"
+import { EmptyState } from "@/tui/components/empty-state"
+import { Keymap } from "@/tui/components/keymap"
+import { PanelHeader } from "@/tui/components/panel-header"
+import { ViewShell } from "@/tui/components/view-shell"
+import type { Snapshot } from "@/tui/types"
+import { uniqueName } from "@/tui/unique-name"
+import type { Funnel } from "@/funnel"
 
 type Props = {
-  snapshot: Snapshot;
-  selectedIndex: number;
-  funnel: Funnel;
-  refresh: () => void;
-  focusedKey: string | null;
-  setFocusedKey: (key: string | null) => void;
-};
+  snapshot: Snapshot
+  selectedIndex: number
+  funnel: Funnel
+  refresh: () => void
+  focusedKey: string | null
+  setFocusedKey: (key: string | null) => void
+}
 
-type Profile = Snapshot["profiles"][number];
+type Profile = Snapshot["profiles"][number]
 
-const fieldKey = (name: string, field: string): string => `profiles::${name}::${field}`;
+const fieldKey = (name: string, field: string): string => `profiles::${name}::${field}`
 
 /**
  * Profile list — one Card per profile. Selection (j/k cursor) shows the
@@ -34,69 +33,63 @@ const fieldKey = (name: string, field: string): string => `profiles::${name}::${
  * the user must then edit before launching).
  */
 export function ProfilesView(props: Props) {
-  const profiles = props.snapshot.profiles;
-  const channels = props.snapshot.channels;
+  const profiles = props.snapshot.profiles
+  const channels = props.snapshot.channels
 
   const commit = (profile: Profile, field: string, raw: string): void => {
     try {
       if (field === "name") {
-        const next = raw.trim();
+        const next = raw.trim()
 
-        if (next && next !== profile.name) props.funnel.profiles.rename(profile.name, next);
+        if (next && next !== profile.name) props.funnel.profiles.rename(profile.name, next)
       } else if (field === "channel") {
-        const next = raw.trim();
+        const next = raw.trim()
 
-        if (next) props.funnel.profiles.update(profile.name, { channel: next });
-      } else if (field === "repo") {
-        const next = raw.trim();
+        if (next) props.funnel.profiles.update(profile.name, { channelId: next })
+      } else if (field === "path") {
+        const next = raw.trim()
 
-        props.funnel.profiles.update(profile.name, { repo: next === "" ? undefined : next });
+        if (next) props.funnel.profiles.update(profile.name, { path: next })
       } else if (field === "sub-agent") {
-        const next = raw.trim();
+        const next = raw.trim()
 
-        props.funnel.profiles.update(profile.name, { subAgent: next === "" ? undefined : next });
-      } else if (field === "env-files") {
-        const next = parseCommaList(raw);
-
-        props.funnel.profiles.update(profile.name, {
-          envFiles: next.length === 0 ? undefined : next,
-        });
+        if (next) props.funnel.profiles.update(profile.name, { subAgent: next })
       }
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error));
+      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
     }
 
-    props.setFocusedKey(null);
-    props.refresh();
-  };
+    props.setFocusedKey(null)
+    props.refresh()
+  }
 
   const removeProfile = (name: string): void => {
     try {
-      props.funnel.profiles.remove(name);
+      props.funnel.profiles.remove(name)
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error));
+      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
     }
 
-    props.setFocusedKey(null);
-    props.refresh();
-  };
+    props.setFocusedKey(null)
+    props.refresh()
+  }
 
   const addProfile = (): void => {
     const name = uniqueName(
       profiles.map((p) => p.name),
       "profile",
-    );
-    const channel = channels[0]?.name ?? "";
+    )
+    const channelId = channels[0]?.name ?? ""
 
     try {
-      props.funnel.profiles.add({ name, channel });
-      props.setFocusedKey(fieldKey(name, "name"));
+      props.funnel.profiles.add({ name, path: "", subAgent: "", channelId })
+      props.setFocusedKey(fieldKey(name, "name"))
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error));
+      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
     }
 
-    props.refresh();
-  };
+    props.refresh()
+  }
 
   return (
     <ViewShell>
@@ -120,35 +113,27 @@ export function ProfilesView(props: Props) {
               onCommit={(raw) => commit(profile, "name", raw)}
             />
             <EditableField
-              label="channel"
-              initialValue={profile.channel}
-              focused={props.focusedKey === fieldKey(profile.name, "channel")}
-              onFocus={() => props.setFocusedKey(fieldKey(profile.name, "channel"))}
-              onCommit={(raw) => commit(profile, "channel", raw)}
-            />
-            <EditableField
-              label="repo"
-              initialValue={profile.repo ?? ""}
-              focused={props.focusedKey === fieldKey(profile.name, "repo")}
-              onFocus={() => props.setFocusedKey(fieldKey(profile.name, "repo"))}
-              onCommit={(raw) => commit(profile, "repo", raw)}
-              placeholder="repo name (optional)"
+              label="path"
+              initialValue={profile.path}
+              focused={props.focusedKey === fieldKey(profile.name, "path")}
+              onFocus={() => props.setFocusedKey(fieldKey(profile.name, "path"))}
+              onCommit={(raw) => commit(profile, "path", raw)}
+              placeholder="repository path"
             />
             <EditableField
               label="sub-agent"
-              initialValue={profile.subAgent ?? ""}
+              initialValue={profile.subAgent}
               focused={props.focusedKey === fieldKey(profile.name, "sub-agent")}
               onFocus={() => props.setFocusedKey(fieldKey(profile.name, "sub-agent"))}
               onCommit={(raw) => commit(profile, "sub-agent", raw)}
-              placeholder="claude --agent value (optional)"
+              placeholder="claude --agent value"
             />
             <EditableField
-              label="env-files"
-              initialValue={profile.envFiles?.join(", ") ?? ""}
-              focused={props.focusedKey === fieldKey(profile.name, "env-files")}
-              onFocus={() => props.setFocusedKey(fieldKey(profile.name, "env-files"))}
-              onCommit={(raw) => commit(profile, "env-files", raw)}
-              placeholder="comma-separated env files (optional)"
+              label="channel"
+              initialValue={profile.channelId}
+              focused={props.focusedKey === fieldKey(profile.name, "channel")}
+              onFocus={() => props.setFocusedKey(fieldKey(profile.name, "channel"))}
+              onCommit={(raw) => commit(profile, "channel", raw)}
             />
           </Card>
         ))
@@ -163,5 +148,5 @@ export function ProfilesView(props: Props) {
         ]}
       />
     </ViewShell>
-  );
+  )
 }

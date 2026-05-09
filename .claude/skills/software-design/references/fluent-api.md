@@ -4,21 +4,21 @@
 
 ```ts
 type Props = {
-  title: string;
-  author: string;
-};
+  title: string
+  author: string
+}
 
 export class Document {
   constructor(private readonly props: Props) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   withTitle(title: string): Document {
-    return new Document({ ...this.props, title });
+    return new Document({ ...this.props, title })
   }
 
   toMarkdown(): string {
-    return `# ${this.props.title}\nby ${this.props.author}`;
+    return `# ${this.props.title}\nby ${this.props.author}`
   }
 }
 ```

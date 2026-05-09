@@ -1,20 +1,21 @@
 /** @jsxImportSource @opentui/react */
-import type { SelectOption } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
-import { useState } from "react";
-import type { HasciiTheme } from "@/tui/utils/hascii/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { SelectOption } from "@opentui/core"
+import { useKeyboard } from "@opentui/react"
+import { useState } from "react"
+import type { HasciiTheme } from "@/tui/utils/hascii/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
+import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 
 export type Props = {
-  options?: SelectOption[];
-  width?: number;
-  height?: number;
-  defaultIndex?: number;
-  focusedIndex?: number;
-  isFocused?: boolean;
-  onChange?: (index: number, option: SelectOption | null) => void;
-  onSelect?: (index: number, option: SelectOption | null) => void;
-};
+  options?: SelectOption[]
+  width?: number
+  height?: number
+  defaultIndex?: number
+  focusedIndex?: number
+  isFocused?: boolean
+  onChange?: (index: number, option: SelectOption | null) => void
+  onSelect?: (index: number, option: SelectOption | null) => void
+}
 
 const pickItemBg = (
   isActive: boolean,
@@ -22,53 +23,33 @@ const pickItemBg = (
   pressed: boolean,
   theme: HasciiTheme,
 ): string | undefined => {
-  if (pressed) return theme.color.secondaryActive;
+  if (pressed) return theme.color.secondaryActive
   if (hovered) {
-    return isActive ? theme.color.secondaryActive : theme.color.secondaryHover;
+    return isActive ? theme.color.secondaryActive : theme.color.secondaryHover
   }
-  if (isActive) return theme.color.secondaryHover;
-  return undefined;
-};
+  if (isActive) return theme.color.secondaryHover
+  return undefined
+}
 
 type ItemProps = {
-  option: SelectOption;
-  isActive: boolean;
-  onPress: () => void;
-};
+  option: SelectOption
+  isActive: boolean
+  onPress: () => void
+}
 
 /** Internal row used by HasciiSelect. Tracks hover/press state and renders the active left bar. */
 function HasciiSelectItem(props: ItemProps) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
+  const press = usePressable({ onPress: props.onPress })
 
-  const hoveredState = useState(false);
-  const hovered = hoveredState[0];
-  const setHovered = hoveredState[1];
-
-  const pressedState = useState(false);
-  const pressed = pressedState[0];
-  const setPressed = pressedState[1];
-
-  const bg = pickItemBg(props.isActive, hovered, pressed, theme);
+  const bg = pickItemBg(props.isActive, press.isHovered, press.isPressed, theme)
 
   const nameColor =
-    props.isActive || hovered ? theme.color.foreground : theme.color.mutedForeground;
-  const descColor = theme.color.mutedForeground;
+    props.isActive || press.isHovered ? theme.color.foreground : theme.color.mutedForeground
+  const descColor = theme.color.mutedForeground
 
   return (
-    <box
-      flexDirection="row"
-      backgroundColor={bg}
-      onMouseOver={() => setHovered(true)}
-      onMouseOut={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => {
-        if (pressed) props.onPress();
-        setPressed(false);
-      }}
-    >
+    <box flexDirection="row" backgroundColor={bg} {...press.bind}>
       <box
         flexGrow={1}
         flexDirection="column"
@@ -82,41 +63,41 @@ function HasciiSelectItem(props: ItemProps) {
         {props.option.description ? <text fg={descColor}>{props.option.description}</text> : null}
       </box>
     </box>
-  );
+  )
 }
 
 /** Vertical option list with a muted background, a flush left bar on the active row, and vertical scrolling when items overflow. */
 export function HasciiSelect(props: Props) {
-  const width = props.width ?? 36;
-  const height = props.height ?? 16;
-  const isFocused = props.isFocused ?? true;
-  const options = props.options ?? [];
+  const width = props.width ?? 36
+  const height = props.height ?? 16
+  const isFocused = props.isFocused ?? true
+  const options = props.options ?? []
 
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
-  const internalState = useState(props.defaultIndex ?? 0);
-  const internal = internalState[0];
-  const setInternal = internalState[1];
+  const internalState = useState(props.defaultIndex ?? 0)
+  const internal = internalState[0]
+  const setInternal = internalState[1]
 
-  const current = props.focusedIndex ?? internal;
+  const current = props.focusedIndex ?? internal
 
   const moveTo = (next: number) => {
-    if (options.length === 0) return;
+    if (options.length === 0) return
 
-    const clamped = Math.max(0, Math.min(options.length - 1, next));
-    if (props.focusedIndex === undefined) setInternal(clamped);
-    props.onChange?.(clamped, options[clamped] ?? null);
-  };
+    const clamped = Math.max(0, Math.min(options.length - 1, next))
+    if (props.focusedIndex === undefined) setInternal(clamped)
+    props.onChange?.(clamped, options[clamped] ?? null)
+  }
 
   useKeyboard((key) => {
-    if (!isFocused || options.length === 0) return;
+    if (!isFocused || options.length === 0) return
 
-    if (key.name === "up") moveTo(current - 1);
-    if (key.name === "down") moveTo(current + 1);
+    if (key.name === "up") moveTo(current - 1)
+    if (key.name === "down") moveTo(current + 1)
     if (key.name === "return" || key.name === "space") {
-      props.onSelect?.(current, options[current] ?? null);
+      props.onSelect?.(current, options[current] ?? null)
     }
-  });
+  })
 
   return (
     <box flexDirection="column" width={width} height={height} backgroundColor={theme.color.muted}>
@@ -137,5 +118,5 @@ export function HasciiSelect(props: Props) {
         ))}
       </scrollbox>
     </box>
-  );
+  )
 }

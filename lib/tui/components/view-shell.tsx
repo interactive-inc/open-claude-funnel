@@ -1,12 +1,12 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
-import { verticalScrollbarOptions } from "@/tui/scrollbar-options";
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { verticalScrollbarOptions } from "@/tui/scrollbar-options"
+import { funnel } from "@/tui/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 type Props = {
-  children: ReactNode;
-};
+  children: ReactNode
+}
 
 /**
  * Outer wrapper every view renders into.
@@ -23,7 +23,7 @@ type Props = {
  * default electric blue.
  */
 export function ViewShell(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <scrollbox
@@ -40,5 +40,5 @@ export function ViewShell(props: Props) {
     >
       {props.children}
     </scrollbox>
-  );
+  )
 }

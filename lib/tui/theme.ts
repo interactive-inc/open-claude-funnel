@@ -1,4 +1,4 @@
-import { hasciiTw } from "@/tui/utils/hascii/tw-token";
+import { hasciiTw } from "@/tui/utils/hascii/tw-token"
 
 /**
  * Funnel-specific TUI tokens that hascii does not cover.
@@ -37,4 +37,4 @@ export const funnel = {
   barHeight: 1,
 
   detailPanelHeight: 14,
-} as const;
+} as const

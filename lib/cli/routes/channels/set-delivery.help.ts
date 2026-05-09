@@ -7,4 +7,4 @@ modes:
   exclusive   each event is delivered to exactly one connected client (round-robin)
 
 tap=all clients (TUI dashboard, debugging) always receive regardless of mode.
-`;
+`

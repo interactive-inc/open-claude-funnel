@@ -44,13 +44,13 @@
 
 ```ts
 export function run() {
-  const x = 0;
+  const x = 0
 
-  console.log(x);
+  console.log(x)
 
   if (x === 0) {
-    const y = 1;
-    console.log(y);
+    const y = 1
+    console.log(y)
   }
 }
 ```

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
-import { TextAttributes } from "@opentui/core";
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import { TextAttributes } from "@opentui/core"
+import { funnel } from "@/tui/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 /**
  * Brand mark rendered at the top of the sidebar. Carries its own paddingX
@@ -9,7 +9,7 @@ import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
  * active highlight spans edge-to-edge).
  */
 export function Brand() {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <box
@@ -23,5 +23,5 @@ export function Brand() {
         funnel
       </text>
     </box>
-  );
+  )
 }

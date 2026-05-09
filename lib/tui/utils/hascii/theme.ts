@@ -1,38 +1,38 @@
-import { hasciiTw } from "@/tui/utils/hascii/tw-token";
+import { hasciiTw } from "@/tui/utils/hascii/tw-token"
 
 export type HasciiTheme = {
   color: {
-    background: string;
-    foreground: string;
+    background: string
+    foreground: string
 
-    primary: string;
-    primaryForeground: string;
-    primaryHover: string;
-    primaryActive: string;
+    primary: string
+    primaryForeground: string
+    primaryHover: string
+    primaryActive: string
 
-    secondary: string;
-    secondaryForeground: string;
-    secondaryHover: string;
-    secondaryActive: string;
+    secondary: string
+    secondaryForeground: string
+    secondaryHover: string
+    secondaryActive: string
 
-    muted: string;
-    mutedForeground: string;
+    muted: string
+    mutedForeground: string
 
-    accent: string;
-    accentForeground: string;
-    accentHover: string;
-    accentActive: string;
+    accent: string
+    accentForeground: string
+    accentHover: string
+    accentActive: string
 
-    destructive: string;
-    destructiveForeground: string;
-    destructiveHover: string;
-    destructiveActive: string;
+    destructive: string
+    destructiveForeground: string
+    destructiveHover: string
+    destructiveActive: string
 
-    border: string;
-    input: string;
-    ring: string;
-  };
-};
+    border: string
+    input: string
+    ring: string
+  }
+}
 
 /** Default dark theme. Mirrors shadcn naming and is built from the Tailwind palette. */
 export const hasciiTheme: HasciiTheme = {
@@ -67,4 +67,4 @@ export const hasciiTheme: HasciiTheme = {
     input: hasciiTw.colors.zinc[700],
     ring: hasciiTw.colors.zinc[300],
   },
-};
+}

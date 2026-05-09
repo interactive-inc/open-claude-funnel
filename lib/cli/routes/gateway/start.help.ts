@@ -12,4 +12,4 @@ log:  /tmp/funnel/gateway.log
 
 examples:
   funnel gateway start
-  funnel gateway start --no-caffeine`;
+  funnel gateway start --no-caffeine`

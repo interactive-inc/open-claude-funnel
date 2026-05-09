@@ -1,15 +1,15 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 export type Props = {
-  width?: number;
-  children?: ReactNode;
-};
+  width?: number
+  children?: ReactNode
+}
 
 /** Fixed-width vertical sidebar. Compose with HasciiSidebarHeader, HasciiSidebarContent, HasciiSidebarMenuItem. */
 export function HasciiSidebar(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <box
@@ -21,5 +21,5 @@ export function HasciiSidebar(props: Props) {
     >
       {props.children}
     </box>
-  );
+  )
 }

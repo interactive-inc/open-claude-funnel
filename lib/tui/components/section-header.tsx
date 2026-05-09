@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/react */
-import { funnel } from "@/tui/theme";
+import { funnel } from "@/tui/theme"
 
 type Props = {
-  label: string;
-};
+  label: string
+}
 
 /**
  * Tiny faint label rendered above each sidebar section. Wrapped in a box
@@ -21,5 +21,5 @@ export function SectionHeader(props: Props) {
     >
       <text fg={funnel.faint}>{props.label}</text>
     </box>
-  );
+  )
 }

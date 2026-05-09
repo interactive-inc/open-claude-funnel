@@ -1,12 +1,12 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
-import { verticalScrollbarOptions } from "@/tui/scrollbar-options";
-import { funnel } from "@/tui/theme";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { verticalScrollbarOptions } from "@/tui/scrollbar-options"
+import { funnel } from "@/tui/theme"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 type Props = {
-  children: ReactNode;
-};
+  children: ReactNode
+}
 
 /**
  * Bottom inspector strip rendered at the foot of a view.
@@ -22,7 +22,7 @@ type Props = {
  * frame instead of pushing other UI off-screen.
  */
 export function DetailBar(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <scrollbox
@@ -42,5 +42,5 @@ export function DetailBar(props: Props) {
     >
       {props.children}
     </scrollbox>
-  );
+  )
 }

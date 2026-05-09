@@ -1,9 +1,9 @@
-import { FunnelHttpClient, type HttpRequest, type HttpResponse } from "@/engine/http/http-client";
+import { FunnelHttpClient, type HttpRequest, type HttpResponse } from "@/engine/http/http-client"
 
 export class NodeFunnelHttpClient extends FunnelHttpClient {
   constructor() {
-    super();
-    Object.freeze(this);
+    super()
+    Object.freeze(this)
   }
 
   async fetch(request: HttpRequest): Promise<HttpResponse> {
@@ -11,13 +11,13 @@ export class NodeFunnelHttpClient extends FunnelHttpClient {
       method: request.method,
       headers: request.headers,
       body: request.body,
-    });
+    })
 
     return {
       status: res.status,
       ok: res.ok,
       text: () => res.text(),
       json: () => res.json(),
-    };
+    }
   }
 }

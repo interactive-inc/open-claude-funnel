@@ -1,33 +1,31 @@
-import { z } from "zod";
-import { factory } from "@/cli/factory";
-import { zValidator } from "@/cli/router/validator";
-import { help } from "@/cli/routes/profiles/add.help";
+import { z } from "zod"
+import { factory } from "@/cli/factory"
+import { zValidator } from "@/cli/router/validator"
+import { help } from "@/cli/routes/profiles/add.help"
 
 export const profilesAddHandler = factory.createHandlers(
   zValidator("param", z.object({ name: z.string() })),
   zValidator(
     "query",
     z.object({
+      path: z.string(),
+      "sub-agent": z.string(),
       channel: z.string(),
-      repo: z.string().optional(),
-      "sub-agent": z.string().optional(),
-      "env-file": z.string().optional(),
     }),
     help,
   ),
   (c) => {
-    const param = c.req.valid("param");
-    const query = c.req.valid("query");
-    const funnel = c.var.funnel;
+    const param = c.req.valid("param")
+    const query = c.req.valid("query")
+    const funnel = c.var.funnel
 
     funnel.profiles.add({
       name: param.name,
-      channel: query.channel,
-      repo: query.repo,
+      path: query.path,
       subAgent: query["sub-agent"],
-      envFiles: query["env-file"] ? [query["env-file"]] : undefined,
-    });
+      channelId: query.channel,
+    })
 
-    return c.text(`added profile "${param.name}"`);
+    return c.text(`added profile "${param.name}"`)
   },
-);
+)

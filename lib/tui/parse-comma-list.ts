@@ -10,5 +10,5 @@ export function parseCommaList(raw: string): string[] {
   return raw
     .split(",")
     .map((part) => part.trim())
-    .filter((part) => part.length > 0);
+    .filter((part) => part.length > 0)
 }

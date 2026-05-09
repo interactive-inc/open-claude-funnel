@@ -1,11 +1,11 @@
 /** @jsxImportSource @opentui/react */
-import { SessionItem } from "@/tui/components/session-item";
-import { funnel } from "@/tui/theme";
-import type { Session } from "@/tui/types";
+import { SessionItem } from "@/tui/components/session-item"
+import { funnel } from "@/tui/theme"
+import type { Session } from "@/tui/types"
 
 type Props = {
-  sessions: Session[];
-};
+  sessions: Session[]
+}
 
 /** Vertical list of connected sessions (Claude MCP clients) for the sidebar. */
 export function SessionList(props: Props) {
@@ -20,7 +20,7 @@ export function SessionList(props: Props) {
       >
         <text fg={funnel.faint}>(none)</text>
       </box>
-    );
+    )
   }
 
   return (
@@ -29,5 +29,5 @@ export function SessionList(props: Props) {
         <SessionItem key={`${session.channel}-${index}`} session={session} />
       ))}
     </box>
-  );
+  )
 }

@@ -1,8 +1,8 @@
-import { factory } from "@/gateway/factory";
+import { factory } from "@/gateway/factory"
 
 /** GET /status — listener registry, connected channels, and broadcaster metrics. */
 export const statusHandler = factory.createHandlers((c) => {
-  const deps = c.var.deps;
+  const deps = c.var.deps
 
   return c.json({
     ok: true,
@@ -11,5 +11,5 @@ export const statusHandler = factory.createHandlers((c) => {
     clients: deps.broadcaster.listChannels(),
     listeners: deps.supervisor.list(),
     broadcaster: deps.broadcaster.getMetrics(),
-  });
-});
+  })
+})

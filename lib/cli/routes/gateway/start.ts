@@ -1,7 +1,7 @@
-import { z } from "zod";
-import { factory } from "@/cli/factory";
-import { zValidator } from "@/cli/router/validator";
-import { help } from "@/cli/routes/gateway/start.help";
+import { z } from "zod"
+import { factory } from "@/cli/factory"
+import { zValidator } from "@/cli/router/validator"
+import { help } from "@/cli/routes/gateway/start.help"
 
 export const gatewayStartHandler = factory.createHandlers(
   zValidator(
@@ -12,21 +12,21 @@ export const gatewayStartHandler = factory.createHandlers(
     help,
   ),
   async (c) => {
-    const query = c.req.valid("query");
-    const funnel = c.var.funnel;
+    const query = c.req.valid("query")
+    const funnel = c.var.funnel
 
     if (funnel.gateway.isRunning()) {
-      const status = funnel.gateway.getStatus();
+      const status = funnel.gateway.getStatus()
 
-      return c.text(`funnel gateway: already running (pid ${status.pid})`);
+      return c.text(`funnel gateway: already running (pid ${status.pid})`)
     }
 
     const started = await funnel.gateway.start({
       caffeinate: query["no-caffeine"] !== "true",
-    });
+    })
 
     return started
       ? c.text("funnel gateway: started")
-      : c.text("funnel gateway: failed to start", 500);
+      : c.text("funnel gateway: failed to start", 500)
   },
-);
+)

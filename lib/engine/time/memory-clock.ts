@@ -1,26 +1,26 @@
-import { FunnelClock } from "@/engine/time/clock";
+import { FunnelClock } from "@/engine/time/clock"
 
 type Props = {
-  start?: Date;
-};
+  start?: Date
+}
 
 export class MemoryFunnelClock extends FunnelClock {
-  private current: Date;
+  private current: Date
 
   constructor(props: Props = {}) {
-    super();
-    this.current = props.start ?? new Date(0);
+    super()
+    this.current = props.start ?? new Date(0)
   }
 
   now(): Date {
-    return new Date(this.current.getTime());
+    return new Date(this.current.getTime())
   }
 
   set(date: Date): void {
-    this.current = date;
+    this.current = date
   }
 
   advance(ms: number): void {
-    this.current = new Date(this.current.getTime() + ms);
+    this.current = new Date(this.current.getTime() + ms)
   }
 }

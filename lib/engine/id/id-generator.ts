@@ -3,5 +3,5 @@
  * MemoryFunnelIdGenerator emits `<prefix>-1, <prefix>-2, ...` for deterministic tests.
  */
 export abstract class FunnelIdGenerator {
-  abstract generate(): string;
+  abstract generate(): string
 }

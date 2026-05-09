@@ -8,31 +8,31 @@
 
 ```ts
 type DraftProps = {
-  items: ReadonlyArray<Item>;
-};
+  items: ReadonlyArray<Item>
+}
 
 export class DraftOrder {
   constructor(private readonly props: DraftProps) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   submit(): SubmittedOrder {
-    return new SubmittedOrder({ items: this.props.items, submittedAt: new Date() });
+    return new SubmittedOrder({ items: this.props.items, submittedAt: new Date() })
   }
 }
 
 type SubmittedProps = {
-  items: ReadonlyArray<Item>;
-  submittedAt: Date;
-};
+  items: ReadonlyArray<Item>
+  submittedAt: Date
+}
 
 export class SubmittedOrder {
   constructor(private readonly props: SubmittedProps) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   approve(): ApprovedOrder {
-    return new ApprovedOrder({ ...this.props, approvedAt: new Date() });
+    return new ApprovedOrder({ ...this.props, approvedAt: new Date() })
   }
 }
 ```
@@ -40,32 +40,32 @@ export class SubmittedOrder {
 Phantom Type: データ構造が共通で、利用可能な操作だけが状態によって異なる場合。メソッドの再利用が多い場合。
 
 ```ts
-type Draft = "draft";
-type Submitted = "submitted";
-type Approved = "approved";
+type Draft = "draft"
+type Submitted = "submitted"
+type Approved = "approved"
 
 type Props = {
-  content: string;
-};
+  content: string
+}
 
 export class Document<State extends string> {
   constructor(
     private readonly props: Props,
     private readonly state: State,
   ) {
-    Object.freeze(this);
+    Object.freeze(this)
   }
 
   submit(this: Document<Draft>): Document<Submitted> {
-    return new Document(this.props, "submitted");
+    return new Document(this.props, "submitted")
   }
 
   approve(this: Document<Submitted>): Document<Approved> {
-    return new Document(this.props, "approved");
+    return new Document(this.props, "approved")
   }
 
   get title(): string {
-    return this.props.content.split("\n")[0];
+    return this.props.content.split("\n")[0]
   }
 }
 ```

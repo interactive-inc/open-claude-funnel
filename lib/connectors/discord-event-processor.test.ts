@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
-import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor";
+import { describe, expect, test } from "bun:test"
+import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor"
 
-const make = () => new FunnelDiscordEventProcessor({ ownUserId: "UBOT" });
+const make = () => new FunnelDiscordEventProcessor({ ownUserId: "UBOT" })
 
 describe("FunnelDiscordEventProcessor", () => {
   test("skips messages from bots", () => {
@@ -12,10 +12,10 @@ describe("FunnelDiscordEventProcessor", () => {
       guildId: null,
       mentionedUserIds: [],
       raw: {},
-    });
+    })
 
-    expect(result.skip).toBe(true);
-  });
+    expect(result.skip).toBe(true)
+  })
 
   test("detects mentions", () => {
     const result = make().process({
@@ -25,14 +25,14 @@ describe("FunnelDiscordEventProcessor", () => {
       guildId: "G1",
       mentionedUserIds: ["UBOT"],
       raw: { content: "hi" },
-    });
+    })
 
-    expect(result.skip).toBe(false);
+    expect(result.skip).toBe(false)
     if (!result.skip) {
-      expect(result.meta.mentioned).toBe("true");
-      expect(result.meta.guild_id).toBe("G1");
+      expect(result.meta.mentioned).toBe("true")
+      expect(result.meta.guild_id).toBe("G1")
     }
-  });
+  })
 
   test("DM (guildId null) yields empty guild_id", () => {
     const result = make().process({
@@ -42,12 +42,12 @@ describe("FunnelDiscordEventProcessor", () => {
       guildId: null,
       mentionedUserIds: [],
       raw: { content: "hi" },
-    });
+    })
 
-    expect(result.skip).toBe(false);
+    expect(result.skip).toBe(false)
     if (!result.skip) {
-      expect(result.meta.guild_id).toBe("");
-      expect(result.meta.channel_id).toBe("D1");
+      expect(result.meta.guild_id).toBe("")
+      expect(result.meta.channel_id).toBe("D1")
     }
-  });
-});
+  })
+})

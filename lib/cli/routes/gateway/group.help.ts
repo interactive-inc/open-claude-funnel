@@ -17,4 +17,4 @@ subcommands:
 
 examples:
   funnel gateway                check status
-  funnel gateway restart        restart`;
+  funnel gateway restart        restart`

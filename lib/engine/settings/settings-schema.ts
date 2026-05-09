@@ -1,4 +1,5 @@
-import { z } from "zod";
+import { z } from "zod"
+import { connectorConfigSchema } from "@/connectors/connector-config-schema"
 
 /**
  * Routing mode when multiple WS clients are subscribed to the same channel.
@@ -16,38 +17,30 @@ export const channelDeliveryModeSchema = z.enum(["fanout", "exclusive"])
 export type ChannelDeliveryMode = z.infer<typeof channelDeliveryModeSchema>
 
 export const channelConfigSchema = z.object({
+  id: z.string(),
   name: z.string(),
-  connectors: z.array(z.string()).default([]),
   delivery: channelDeliveryModeSchema.default("fanout"),
-});
+  connectors: z.array(connectorConfigSchema).default([]),
+})
 
-export type ChannelConfig = z.infer<typeof channelConfigSchema>;
-
-export const repositoryConfigSchema = z.object({
-  name: z.string(),
-  path: z.string(),
-});
-
-export type RepositoryConfig = z.infer<typeof repositoryConfigSchema>;
+export type ChannelConfig = z.infer<typeof channelConfigSchema>
 
 export const profileConfigSchema = z.object({
   name: z.string(),
-  channel: z.string(),
-  repo: z.string().optional(),
-  subAgent: z.string().optional(),
-  envFiles: z.array(z.string()).optional(),
-});
+  path: z.string(),
+  subAgent: z.string(),
+  channelId: z.string(),
+})
 
-export type ProfileConfig = z.infer<typeof profileConfigSchema>;
+export type ProfileConfig = z.infer<typeof profileConfigSchema>
 
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 1
 
 export const settingsSchema = z.object({
   /** Schema version. New files always write the current version; older files without one are read as v1. */
   version: z.literal(SETTINGS_VERSION).default(SETTINGS_VERSION),
   channels: z.array(channelConfigSchema).default([]),
-  repositories: z.array(repositoryConfigSchema).default([]),
   profiles: z.array(profileConfigSchema).default([]),
-});
+})
 
-export type Settings = z.infer<typeof settingsSchema>;
+export type Settings = z.infer<typeof settingsSchema>

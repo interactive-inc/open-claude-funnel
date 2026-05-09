@@ -1,15 +1,15 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
-import { useHasciiTheme } from "@/tui/utils/hascii/theme-context";
+import type { ReactNode } from "react"
+import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
 export type Props = {
-  width?: number;
-  children?: ReactNode;
-};
+  width?: number
+  children?: ReactNode
+}
 
 /** Filled container that frames its children. Use with HasciiCardHeader, HasciiCardContent, and HasciiCardFooter. */
 export function HasciiCard(props: Props) {
-  const theme = useHasciiTheme();
+  const theme = useHasciiTheme()
 
   return (
     <box
@@ -24,5 +24,5 @@ export function HasciiCard(props: Props) {
     >
       {props.children}
     </box>
-  );
+  )
 }

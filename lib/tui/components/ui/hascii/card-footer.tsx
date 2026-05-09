@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/react */
-import type { ReactNode } from "react";
+import type { ReactNode } from "react"
 
 export type Props = {
-  children?: ReactNode;
-};
+  children?: ReactNode
+}
 
 /** Horizontal footer region for action rows inside a HasciiCard. */
 export function HasciiCardFooter(props: Props) {
@@ -11,5 +11,5 @@ export function HasciiCardFooter(props: Props) {
     <box flexDirection="row" justifyContent="flex-end" gap={1}>
       {props.children}
     </box>
-  );
+  )
 }

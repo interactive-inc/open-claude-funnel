@@ -5,4 +5,4 @@ usage: funnel gateway stop
 Terminates the process whose PID is stored in ~/.funnel/gateway.pid.
 
 examples:
-  funnel gateway stop`;
+  funnel gateway stop`

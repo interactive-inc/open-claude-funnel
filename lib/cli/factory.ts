@@ -1,10 +1,10 @@
-import { createFactory } from "hono/factory";
-import type { Funnel } from "@/funnel";
+import { createFactory } from "hono/factory"
+import type { Funnel } from "@/funnel"
 
 export type Env = {
   Variables: {
-    funnel: Funnel;
-  };
-};
+    funnel: Funnel
+  }
+}
 
-export const factory = createFactory<Env>();
+export const factory = createFactory<Env>()
