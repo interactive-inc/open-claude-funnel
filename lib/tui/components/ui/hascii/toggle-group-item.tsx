@@ -1,4 +1,3 @@
-/** @jsxImportSource @opentui/react */
 import type { ReactNode } from "react"
 import { useHasciiToggleGroup } from "@/tui/components/ui/hascii/toggle-group"
 import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
@@ -30,7 +29,7 @@ export function HasciiToggleGroupItem(props: Props) {
       ? theme.color.secondaryActive
       : press.isHovered
         ? theme.color.secondaryHover
-        : theme.color.muted
+        : theme.color.popover
 
   const fg = isSelected
     ? theme.color.primaryForeground

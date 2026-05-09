@@ -1,4 +1,3 @@
-/** @jsxImportSource @opentui/react */
 import type { ReactNode } from "react"
 import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 
@@ -13,7 +12,7 @@ export function HasciiCard(props: Props) {
 
   return (
     <box
-      backgroundColor={theme.color.muted}
+      backgroundColor={theme.color.card}
       flexDirection="column"
       paddingTop={1}
       paddingBottom={1}

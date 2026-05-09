@@ -1,4 +1,3 @@
-/** @jsxImportSource @opentui/react */
 import { useKeyboard } from "@opentui/react"
 import { createContext, useContext, useState } from "react"
 import type { ReactNode } from "react"

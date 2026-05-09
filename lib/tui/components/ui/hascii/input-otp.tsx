@@ -1,4 +1,3 @@
-/** @jsxImportSource @opentui/react */
 import { useKeyboard } from "@opentui/react"
 import { useState } from "react"
 import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"

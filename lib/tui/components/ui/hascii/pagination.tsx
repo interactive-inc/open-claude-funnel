@@ -1,4 +1,3 @@
-/** @jsxImportSource @opentui/react */
 import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 

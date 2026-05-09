@@ -1,4 +1,6 @@
-/** @jsxImportSource @opentui/react */
+import { useKeyboard } from "@opentui/react"
+import { useId, useState } from "react"
+import { useHasciiInputFocus } from "@/tui/utils/hascii/input-focus-context"
 import { useHasciiTheme } from "@/tui/utils/hascii/theme-context"
 import { usePressable } from "@/tui/hooks/hascii/use-pressable"
 
@@ -9,21 +11,39 @@ export type Props = {
   placeholder?: string
   value?: string
   width?: number
-  isFocused?: boolean
+  defaultFocused?: boolean
   onInput?: (value: string) => void
   onChange?: (value: string) => void
-  onSubmit?: (value: string) => void
 }
 
-/** Single-line text input. Background (default) or border (outline) cycles rest → hover → pressed → focused. */
+/** Single-line text input. Click to focus, Esc / outside click to blur (requires HasciiInputFocusProvider for outside click). */
 export function HasciiInput(props: Props) {
   const variant = props.variant ?? "default"
   const width = props.width ?? 32
-  const isFocused = props.isFocused ?? false
   const placeholder = props.placeholder ?? ""
+
+  const id = useId()
+  const focusCtx = useHasciiInputFocus()
+  const fallbackState = useState(props.defaultFocused ?? false)
+  const isFocused = focusCtx ? focusCtx.focusedId === id : fallbackState[0]
+
+  const focus = (): void => {
+    if (focusCtx) focusCtx.setFocusedId(id)
+    else fallbackState[1](true)
+  }
+
+  const blur = (): void => {
+    if (focusCtx) focusCtx.setFocusedId(null)
+    else fallbackState[1](false)
+  }
 
   const theme = useHasciiTheme()
   const press = usePressable()
+
+  useKeyboard((key) => {
+    if (!isFocused) return
+    if (key.name === "escape") blur()
+  })
 
   if (variant === "outline") {
     const borderColor = press.isPressed
@@ -46,6 +66,11 @@ export function HasciiInput(props: Props) {
         backgroundColor={theme.color.background}
         justifyContent="center"
         {...press.bind}
+        onMouseDown={(event) => {
+          event.stopPropagation()
+          press.bind.onMouseDown()
+          focus()
+        }}
       >
         <input
           focused={isFocused}
@@ -56,21 +81,16 @@ export function HasciiInput(props: Props) {
           cursorColor={theme.color.foreground}
           onInput={props.onInput}
           onChange={props.onChange}
-          onSubmit={(value: unknown) => {
-            if (typeof value === "string") props.onSubmit?.(value)
-          }}
         />
       </box>
     )
   }
 
   const bg = press.isPressed
-    ? theme.color.mutedForeground
-    : isFocused
-      ? theme.color.secondaryActive
-      : press.isHovered
-        ? theme.color.secondaryHover
-        : theme.color.muted
+    ? theme.color.secondaryActive
+    : isFocused || press.isHovered
+      ? theme.color.secondaryHover
+      : theme.color.muted
 
   return (
     <box
@@ -81,6 +101,11 @@ export function HasciiInput(props: Props) {
       backgroundColor={bg}
       justifyContent="center"
       {...press.bind}
+      onMouseDown={(event) => {
+        event.stopPropagation()
+        press.bind.onMouseDown()
+        focus()
+      }}
     >
       <input
         focused={isFocused}
@@ -91,10 +116,12 @@ export function HasciiInput(props: Props) {
         cursorColor={theme.color.foreground}
         onInput={props.onInput}
         onChange={props.onChange}
-        onSubmit={(value: unknown) => {
-          if (typeof value === "string") props.onSubmit?.(value)
-        }}
       />
+      {isFocused ? (
+        <box position="absolute" bottom={0} left={0} right={0}>
+          <text fg={theme.color.primary}>{"▁".repeat(width)}</text>
+        </box>
+      ) : null}
     </box>
   )
 }
