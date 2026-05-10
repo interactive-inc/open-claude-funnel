@@ -6,7 +6,9 @@ const SHORT_FLAGS: Record<string, string> = {
 
 const STRIPPED_METHOD_KEYWORDS: Record<string, string> = {
   add: "POST",
+  attach: "POST",
   remove: "DELETE",
+  detach: "DELETE",
   set: "PUT",
 }
 

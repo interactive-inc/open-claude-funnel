@@ -117,12 +117,13 @@ lib/
 - 引数を省略した呼び出し（例 `funnel channels add`）は bundler の shortcut route が `?help=true` 不要で help を返す。具体的には `:param` 省略形の URL（`POST /channels` / `DELETE /channels/:channel/connectors` 等）に `helpRoute(xxxHelp)` を登録する
 - bin.ts のフォールバックは `?help=true` 付きでルートが 404 のとき `GET /<group>?help=true` → 最後に top-level `HELP` 文字列、の二段だけ。`_help_` プレースホルダ等の hack は使わない
 - CLI verb → HTTP method 変換（`lib/cli/router/to-request.ts`）:
-  - `add` → POST （セグメントから消える）
+  - `add` / `attach` → POST （セグメントから消える）
   - `set` → PUT （セグメントから消える）
-  - `remove` → DELETE （セグメントから消える）
+  - `remove` / `detach` → DELETE （セグメントから消える）
   - `rename` → PUT （セグメントに残る → URL 上に `/rename/` が現れる）
   - `as-default` → PUT （セグメントに残る）
   - `request` → POST （セグメントに残る）
+  - `attach` / `detach` は `add` / `remove` の同義語。「コネクタを購読する」というメンタルモデルに合わせて使い分ける（チャネル直下の `add` も使えるが、`channels <ch> connectors attach <c>` の方が意味が通る）
 
 ### Modules
 
