@@ -3,20 +3,21 @@ import { factory } from "@/cli/factory"
 import {
   addHelp as channelsAddHelp,
   channelsAddHandler,
-  channelsRemoveHandler,
-  channelsShowHandler,
-  removeHelp as channelsRemoveHelp,
-} from "@/cli/routes/channels.$channel"
+} from "@/cli/routes/channels.add.$channel"
 import { channelsConnectorsGroupHandler } from "@/cli/routes/channels.$channel.connectors"
 import {
   addHelp as channelsConnectorsAddHelp,
   channelsConnectorsAddHandler,
+} from "@/cli/routes/channels.$channel.connectors.add.$connector"
+import {
   channelsConnectorsRemoveHandler,
-  channelsConnectorsSetHandler,
-  channelsConnectorsShowHandler,
   removeHelp as channelsConnectorsRemoveHelp,
+} from "@/cli/routes/channels.$channel.connectors.remove.$connector"
+import {
+  channelsConnectorsSetHandler,
   setHelp as channelsConnectorsSetHelp,
-} from "@/cli/routes/channels.$channel.connectors.$connector"
+} from "@/cli/routes/channels.$channel.connectors.set.$connector"
+import { channelsConnectorsShowHandler } from "@/cli/routes/channels.$channel.connectors.$connector"
 import {
   channelsConnectorsRenameHandler,
   renameHelp as channelsConnectorsRenameHelp,
@@ -26,18 +27,22 @@ import { channelsConnectorsSchedulesGroupHandler } from "@/cli/routes/channels.$
 import {
   addHelp as channelsConnectorsSchedulesAddHelp,
   channelsConnectorsSchedulesAddHandler,
+} from "@/cli/routes/channels.$channel.connectors.$connector.schedules.add.$id"
+import {
   channelsConnectorsSchedulesRemoveHandler,
   removeHelp as channelsConnectorsSchedulesRemoveHelp,
-} from "@/cli/routes/channels.$channel.connectors.$connector.schedules.$id"
+} from "@/cli/routes/channels.$channel.connectors.$connector.schedules.remove.$id"
+import {
+  channelsRemoveHandler,
+  removeHelp as channelsRemoveHelp,
+} from "@/cli/routes/channels.remove.$channel"
 import {
   channelsRenameHandler,
   renameHelp as channelsRenameHelp,
 } from "@/cli/routes/channels.$channel.rename.$newName"
 import { channelsSetDeliveryHandler } from "@/cli/routes/channels.$channel.set.delivery.$mode"
-import {
-  channelsGroupHandler,
-  groupHelp as channelsGroupHelp,
-} from "@/cli/routes/channels"
+import { channelsShowHandler } from "@/cli/routes/channels.$channel"
+import { channelsGroupHandler } from "@/cli/routes/channels"
 import { claudeHandler } from "@/cli/routes/claude"
 import { gatewayGroupHandler } from "@/cli/routes/gateway"
 import { gatewayListenersHandler } from "@/cli/routes/gateway.listeners"
@@ -50,11 +55,7 @@ import { gatewayStopHandler } from "@/cli/routes/gateway.stop"
 import {
   addHelp as profilesAddHelp,
   profilesAddHandler,
-  profilesRemoveHandler,
-  profilesSetHandler,
-  removeHelp as profilesRemoveHelp,
-  setHelp as profilesSetHelp,
-} from "@/cli/routes/profiles.$profile"
+} from "@/cli/routes/profiles.add.$profile"
 import { profilesAsDefaultHandler } from "@/cli/routes/profiles.$profile.as-default"
 import {
   profilesRenameHandler,
@@ -62,9 +63,14 @@ import {
 } from "@/cli/routes/profiles.$profile.rename.$newName"
 import { profilesLaunchHandler } from "@/cli/routes/profiles.$profile.run"
 import {
-  groupHelp as profilesGroupHelp,
-  profilesGroupHandler,
-} from "@/cli/routes/profiles"
+  profilesRemoveHandler,
+  removeHelp as profilesRemoveHelp,
+} from "@/cli/routes/profiles.remove.$profile"
+import {
+  profilesSetHandler,
+  setHelp as profilesSetHelp,
+} from "@/cli/routes/profiles.set.$profile"
+import { profilesGroupHandler } from "@/cli/routes/profiles"
 import { statusHandler } from "@/cli/routes/status"
 import { updateHandler } from "@/cli/routes/update"
 import { Funnel } from "@/funnel"
@@ -87,80 +93,101 @@ base.onError((error, c) => {
 
 const helpRoute = (text: string) => factory.createHandlers((c) => c.text(text))
 
+// All CLI verbs (`add` / `remove` / `set` / `rename` / `as-default` / `request`) map to POST in
+// to-request.ts and stay in the URL as a literal segment. Read paths (list / show / launch) keep GET.
+// Help shortcuts at parameterless URLs return the help text directly so `funnel <verb>` (no args) is
+// informative instead of 404.
 export const app = base
   .get("/claude", ...claudeHandler)
   .get("/channels", ...channelsGroupHandler)
-  .post("/channels", ...helpRoute(channelsAddHelp))
-  .delete("/channels", ...helpRoute(channelsRemoveHelp))
-  .put("/channels", ...helpRoute(channelsGroupHelp))
-  .put("/channels/:channel/rename/:newName", ...channelsRenameHandler)
-  .put("/channels/rename/:channel/:newName", ...channelsRenameHandler)
-  .put("/channels/:channel/rename", ...helpRoute(channelsRenameHelp))
-  .put("/channels/:channel/set/delivery/:mode", ...channelsSetDeliveryHandler)
-  .post("/channels/:channel", ...channelsAddHandler)
-  .delete("/channels/:channel", ...channelsRemoveHandler)
+  .post("/channels/add", ...helpRoute(channelsAddHelp))
+  .post("/channels/add/:channel", ...channelsAddHandler)
+  .post("/channels/remove", ...helpRoute(channelsRemoveHelp))
+  .post("/channels/remove/:channel", ...channelsRemoveHandler)
+  .post("/channels/rename/:channel/:newName", ...channelsRenameHandler)
+  .post("/channels/:channel/rename/:newName", ...channelsRenameHandler)
+  .post("/channels/rename", ...helpRoute(channelsRenameHelp))
+  .post("/channels/:channel/rename", ...helpRoute(channelsRenameHelp))
+  .post("/channels/:channel/set/delivery/:mode", ...channelsSetDeliveryHandler)
   .get("/channels/:channel", ...channelsShowHandler)
   .get("/channels/:channel/connectors", ...channelsConnectorsGroupHandler)
   .post(
-    "/channels/:channel/connectors",
+    "/channels/:channel/connectors/add",
     ...helpRoute(channelsConnectorsAddHelp),
   )
-  .delete(
-    "/channels/:channel/connectors",
+  .post(
+    "/channels/:channel/connectors/add/:connector",
+    ...channelsConnectorsAddHandler,
+  )
+  .post(
+    "/channels/:channel/connectors/remove",
     ...helpRoute(channelsConnectorsRemoveHelp),
   )
-  .put(
-    "/channels/:channel/connectors",
+  .post(
+    "/channels/:channel/connectors/remove/:connector",
+    ...channelsConnectorsRemoveHandler,
+  )
+  .post(
+    "/channels/:channel/connectors/set",
     ...helpRoute(channelsConnectorsSetHelp),
   )
-  .put(
+  .post(
+    "/channels/:channel/connectors/set/:connector",
+    ...channelsConnectorsSetHandler,
+  )
+  .post(
     "/channels/:channel/connectors/rename/:connector/:newName",
     ...channelsConnectorsRenameHandler,
   )
-  .put(
+  .post(
     "/channels/:channel/connectors/:connector/rename/:newName",
     ...channelsConnectorsRenameHandler,
   )
-  .put(
+  .post(
+    "/channels/:channel/connectors/rename",
+    ...helpRoute(channelsConnectorsRenameHelp),
+  )
+  .post(
     "/channels/:channel/connectors/:connector/rename",
     ...helpRoute(channelsConnectorsRenameHelp),
   )
-  .post("/channels/:channel/connectors/:connector/request", ...channelsConnectorsRequestHandler)
-  .post("/channels/:channel/connectors/:connector", ...channelsConnectorsAddHandler)
-  .put("/channels/:channel/connectors/:connector", ...channelsConnectorsSetHandler)
-  .delete("/channels/:channel/connectors/:connector", ...channelsConnectorsRemoveHandler)
+  .post(
+    "/channels/:channel/connectors/:connector/request",
+    ...channelsConnectorsRequestHandler,
+  )
   .get("/channels/:channel/connectors/:connector", ...channelsConnectorsShowHandler)
   .get(
     "/channels/:channel/connectors/:connector/schedules",
     ...channelsConnectorsSchedulesGroupHandler,
   )
   .post(
-    "/channels/:channel/connectors/:connector/schedules",
+    "/channels/:channel/connectors/:connector/schedules/add",
     ...helpRoute(channelsConnectorsSchedulesAddHelp),
   )
-  .delete(
-    "/channels/:channel/connectors/:connector/schedules",
+  .post(
+    "/channels/:channel/connectors/:connector/schedules/add/:id",
+    ...channelsConnectorsSchedulesAddHandler,
+  )
+  .post(
+    "/channels/:channel/connectors/:connector/schedules/remove",
     ...helpRoute(channelsConnectorsSchedulesRemoveHelp),
   )
   .post(
-    "/channels/:channel/connectors/:connector/schedules/:id",
-    ...channelsConnectorsSchedulesAddHandler,
-  )
-  .delete(
-    "/channels/:channel/connectors/:connector/schedules/:id",
+    "/channels/:channel/connectors/:connector/schedules/remove/:id",
     ...channelsConnectorsSchedulesRemoveHandler,
   )
   .get("/profiles", ...profilesGroupHandler)
-  .post("/profiles", ...helpRoute(profilesAddHelp))
-  .put("/profiles", ...helpRoute(profilesSetHelp))
-  .delete("/profiles", ...helpRoute(profilesRemoveHelp))
-  .put("/profiles/:profile/rename/:newName", ...profilesRenameHandler)
-  .put("/profiles/rename/:profile/:newName", ...profilesRenameHandler)
-  .put("/profiles/:profile/rename", ...helpRoute(profilesRenameHelp))
-  .put("/profiles/:profile/as-default", ...profilesAsDefaultHandler)
-  .post("/profiles/:profile", ...profilesAddHandler)
-  .put("/profiles/:profile", ...profilesSetHandler)
-  .delete("/profiles/:profile", ...profilesRemoveHandler)
+  .post("/profiles/add", ...helpRoute(profilesAddHelp))
+  .post("/profiles/add/:profile", ...profilesAddHandler)
+  .post("/profiles/set", ...helpRoute(profilesSetHelp))
+  .post("/profiles/set/:profile", ...profilesSetHandler)
+  .post("/profiles/remove", ...helpRoute(profilesRemoveHelp))
+  .post("/profiles/remove/:profile", ...profilesRemoveHandler)
+  .post("/profiles/rename/:profile/:newName", ...profilesRenameHandler)
+  .post("/profiles/:profile/rename/:newName", ...profilesRenameHandler)
+  .post("/profiles/rename", ...helpRoute(profilesRenameHelp))
+  .post("/profiles/:profile/rename", ...helpRoute(profilesRenameHelp))
+  .post("/profiles/:profile/as-default", ...profilesAsDefaultHandler)
   .get("/profiles/:profile/run", ...profilesLaunchHandler)
   .get("/profiles/:profile", ...profilesLaunchHandler)
   .get("/gateway", ...gatewayGroupHandler)

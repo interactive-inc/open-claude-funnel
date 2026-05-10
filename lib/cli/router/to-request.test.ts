@@ -2,45 +2,45 @@ import { describe, expect, test } from "vitest"
 import { toRequest } from "@/cli/router/to-request"
 
 describe("toRequest", () => {
-  test("add is POST", () => {
+  test("add is POST and keeps the keyword in path", () => {
     expect(toRequest(["connectors", "add", "x"])).toMatchObject({
       method: "POST",
-      path: "/connectors/x",
+      path: "/connectors/add/x",
     })
   })
 
-  test("remove is DELETE", () => {
+  test("remove is POST and keeps the keyword in path", () => {
     expect(toRequest(["connectors", "remove", "x"])).toMatchObject({
-      method: "DELETE",
-      path: "/connectors/x",
+      method: "POST",
+      path: "/connectors/remove/x",
     })
   })
 
-  test("rename is PUT and keeps args in path", () => {
+  test("rename is POST and keeps args in path", () => {
     expect(toRequest(["connectors", "rename", "a", "b"])).toMatchObject({
-      method: "PUT",
+      method: "POST",
       path: "/connectors/rename/a/b",
     })
   })
 
-  test("set is PUT and drops the keyword from path", () => {
+  test("set is POST and keeps the keyword in path", () => {
     const req = toRequest(["connectors", "x", "set", "--bot-token", "xoxb-z"])
-    expect(req.method).toBe("PUT")
-    expect(req.path).toBe("/connectors/x")
+    expect(req.method).toBe("POST")
+    expect(req.path).toBe("/connectors/x/set")
     expect(new URL(req.url).searchParams.get("bot-token")).toBe("xoxb-z")
   })
 
-  test("nested connector add is POST and drops the keyword from path", () => {
+  test("nested connector add is POST and keeps the keyword in path", () => {
     expect(toRequest(["channels", "x", "connectors", "add", "s"])).toMatchObject({
       method: "POST",
-      path: "/channels/x/connectors/s",
+      path: "/channels/x/connectors/add/s",
     })
   })
 
-  test("nested connector remove is DELETE and drops the keyword from path", () => {
+  test("nested connector remove is POST and keeps the keyword in path", () => {
     expect(toRequest(["channels", "x", "connectors", "remove", "s"])).toMatchObject({
-      method: "DELETE",
-      path: "/channels/x/connectors/s",
+      method: "POST",
+      path: "/channels/x/connectors/remove/s",
     })
   })
 
@@ -51,9 +51,9 @@ describe("toRequest", () => {
     })
   })
 
-  test("as-default is PUT and keeps the keyword in path", () => {
+  test("as-default is POST and keeps the keyword in path", () => {
     expect(toRequest(["profiles", "cto", "as-default"])).toMatchObject({
-      method: "PUT",
+      method: "POST",
       path: "/profiles/cto/as-default",
     })
   })

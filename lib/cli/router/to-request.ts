@@ -4,19 +4,16 @@ const SHORT_FLAGS: Record<string, string> = {
   p: "profile",
 }
 
-const STRIPPED_METHOD_KEYWORDS: Record<string, string> = {
-  add: "POST",
-  attach: "POST",
-  remove: "DELETE",
-  detach: "DELETE",
-  set: "PUT",
-}
-
-const KEPT_METHOD_KEYWORDS: Record<string, string> = {
-  rename: "PUT",
-  "as-default": "PUT",
-  request: "POST",
-}
+// All CLI verbs map to POST and stay in the URL (no method-stripping).
+// Hono routes disambiguate by URL segment (e.g. /channels/add/:channel vs /channels/remove/:channel).
+const METHOD_KEYWORDS = new Set([
+  "add",
+  "set",
+  "remove",
+  "rename",
+  "as-default",
+  "request",
+])
 
 const API_CALL_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"])
 
@@ -85,14 +82,8 @@ export const toRequest = (args: string[]) => {
       continue
     }
 
-    if (STRIPPED_METHOD_KEYWORDS[arg]) {
-      method = STRIPPED_METHOD_KEYWORDS[arg]!
-      i++
-      continue
-    }
-
-    if (KEPT_METHOD_KEYWORDS[arg]) {
-      method = KEPT_METHOD_KEYWORDS[arg]!
+    if (METHOD_KEYWORDS.has(arg)) {
+      method = "POST"
       segments.push(arg)
       i++
       continue

@@ -11,12 +11,12 @@ subcommands:
   add <name>                      add
   remove <name>                   remove
   <name>                          show details
-  <name> connectors attach <c>    subscribe to a connector
-  <name> connectors detach <c>    unsubscribe from a connector
+  <name> connectors                       list connectors
+  <name> connectors add <c> --type=...    add a connector
 
 examples:
   funnel channels add prod-inbox
-  funnel channels prod-inbox connectors attach prod-slack
+  funnel channels prod-inbox connectors add prod-slack --type=slack --bot-token=xoxb-... --app-token=xapp-...
   funnel channels prod-inbox`
 
 export const channelsGroupHandler = factory.createHandlers(

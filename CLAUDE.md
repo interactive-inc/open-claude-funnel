@@ -86,23 +86,31 @@ lib/
 │
 └── cli/                 CLI 機構。全レイヤに依存（bin.ts 経由で利用）
     ├── factory.ts       Hono factory
-    ├── routes/          フラットなルートハンドラ群（URL パスベース命名 / `$param` で動的セグメント）
-    │   ├── index.ts                                                        app（middleware + onError + flat mount + 引数省略時の help shortcut）
-    │   ├── channels.ts                                                     GET /channels
-    │   ├── channels.$channel.ts                                            POST/GET/DELETE /channels/:channel
-    │   ├── channels.$channel.rename.$newName.ts                            PUT
-    │   ├── channels.$channel.set.delivery.$mode.ts                         PUT
-    │   ├── channels.$channel.connectors.ts                                 GET
-    │   ├── channels.$channel.connectors.$connector.ts                      POST/GET/PUT/DELETE
-    │   ├── channels.$channel.connectors.$connector.rename.$newName.ts     PUT
-    │   ├── channels.$channel.connectors.$connector.request.ts             POST
-    │   ├── channels.$channel.connectors.$connector.schedules.ts           GET
-    │   ├── channels.$channel.connectors.$connector.schedules.$id.ts       POST/DELETE
-    │   ├── claude.ts / status.ts / update.ts
-    │   ├── gateway.ts                                                      group + 共通 fetch 関数（status と共有）
-    │   ├── gateway.{status,start,stop,restart,run,logs,listeners}.ts
-    │   └── profiles.ts / profiles.$profile.ts / profiles.$profile.run.ts /
-    │       profiles.$profile.rename.$newName.ts / profiles.$profile.as-default.ts
+    ├── routes/          フラットなルートハンドラ群（URL パスベース命名 / `$param` で動的セグメント / 1 URL = 1 file = 1 method）
+    │   ├── index.ts                                                          app（middleware + onError + flat mount + 引数省略時の help shortcut）
+    │   ├── channels.ts                                                       GET /channels
+    │   ├── channels.$channel.ts                                              GET /channels/:channel (show)
+    │   ├── channels.add.$channel.ts                                          POST add
+    │   ├── channels.remove.$channel.ts                                       POST remove
+    │   ├── channels.$channel.rename.$newName.ts                              POST rename
+    │   ├── channels.$channel.set.delivery.$mode.ts                           POST set delivery
+    │   ├── channels.$channel.connectors.ts                                   GET list
+    │   ├── channels.$channel.connectors.$connector.ts                        GET show
+    │   ├── channels.$channel.connectors.add.$connector.ts                    POST add
+    │   ├── channels.$channel.connectors.set.$connector.ts                    POST set
+    │   ├── channels.$channel.connectors.remove.$connector.ts                 POST remove
+    │   ├── channels.$channel.connectors.$connector.rename.$newName.ts        POST rename
+    │   ├── channels.$channel.connectors.$connector.request.ts                POST request
+    │   ├── channels.$channel.connectors.$connector.schedules.ts              GET list
+    │   ├── channels.$channel.connectors.$connector.schedules.add.$id.ts      POST add
+    │   ├── channels.$channel.connectors.$connector.schedules.remove.$id.ts   POST remove
+    │   ├── claude.ts / status.ts / update.ts                                 GET
+    │   ├── gateway.ts                                                        group + 共通 fetch 関数（status と共有）
+    │   ├── gateway.{status,start,stop,restart,run,logs,listeners}.ts         GET
+    │   ├── profiles.ts                                                       GET list
+    │   ├── profiles.add.$profile.ts / profiles.set.$profile.ts / profiles.remove.$profile.ts   POST
+    │   ├── profiles.$profile.run.ts                                          GET run（`/profiles/:profile` GET にも alias）
+    │   └── profiles.$profile.rename.$newName.ts / profiles.$profile.as-default.ts              POST
     └── router/          toRequest / queryToCliArgs / zValidator
 ```
 
@@ -112,18 +120,19 @@ lib/
 
 - 対話禁止。全てオプション引数で完結する（Claude-first）
 - `export default` 禁止
-- ルートファイルは `lib/cli/routes/` 直下にフラット配置。ファイル名は URL パスに 1:1 対応（ドット区切り、動的セグメントは `$param`）。例: `channels.$channel.connectors.$connector.schedules.$id.ts` ↔ `/channels/:channel/connectors/:connector/schedules/:id`。同じ URL パターンに複数 method がある場合は同じファイルに `xxxAddHandler` / `xxxShowHandler` などを並べる（method ごとに別ファイルにしない）
+- ルートファイルは `lib/cli/routes/` 直下にフラット配置。ファイル名は URL パスに 1:1 対応（ドット区切り、動的セグメントは `$param`、verb は CLI と同じ綴りでセグメント化）。例: `channels.$channel.connectors.add.$connector.ts` ↔ `POST /channels/:channel/connectors/add/:connector`。1 URL = 1 file = 1 method を保ち、ファイルを跨いだ method 多重を作らない（rename の語順 alias のみ bundler 側で同じ handler を 2 URL に登録する）
 - help は別ファイルにせず、エンドポイントのファイル内に `export const xxxHelp = \`...\`` で定義して `zValidator(..., xxxHelp)` の第3引数に渡す。`export` するのは shortcut 経由で bundler が再利用するため
 - 引数を省略した呼び出し（例 `funnel channels add`）は bundler の shortcut route が `?help=true` 不要で help を返す。具体的には `:param` 省略形の URL（`POST /channels` / `DELETE /channels/:channel/connectors` 等）に `helpRoute(xxxHelp)` を登録する
 - bin.ts のフォールバックは `?help=true` 付きでルートが 404 のとき `GET /<group>?help=true` → 最後に top-level `HELP` 文字列、の二段だけ。`_help_` プレースホルダ等の hack は使わない
-- CLI verb → HTTP method 変換（`lib/cli/router/to-request.ts`）:
-  - `add` / `attach` → POST （セグメントから消える）
-  - `set` → PUT （セグメントから消える）
-  - `remove` / `detach` → DELETE （セグメントから消える）
-  - `rename` → PUT （セグメントに残る → URL 上に `/rename/` が現れる）
-  - `as-default` → PUT （セグメントに残る）
-  - `request` → POST （セグメントに残る）
-  - `attach` / `detach` は `add` / `remove` の同義語。「コネクタを購読する」というメンタルモデルに合わせて使い分ける（チャネル直下の `add` も使えるが、`channels <ch> connectors attach <c>` の方が意味が通る）
+- CLI verb → HTTP method 変換（`lib/cli/router/to-request.ts`）: 全 verb が **POST** にマップされ、verb は URL セグメントとして残る。Hono は URL で disambiguate する（メソッド意味論に依存しない）
+  - `add` / `remove` / `set` / `rename` / `as-default` / `request` のいずれも POST + verb in URL
+  - `funnel channels add foo` → `POST /channels/add/foo`
+  - `funnel channels remove foo` → `POST /channels/remove/foo`
+  - `funnel channels foo set delivery fanout` → `POST /channels/foo/set/delivery/fanout`
+  - `funnel channels rename old new` / `funnel channels old rename new` の双方向 URL を bundler で alias 登録
+- read 系（list / show / launch）は引数に verb が出ないので GET のまま
+- CLI フラグは kebab-case で受け取り、zod スキーマも kebab key（`"bot-token"`, `"poll-interval"`, `"sub-agent"`, `"catchup-policy"` 等）でバリデートしてからハンドラ側で camelCase に詰め直す。スキーマ key と CLI 表記を一致させる（自動ケース変換は入れない）
+- CLI から渡される `--channel <name>` 等は CLI ハンドラ層で id/internal value に解決してから engine に渡す（engine 側は id を期待。例: profiles の `channelId` は `funnel.channels.get(name).id` 経由で解決）
 
 ### Modules
 

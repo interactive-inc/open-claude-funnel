@@ -15,7 +15,7 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
       cron: z.string(),
       prompt: z.string(),
       enabled: z.coerce.boolean().optional(),
-      catchupPolicy: scheduleCatchupPolicySchema.optional(),
+      "catchup-policy": scheduleCatchupPolicySchema.optional(),
     }),
     addHelp,
   ),
@@ -29,30 +29,13 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
       cron: query.cron,
       prompt: query.prompt,
       ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
-      ...(query.catchupPolicy !== undefined ? { catchupPolicy: query.catchupPolicy } : {}),
+      ...(query["catchup-policy"] !== undefined
+        ? { catchupPolicy: query["catchup-policy"] }
+        : {}),
     })
 
     await funnel.listeners.restart(param.channel, param.connector)
 
     return c.text(`added schedule entry "${entry.id}"`)
-  },
-)
-
-export const removeHelp = `funnel channels <ch> connectors <conn> schedules remove <id>
-
-usage: funnel channels <ch> connectors <conn> schedules remove <id>`
-
-export const channelsConnectorsSchedulesRemoveHandler = factory.createHandlers(
-  zValidator("param", z.object({ channel: z.string(), connector: z.string(), id: z.string() })),
-  zValidator("query", z.object({}), removeHelp),
-  async (c) => {
-    const param = c.req.valid("param")
-    const funnel = c.var.funnel
-
-    funnel.channels.removeScheduleEntry(param.channel, param.connector, param.id)
-
-    await funnel.listeners.restart(param.channel, param.connector)
-
-    return c.text(`removed schedule entry "${param.id}"`)
   },
 )
