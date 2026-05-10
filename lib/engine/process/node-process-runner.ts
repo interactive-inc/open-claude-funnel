@@ -69,25 +69,6 @@ export class NodeFunnelProcessRunner extends FunnelProcessRunner {
       stdio: ["inherit", "inherit", "inherit"],
     })
 
-    const forward = (signal: "SIGINT" | "SIGTERM") => {
-      try {
-        proc.kill(signal)
-      } catch {
-        // ignore
-      }
-
-      setTimeout(() => {
-        try {
-          proc.kill("SIGKILL")
-        } catch {
-          // ignore
-        }
-      }, 3000).unref()
-    }
-
-    process.on("SIGINT", () => forward("SIGINT"))
-    process.on("SIGTERM", () => forward("SIGTERM"))
-
     return await proc.exited
   }
 

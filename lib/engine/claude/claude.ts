@@ -145,11 +145,12 @@ export class FunnelClaude {
   }
 
   private installCleanup(profileName: string): void {
-    const cleanup = () => this.removePidFile(profileName)
-
-    globalThis.process.once("exit", cleanup)
-    globalThis.process.once("SIGINT", cleanup)
-    globalThis.process.once("SIGTERM", cleanup)
+    // Default Bun behavior on SIGINT/SIGTERM is process.exit(130/143), which
+    // fires the "exit" event. Hooking only "exit" keeps the PID file cleanup
+    // running while letting the signal terminate the process normally —
+    // adding our own SIGINT handler would suppress the default exit and leave
+    // funnel hanging until claude responds.
+    globalThis.process.once("exit", () => this.removePidFile(profileName))
   }
 
   private isProcessAlive(pid: number): boolean {

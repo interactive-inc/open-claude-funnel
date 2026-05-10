@@ -37,7 +37,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build lib/bin.ts --target=bun --outdir dist --minify",
+    "build": "bun build lib/bin.ts lib/gateway/daemon.ts --target=bun --outdir dist --minify",
     "prepare": "bun run build"
   },
   "type": "module",

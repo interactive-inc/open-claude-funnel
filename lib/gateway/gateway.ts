@@ -1,5 +1,6 @@
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
+import { resolveDaemonScript } from "@/gateway/resolve-daemon-script"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
@@ -9,7 +10,7 @@ import { NodeFunnelClock } from "@/engine/time/node-clock"
 
 const DEFAULT_PORT = 9742
 const DEFAULT_TMP_DIR = "/tmp/funnel"
-const STARTUP_GRACE_MS = 800
+const STARTUP_TIMEOUT_MS = 5000
 const SIGTERM_TIMEOUT_MS = 2000
 const POLL_INTERVAL_MS = 100
 const SIGKILL_GRACE_MS = 200
@@ -82,12 +83,17 @@ export class FunnelGateway {
 
     this.fs.mkdirSync(this.tmpDir, { recursive: true })
 
-    const gatewayScript = resolve(import.meta.dir, "./daemon.ts")
+    const gatewayScript = resolveDaemonScript()
     const command = this.buildStartCommand(gatewayScript, options)
 
     this.process.detach(["bash", "-c", command])
 
-    await this.sleep(STARTUP_GRACE_MS)
+    const deadline = Date.now() + STARTUP_TIMEOUT_MS
+
+    while (Date.now() < deadline) {
+      if (this.isRunning()) return true
+      await this.sleep(POLL_INTERVAL_MS)
+    }
 
     return this.isRunning()
   }
