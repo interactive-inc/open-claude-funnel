@@ -48,11 +48,10 @@ lib/
 ├── bin.ts               CLI バイナリエントリ（package.json `bin`）。argv → toRequest → app.request → stdout
 │
 ├── engine/              コアドメイン。他レイヤを知らない
-│   ├── channels/        FunnelChannels（購読箱）+ ConnectorExistenceChecker 型
+│   ├── channels/        FunnelChannels（購読箱 + nested connector CRUD + schedule entries + adapter dispatch）
 │   ├── claude/          FunnelClaude + GatewayController 型（gateway 依存を切る）
-│   ├── mcp/             FunnelMcp + channel-server（stdio）
+│   ├── mcp/             FunnelMcp（.mcp.json install）+ channel-server（stdio MCP: events + per-connector tools）
 │   ├── profiles/        FunnelProfiles + ProfileChannel{Checker,RefUpdater} 型
-│   ├── repos/           FunnelRepositories
 │   ├── settings/        FunnelSettingsReader/Store + Zod スキーマ + Mock
 │   ├── fs/              FunnelFileSystem (abstract) + Node / Memory 実装
 │   ├── http/            FunnelHttpClient (abstract) + Node / Memory 実装
@@ -62,11 +61,12 @@ lib/
 │   └── id/              FunnelIdGenerator (abstract) + Node / Memory 実装
 │
 ├── logger/              LeucoLogger 系（独立した汎用 logger）。`gateway/funnel-event-store.ts` が SQLite sink として利用
-├── tui/                 OpenTUI ダッシュボード（`bin.ts` から `launchTui(funnel)` で起動）
+├── tui/                 OpenTUI ダッシュボード（`bin.ts` から `launchTui(funnel)` で起動。引数なしで起動した時のみ）
 │
 ├── connectors/          コネクタ実装。engine のみに依存
-│                        FunnelConnectors (facade) + per-type
-│                        Store/Listener/Adapter/EventProcessor + FunnelSchedule
+│                        FunnelConnectorFactory + per-type
+│                        {Listener, Adapter, ConnectorSchema, EventProcessor}
+│                        schedule のみ adapter なし（一方向）
 │
 ├── gateway/             Web サーバ。connectors / engine に依存
 │   ├── gateway.ts                 daemon manager (PID + nohup)
@@ -85,7 +85,9 @@ lib/
 │       ├── listeners.start.ts     POST   /listeners/:channel/:connector/start
 │       ├── listeners.stop.ts      DELETE /listeners/:channel/:connector
 │       ├── listeners.restart.ts   POST   /listeners/:channel/:connector/restart
-│       ├── route-deps.ts          GatewayRouteDeps 型
+│       ├── channels.connectors.call.ts  POST /channels/:channel/connectors/:connector/call
+│       │                          （MCP の per-connector tool が叩く HTTP 入口）
+│       ├── route-deps.ts          GatewayRouteDeps 型（`channels` フィールドあり）
 │       └── validator.ts           zParam helper
 │
 └── cli/                 CLI 機構。全レイヤに依存（bin.ts 経由で利用）
@@ -145,7 +147,7 @@ lib/
 - クラスは DI（コンストラクタで依存を受け取る）
 - `Object.freeze(this)` で immutable
 - CLI と TUI は `Funnel` 経由で同じ API を共有
-- `new ConnectorService({ store })` を薄くラップしただけの `createXxxService(store)` 関数は作らない（DI が複数になる場合のみ create 関数を置く）
+- 既存クラスを薄くラップしただけの `createXxxService(store)` 関数は作らない（DI が複数になる場合のみ create 関数を置く）
 - 外部境界（FS / HTTP / process / settings / adapter / listener）は abstract class を切り、Node 実装と Memory 実装を並置
 - テストは Memory 実装で書く（実 FS / spawn / fetch / WebSocket に触れない）
 - ルートハンドラでは try/catch を書かない。サービスは throw、エラー応答も `throw new HTTPException(status, { message })` で統一する（`return c.text("...", 4xx)` 禁止）。`lib/cli/routes/index.ts` の onError が捕捉して `error: <message>` で返す
@@ -157,7 +159,7 @@ lib/
 ### Settings
 
 - ディレクトリ: `~/.funnel/`
-- パス: `~/.funnel/settings.json`（channels / profiles / repositories のみ）
+- パス: `~/.funnel/settings.json`（channels / profiles のみ。channels には nested connectors[] が入る）
 - スキーマ: `lib/engine/settings/settings-schema.ts`（Zod v4）。型は `z.infer` で生成
 - Slack トークンは `xoxb-` / `xapp-` プレフィックスで検証
 - Connector 設定は settings.json には入れず、per-type ディレクトリに分散（下の Connectors 参照）
@@ -170,19 +172,17 @@ lib/
   - `discord/<name>.json` — `{type, name, botToken}`
   - `schedule/<name>.jsonl` — 1 行 1 エントリ `{id, cron, prompt, enabled}`
   - `schedule/<name>.state.json` — 発火済みエントリの lastFiredAt（catch-up 用）
-- 抽象階層は 2 段。listener-only は `FunnelConnectorTypeStore<TConfig>`、adapter を持つ callable 型（slack / gh / discord）は `FunnelCallableConnectorStore<TConfig>` を継承して `createAdapter` を実装する。schedule は前者のみで、`createAdapter` はそもそも存在しない（ランタイムの `null` 返しや type 防御コードは書かない）
-- `FunnelConnectors`（facade）は typed fields（`slack` / `gh` / `discord` / `schedule`）＋ `ChannelConnectorRefUpdater` を DI で受け取り、discriminated union の `switch` で dispatch する。`as` キャストは一切使わない。フィールド更新と adapter 経由の API は型ごとに分かれる（`updateSlack` / `updateGh` / `updateDiscord` と `callSlack` / `callGh` / `callDiscord`）
-- Channel ↔ Connector の双方向依存は `ConnectorExistenceChecker`（channels → connectors）と `ChannelConnectorRefUpdater`（connectors → channels）の型だけで切る。`Funnel` は forward-const クロージャで遅延ワイヤリング
-- Channel ↔ Profile も同様に `ProfileChannelChecker` / `ProfileChannelRefUpdater`（`lib/engine/profiles/`）の型で切り、`FunnelChannels` が DI で受け取る。`FunnelProfiles` がこれらの interface を実装する
-- 新しい Connector 型を足すときは `xxx-connector-schema.ts` / `xxx-store.ts` / `xxx-listener.ts`（callable なら adapter も）を作り `FunnelConnectors` に一フィールド追加 + `createConnectorStores()` に登録。廃止はその逆で完結
-- 旧 `settings.json` の `connectors[]` は起動時に `migrateLegacyConnectors` が per-type ファイルへ書き出してフィールドを除去する（冪等）
+- Connector は channel に nested で持つ（`channel.connectors[]`）。CRUD は `FunnelChannels` の `addConnector` / `removeConnector` / `renameConnector` / `update{Slack,Gh,Discord}Connector` 経由。トップレベルの `FunnelConnectors` 集約クラスは無い（型ごとの分散による型安全 dispatch）
+- 抽象階層: 各 type に Listener（必須）+ Adapter（callable なら）+ Schema + EventProcessor を per-file で並置。`FunnelConnectorFactory.createListener(channelId, config)` / `createAdapter(config)` で discriminated union を `switch` 分岐（`as` キャスト禁止）。schedule のみ adapter なし — `createAdapter` は `null` を返し、`FunnelChannels.call()` は schedule を呼ばれた時点で throw する
+- Channel ↔ Profile の双方向依存は `ProfileChannelChecker` / `ProfileChannelRefUpdater`（`lib/engine/profiles/`）の型で切り、`FunnelChannels` が DI で受け取る。`FunnelProfiles` がこれらの interface を実装する
+- 新しい Connector 型を足すときは `xxx-connector-schema.ts` / `xxx-listener.ts`（callable なら `xxx-adapter.ts` も）を作り、`connector-config-schema.ts` の discriminated union と `FunnelConnectorFactory.createListener` / `createAdapter` の `switch` に追加する。MCP の per-connector tool は `channel-server.ts` の `TOOL_CONNECTOR_TYPES` セットに足すと自動公開される
 
 ### Schedule Connector
 
-- `lib/connectors/schedule.ts` — エントリ CRUD は `FunnelSchedule` サービスが担う。`FunnelConnectors` には schedule 専用メソッドを置かない
+- エントリ CRUD は `FunnelChannels.addScheduleEntry` / `removeScheduleEntry` / `listScheduleEntries`。schedule 専用ファイルや別サービスは無い
 - cron 式（5 フィールド）とプロンプトを保存し、毎分 tick で発火してチャネルへ notify する
 - `FunnelScheduleListener` は tick ごとに `schedule/<name>.state.json` の `lastFiredAt` を読み、`(lastFired + 1min)` から now まで逆走して最も新しいマッチング分を 1 回だけ発火する。スリープ復帰や daemon 再起動で落ちた分を拾う（上限 24 時間）。catch-up 発火には `meta.catchup = "true"` を付ける
-- エントリ CRUD は `fnl connectors <name> schedules add|remove` サブコマンド（URL は `/connectors/<name>/schedules[/<id>]`）
+- CLI 入口は `fnl channels <ch> connectors <conn> schedules add <id> ...|remove <id>`（URL は `/channels/:channel/connectors/:connector/schedules/{add,remove}/:id`）
 - cron 評価は `lib/connectors/match-cron.ts` の自前実装（`*` / `N` / `A-B` / `*/N` / `A,B` 対応）
 
 ### Gateway
@@ -223,7 +223,7 @@ lib/
 
 - `fnl`（引数なし）で OpenTUI のダッシュボードが起動（connectors / channels / profiles / gateway 状態 / listener alive・dead）
 - キー: `r` でリフレッシュ、`q` / `esc` / `Ctrl-C` で終了
-- `lib/cli/tui/{tui,app}.tsx`。OpenTUI は React の JSX runtime を `@opentui/react` 経由で使う（pragma で指定）
+- `lib/tui/{tui,app}.tsx` — top-level に置く（cli から葉として消費。CLI レイヤ依存なし）。OpenTUI は React の JSX runtime を `@opentui/react` 経由で使う（pragma で指定）
 - ブラウザ向け Web UI は廃止
 
 ### Claude 起動

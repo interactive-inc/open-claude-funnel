@@ -1,38 +1,33 @@
 [![npm](https://img.shields.io/npm/v/@interactive-inc/claude-funnel.svg)](https://www.npmjs.com/package/@interactive-inc/claude-funnel)
 [![license](https://img.shields.io/npm/l/@interactive-inc/claude-funnel.svg)](./LICENSE)
 
-A hub CLI that connects multiple Claude Code agents to external services (Slack / GitHub / Discord) and time-based triggers (cron). External events flow through subscription "channels" into Claude Code sessions, and outbound API calls from Claude are funneled through the same connectors.
+A hub CLI that connects multiple Claude Code agents to external services (Slack / GitHub / Discord) and time-based triggers (cron). External events flow through subscription "channels" into Claude Code sessions, and outbound API calls from Claude are funneled through the same connectors as MCP tools.
 
 The command is `funnel` or its shorthand `fnl`.
 
 ## Overview
 
 ```
-External sources
-(Slack / GitHub / Discord / cron)
-            │
-            ▼
-        Connectors
-       (per-type stores)
-            │
-            ▼
-         Channels
-   (subscription router)
-            │
-            ▼  WebSocket
-       Gateway daemon
-  (port 9742: WS /ws + listener supervisor)
-            │
-            ▼  MCP (stdio)
-       Claude Code
-  (events surfaced as <channel> tags;
-   outbound calls go back through the
-   same connectors via funnel MCP)
+External sources                       Outbound calls
+(Slack / GitHub / Discord / cron)     (Claude → MCP tools per connector)
+            │                                       ▲
+            ▼                                       │
+        Channels (with nested per-type connectors)
+                    │
+                    ▼  WebSocket
+              Gateway daemon
+        (port 9742: WS /ws + listener supervisor + reply API)
+                    │
+                    ▼  MCP (stdio)
+              Claude Code
+   (events arrive as <channel> notifications;
+    one MCP tool is exposed per configured connector
+    so Claude can reply / send / call APIs without bash)
 ```
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.3 or later (runtime)
+- [Bun](https://bun.sh) 1.3 or later (runtime — used at install time to build the CLI bundle and at runtime to execute it)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI
 - A Slack / GitHub / Discord token or CLI, depending on which connectors you use
 
@@ -42,123 +37,141 @@ External sources
 bun add -g @interactive-inc/claude-funnel
 ```
 
-After install, `funnel` and `fnl` are available globally.
+`postinstall` runs `bun run build` to produce a single bundled CLI at `dist/bin.js`. After install, `funnel` and `fnl` are available globally.
 
 ## Quick start
 
 ```bash
-# Register an external connection (Connector)
-fnl connectors add my-slack --type slack --bot-token xoxb-... --app-token xapp-...
+# Create a subscription box (channel) and attach a connector
+fnl channels add ops
+fnl channels ops connectors add my-slack --type=slack \
+    --bot-token=xoxb-... --app-token=xapp-...
 
-# Create a subscription box (Channel) and attach the connector
-fnl channels add my-inbox
-fnl channels my-inbox connectors attach my-slack
-
-# Start the gateway (connects to Slack Socket Mode)
+# Start the gateway (connects to Slack Socket Mode and surfaces events)
 fnl gateway start
 
-# Launch Claude (funnel is auto-registered in the current directory's .mcp.json)
-fnl claude --channel my-inbox
+# Launch Claude with a raw channel binding (no profile required)
+fnl claude --channel ops
+
+# Or save it as a profile and launch by name
+fnl profiles add cto --path=/repo/myapp --sub-agent=cto --channel=ops
+fnl claude --profile cto
 ```
 
 Schedule (cron) trigger:
 
 ```bash
-# Register a schedule connector and a cron entry
-fnl connectors add daily --type schedule
-fnl connectors daily schedules add --cron "0 9 * * *" --prompt "morning standup"
-
-# Attach it to a channel just like any other connector
-fnl channels my-inbox connectors attach daily
+# A schedule connector contains many cron entries
+fnl channels ops connectors add daily --type=schedule
+fnl channels ops connectors daily schedules add morning \
+    --cron="0 9 * * *" --prompt="morning standup"
 ```
 
-## Commands
+## CLI surface
 
-```
-fnl connectors                              list
-fnl connectors add <name> --type slack    --bot-token xoxb-... --app-token xapp-...
-fnl connectors add <name> --type gh       [--poll-interval <sec>]
-fnl connectors add <name> --type discord  --bot-token <token>
-fnl connectors add <name> --type schedule
-fnl connectors <name>                       show details
-fnl connectors <name> set [--bot-token ...] [--app-token ...] [--poll-interval ...]
-fnl connectors rename <old> <new>
-fnl connectors remove <name>
+Connectors live nested inside their owning channel. Every CLI verb (`add` / `set` / `remove` / `rename` / `as-default` / `request`) maps to `POST` plus the verb in the URL — there is no method-stripping, so the same word stays visible in both shell and HTTP form. Read paths (no verb) stay `GET`.
 
-fnl connectors <name> schedules                              list cron entries
-fnl connectors <name> schedules add --cron "<expr>" --prompt "<text>" [--disabled]
-fnl connectors <name> schedules remove <id>
-
-fnl request slack   post <path> [body] --connector <name>   call Slack Web API
-fnl request discord <method> <path> [body] --connector <name>   call Discord REST API
-
-fnl channels                                list
-fnl channels add <name>
-fnl channels <name>                         show details
-fnl channels <name> connectors attach <connector>
-fnl channels <name> connectors detach <connector>
-fnl channels rename <old> <new>
+```text
+fnl channels                                 list
+fnl channels add <name> [--delivery=fanout|exclusive]
+fnl channels <name>                          show details
 fnl channels remove <name>
+fnl channels rename <old> <new>              (also `fnl channels <old> rename <new>`)
+fnl channels <name> set delivery <mode>
 
-fnl profiles                                list launch profiles
-fnl profiles add <name> --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
-fnl profiles <name> run                     launch (sugar for fnl claude)
-fnl profiles <name>                         launch (alias for run)
-fnl profiles <name> set [--channel ...] [--repo ...] [--sub-agent ...] [--env-file ...]
+fnl channels <ch> connectors                 list
+fnl channels <ch> connectors add <c> --type=slack    --bot-token=xoxb-... --app-token=xapp-...
+fnl channels <ch> connectors add <c> --type=gh       [--poll-interval=<sec>]
+fnl channels <ch> connectors add <c> --type=discord  --bot-token=<token>
+fnl channels <ch> connectors add <c> --type=schedule
+fnl channels <ch> connectors <c>             show config
+fnl channels <ch> connectors set <c> [--bot-token=...] [--app-token=...] [--poll-interval=...]
+fnl channels <ch> connectors remove <c>
+fnl channels <ch> connectors rename <c> <new>
+fnl channels <ch> connectors <c> request --method=<api.method> [--key=value ...]
+
+fnl channels <ch> connectors <c> schedules                        list cron entries
+fnl channels <ch> connectors <c> schedules add <id> --cron="<expr>" --prompt="<text>" \
+                                  [--enabled=true] [--catchup-policy=latest|all|skip]
+fnl channels <ch> connectors <c> schedules remove <id>
+
+fnl profiles                                 list (first entry is the default)
+fnl profiles add <name> --path=<dir> --sub-agent=<agent> --channel=<channel-name>
+fnl profiles <name>                          launch (alias for `<name> run`)
+fnl profiles <name> run                      launch (sugar for `fnl claude --profile <name>`)
+fnl profiles <name> set [--path=...] [--sub-agent=...] [--channel=...]
+fnl profiles <name> as-default               move to the front of the list
 fnl profiles rename <old> <new>
 fnl profiles remove <name>
 
-fnl repos                                   list repositories (extra)
-fnl repos add <name> [--path <path>]        register funnel MCP (path defaults to cwd)
-fnl repos <name>                            show details
-fnl repos <name> set [--path <path>]
-fnl repos rename <old> <new>
-fnl repos remove <name>
+fnl claude                                   launch the default profile
+fnl claude --profile <name>                  launch a named profile
+fnl claude --channel <name>                  raw launch (no profile, cwd = current dir)
+fnl mcp                                      run as an MCP server (invoked from .mcp.json)
 
-fnl claude                                  launch the "default" profile
-fnl claude --profile <name>                 launch a named profile
-fnl claude --channel <c> [--repo <r>] [--sub-agent <s>] [--env-file <f>]
-                                            raw launch (no profile)
-fnl mcp                                     run as an MCP server (invoked from .mcp.json)
+fnl gateway                                  status (default subcommand)
+fnl gateway {start|stop|restart}             daemon lifecycle
+fnl gateway run                              foreground daemon (developer mode)
+fnl gateway logs [-n <N>]                    tail diagnostic log
+fnl gateway listeners                        live registry (alive / dead)
 
-fnl gateway                                 running status
-fnl gateway start / stop / restart / run / logs / listeners
-fnl update                                  update funnel via bun i -g
-fnl status                                  overall status (connectors / channels / profiles / repos / gateway)
-fnl                                         (no args) launch the OpenTUI TUI
+fnl status                                   overall status (channels / profiles / gateway / clients)
+fnl update                                   `bun i -g @interactive-inc/claude-funnel`
+fnl                                          (no args) launch the OpenTUI dashboard
 
 fnl --version
-fnl --help        (every subcommand has --help)
+fnl --help                                   every subcommand has --help; verb-without-arg also returns help
 ```
+
+`--channel` accepts the channel **name** (not the uuid). The CLI resolves it to a channel id before calling the engine.
+
+## Reply path: MCP tools per connector
+
+When `fnl claude` launches Claude Code, the funnel MCP server connects to the gateway and reads the channel's connectors from `~/.funnel/settings.json`. For every callable connector (`slack` / `discord` / `gh`; `schedule` is one-way and skipped), the MCP advertises one tool with the connector's name. Claude can call them like:
+
+```jsonc
+// MCP: tools/list returns
+{ "name": "discord",   "inputSchema": { ... { method, path, body } ... } }
+{ "name": "ops-slack", "inputSchema": { ... } }
+{ "name": "gh-main",   "inputSchema": { ... } }
+
+// Claude calls
+tools/call name="discord" arguments={
+  "method": "POST",
+  "path": "/channels/123/messages",
+  "body": { "content": "got it" }
+}
+```
+
+The MCP forwards via HTTP `POST /channels/<channel>/connectors/<connector>/call` to the gateway daemon, which dispatches through the existing `FunnelChannels.call()` adapter. No bash subshell, no CLI cold start — replies are essentially synchronous.
+
+If you need to invoke a connector from outside Claude, the same path is reachable as `fnl channels <ch> connectors <c> request --method=<...> [--key=value ...]`.
 
 ## Data model
 
 ```
-Connector =
+Channel    = { id, name, delivery, connectors[] }
+        subscription box; `delivery` is `fanout` (default; every WS client sees every event)
+        or `exclusive` (round-robin one client per event)
+
+Connector  =
   | { type: "slack",    name, botToken, appToken }
         Slack Socket Mode
   | { type: "gh",       name, pollInterval? }
-        GitHub (gh CLI)
+        GitHub (gh CLI, poll-based)
   | { type: "discord",  name, botToken }
         Discord Gateway
   | { type: "schedule", name, entries[] }
-        cron-driven, entries = { id, cron, prompt, enabled }
+        cron-driven; entries = { id, cron, prompt, enabled?, catchupPolicy? }
 
-Channel    = { name, connectors[] }
-        subscription box
+Profile    = { name, path, subAgent, channelId }
+        named launch preset; the first profile in the list is the default
 
-Repository = { name, path }
-        extra
-
-Profile    = { name, channel, repo?, subAgent?, envFiles? }
-        launch profile
-
-Settings = { channels[], repositories[], profiles[] }
+Settings   = { channels[], profiles[] }
         → ~/.funnel/settings.json
-
-Connectors are stored per type, one file per connector:
-        → ~/.funnel/connectors/<type>/<name>.(json|jsonl)
 ```
+
+Connectors are stored per type, one file per connector, under `~/.funnel/connectors/<type>/<name>.(json|jsonl)` so adding or retiring a type is contained to its own subdirectory.
 
 ## Programmable API (Bun)
 
@@ -169,51 +182,45 @@ import { Funnel } from "@interactive-inc/claude-funnel"
 
 const funnel = new Funnel() // defaults to ~/.funnel + the local filesystem
 
-funnel.connectors.add({
+const channel = funnel.channels.add({ name: "inbox" })
+
+funnel.channels.addConnector("inbox", {
   type: "slack",
   name: "my-slack",
   botToken: "xoxb-...",
   appToken: "xapp-...",
 })
 
-funnel.channels.add({ name: "inbox", connectors: ["my-slack"] })
-
-for (const c of funnel.connectors.list()) console.log(c.type, c.name)
+for (const c of funnel.channels.list()) console.log(c.name, c.connectors.length)
 ```
 
-All Funnel facets — `connectors` / `channels` / `profiles` / `repositories` / `schedule` / `gateway` / `listeners` / `mcp` / `claude` — are reachable from the same instance:
+Every facet — `channels` / `profiles` / `gateway` / `gatewayServer` / `gatewayToken` / `listeners` / `mcp` / `claude` / `factory` / `store` / `process` / `logger` — is reachable from the same instance:
 
 ```ts
-funnel.gateway.getStatus() // { running, pid, port }
-await funnel.gateway.start() // spawns the daemon as a separate process
+funnel.gateway.getStatus()       // { running, pid, port }
+await funnel.gateway.start()     // spawns the daemon as a separate process
 
-// Talk to the running daemon over HTTP — no-ops gracefully when offline
-await funnel.listeners.list() // { state: "ok", listeners: [...] } | { state: "offline" }
-await funnel.listeners.start("my-slack") // hot-start a single listener
-await funnel.listeners.restart("my-slack")
+await funnel.listeners.list()    // talks to the running daemon over HTTP
+await funnel.listeners.start("inbox", "my-slack")
+await funnel.listeners.restart("inbox", "my-slack")
 
 await funnel.claude.launch({ channel: "inbox" })
-funnel.mcp.install("/path/to/repo") // writes .mcp.json
+funnel.mcp.install("/path/to/repo")     // writes .mcp.json
 ```
 
-Or run the gateway in-process (no daemon spawn — useful for tests, embedding, or custom hosts):
+Run the gateway in-process (no daemon spawn — useful for tests or embedding):
 
 ```ts
 const server = funnel.gatewayServer({ port: 9742 })
-await server.start() // starts Bun.serve (HTTP + WS), boots all connector listeners
-server.getStatus() // { clients, channels: [...] }
-server.getBroadcaster().broadcast("hello", { connector: "my-slack" })
-
-// Subscribe to every event without going through the WebSocket
+await server.start()                       // Bun.serve (HTTP + WS) + listener supervisor
 const unsubscribe = server.getBroadcaster().subscribe(({ content, meta }) => {
   console.log(meta?.connector, content)
 })
-
 await server.stop()
 unsubscribe()
 ```
 
-The gateway daemon exposes `/health`, `/status`, `/listeners`, and `/listeners/:name/{start,stop,restart}` over HTTP plus the `/ws?channel=<name>` WebSocket for MCP clients. There is no SPA; for a visual operator view, run `fnl` with no arguments to launch the OpenTUI TUI.
+The gateway daemon exposes `/health`, `/status`, `/listeners*`, `/channels/:channel/connectors/:connector/call`, plus the `/ws?channel=<name>` WebSocket. There is no SPA; for a visual operator view, run `fnl` with no arguments to launch the OpenTUI dashboard.
 
 Every side-effecting boundary is a DI seam. For tests / sandbox use, swap them all with the in-memory implementations and Funnel will not touch real disk, real processes, real time, or real UUIDs:
 
@@ -242,7 +249,7 @@ const funnel = new Funnel({
 
 Available abstractions (each has `Funnel*` interface, `Node*` default, and `Memory*` for tests): `FunnelFileSystem`, `FunnelProcessRunner`, `FunnelLogger`, `FunnelClock`, `FunnelIdGenerator`. Plus `NoopFunnelLogger` for silent operation.
 
-The package ships TypeScript sources directly, so a Bun runtime is required. Importing `@interactive-inc/claude-funnel/cli` resolves to the CLI entry point (with side effects) — only do this if you're embedding the CLI rather than the library.
+The published package ships both TypeScript sources (under `lib/`) for library consumers and a single bundled CLI (`dist/bin.js`) which is what the `fnl` / `funnel` bin entries point to. Importing `@interactive-inc/claude-funnel/bin` resolves to the bundled CLI entry — only do this if you're embedding the CLI rather than the library.
 
 ## Claude Code skill
 
@@ -280,22 +287,23 @@ After this, Claude Code will load the skill in any session.
 
 ## Environment variables
 
-| Variable             | Purpose                                                                           |
-| -------------------- | --------------------------------------------------------------------------------- |
-| `FUNNEL_CHANNEL_ID`  | Injected into the child process by `fnl claude`; funnel MCP uses it to subscribe. |
-| `FUNNEL_PORT`        | Gateway port (default 9742).                                                      |
-| `FUNNEL_GATEWAY_URL` | Gateway WebSocket URL used by MCP (default `ws://localhost:9742/ws`).             |
+| Variable               | Purpose                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| `FUNNEL_CHANNEL_ID`    | Injected into the child process by `fnl claude`; the funnel MCP uses it to subscribe.         |
+| `FUNNEL_PORT`          | Gateway port (default 9742).                                                                  |
+| `FUNNEL_GATEWAY_URL`   | Gateway base URL used by MCP for both WS subscribe and HTTP reply (default `http://localhost:9742`). |
+| `FUNNEL_GATEWAY_TOKEN` | Bearer token for the gateway HTTP / WS. Defaults to the contents of `~/.funnel/gateway.token`. |
 
 ## File layout
 
-- Config: `~/.funnel/settings.json` (channels / repositories / profiles)
+- Config: `~/.funnel/settings.json` (channels with nested connectors / profiles)
 - Connectors: `~/.funnel/connectors/<type>/<name>.(json|jsonl)`
   - `slack/<name>.json`, `gh/<name>.json`, `discord/<name>.json`
   - `schedule/<name>.jsonl` (one entry per line) and `schedule/<name>.state.json` (last-fired timestamps for catch-up)
-- PID: `~/.funnel/gateway.pid`
+- Gateway PID: `~/.funnel/gateway.pid`, token: `~/.funnel/gateway.token`
 - Claude PIDs: `~/.funnel/claude/<profile>.pid`
 - Event store: `/tmp/funnel/events/events.db` (SQLite; broadcaster events with replay-by-seq)
-- Diagnostic log: `/tmp/funnel/funnel.log` (gateway lifecycle, connect/disconnect — what `funnel gateway logs` tails)
+- Diagnostic log: `/tmp/funnel/funnel.log` (gateway lifecycle, connect/disconnect, listener boot — what `funnel gateway logs` tails as YAML)
 - Process log: `/tmp/funnel/gateway.log` (daemon stdout/stderr)
 
 ## Links
@@ -303,17 +311,18 @@ After this, Claude Code will load the skill in any session.
 - [GitHub](https://github.com/interactive-inc/open-claude-funnel)
 - [Issues](https://github.com/interactive-inc/open-claude-funnel/issues)
 - Coding rules and design principles: [CLAUDE.md](https://github.com/interactive-inc/open-claude-funnel/blob/main/CLAUDE.md)
-- Design notes: [`.docs/`](https://github.com/interactive-inc/open-claude-funnel/tree/main/.docs)
 
 ## Development
 
 ```bash
 git clone https://github.com/interactive-inc/open-claude-funnel.git
-cd claude-funnel
-bun install
-bun link            # register funnel / fnl globally
+cd open-claude-funnel
+bun install         # postinstall builds dist/bin.js
+bun link            # symlinks fnl / funnel → dist/bin.js
+bun run build       # rebuild after editing the cli
 bun test            # run tests
 bunx tsc -b         # type check
+bun lib/bin.ts ...  # run the cli from source (no build) for fast iteration
 ```
 
 ## License
