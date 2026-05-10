@@ -41,7 +41,7 @@ export type BroadcastSubscriber = (event: ReplayableEvent) => void
  * can recover events older than the in-memory buffer via an indexed
  * `seq > since` range scan.
  */
-export type ReplaySource = {
+type ReplaySource = {
   loadSince(since: number): ReplayableEvent[]
 }
 
@@ -62,7 +62,7 @@ const DEFAULT_REPLAY_BUFFER_SIZE = 200
 const DEFAULT_REPLAY_BUFFER_MAX_BYTES = 4 * 1024 * 1024
 const defaultLogger = new NoopFunnelLogger()
 
-export type BroadcasterMetrics = {
+type BroadcasterMetrics = {
   clients: number
   subscribers: number
   eventsBroadcast: number

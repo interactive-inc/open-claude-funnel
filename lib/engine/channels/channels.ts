@@ -31,7 +31,7 @@ export type ChannelConnectorView = ConnectorConfig & {
   channelName: string
 }
 
-export type AddConnectorInput =
+type AddConnectorInput =
   | { type: "slack"; name: string; botToken: string; appToken: string }
   | { type: "gh"; name: string; pollInterval?: number }
   | { type: "discord"; name: string; botToken: string }

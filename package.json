@@ -23,8 +23,8 @@
     "url": "git+https://github.com/interactive-inc/open-claude-funnel.git"
   },
   "bin": {
-    "fnl": "./lib/index.ts",
-    "funnel": "./lib/index.ts"
+    "fnl": "./lib/bin.ts",
+    "funnel": "./lib/bin.ts"
   },
   "files": [
     "lib/**/*.ts",
@@ -36,16 +36,16 @@
     "LICENSE"
   ],
   "type": "module",
-  "main": "./lib/api.ts",
-  "module": "./lib/api.ts",
-  "types": "./lib/api.ts",
+  "main": "./lib/index.ts",
+  "module": "./lib/index.ts",
+  "types": "./lib/index.ts",
   "exports": {
     ".": {
-      "types": "./lib/api.ts",
-      "bun": "./lib/api.ts",
-      "default": "./lib/api.ts"
+      "types": "./lib/index.ts",
+      "bun": "./lib/index.ts",
+      "default": "./lib/index.ts"
     },
-    "./cli": "./lib/index.ts",
+    "./bin": "./lib/bin.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {

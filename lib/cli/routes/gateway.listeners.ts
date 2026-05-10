@@ -1,0 +1,41 @@
+import { HTTPException } from "hono/http-exception"
+import { z } from "zod"
+import { factory } from "@/cli/factory"
+import { zValidator } from "@/cli/router/validator"
+
+export const listenersHelp = `funnel gateway listeners — show running connector listeners
+
+usage: funnel gateway listeners
+
+Reads /listeners from the running gateway daemon and prints the live registry.
+
+examples:
+  funnel gateway listeners`
+
+export const gatewayListenersHandler = factory.createHandlers(
+  zValidator("query", z.object({}), listenersHelp),
+  async (c) => {
+    const funnel = c.var.funnel
+    const result = await funnel.listeners.list()
+
+    if (result.state === "offline") {
+      throw new HTTPException(503, { message: "funnel gateway: not running" })
+    }
+
+    if (result.state === "error") {
+      throw new HTTPException(503, { message: `funnel gateway: ${result.reason}` })
+    }
+
+    if (result.listeners.length === 0) {
+      return c.text("funnel gateway: no running listeners")
+    }
+
+    const lines = result.listeners.map((entry) => {
+      const health = entry.alive ? "alive" : "dead"
+
+      return `  [${health.padEnd(5)}] ${entry.type.padEnd(8)} ${entry.name}`
+    })
+
+    return c.text(`funnel gateway: running listeners\n${lines.join("\n")}`)
+  },
+)

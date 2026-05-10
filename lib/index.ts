@@ -1,89 +1,50 @@
-#!/usr/bin/env bun
-import pkg from "../package.json" with { type: "json" }
-import { startChannelServer } from "@/engine/mcp/channel-server"
-import { toRequest } from "@/cli/router/to-request"
-import { launchTui } from "@/tui/tui"
-import { app } from "@/cli/routes"
-import { Funnel } from "@/funnel"
+// Public API surface for the @interactive-inc/claude-funnel package.
+// Organized by layer so consumers can find what they need at a glance.
 
-process.title = "funnel"
+// Facade
+export * from "@/funnel"
 
-const HELP = `funnel — Open Claude Funnel
+// Engine — domain
+export * from "@/engine/channels/channels"
+export * from "@/engine/claude/claude"
+export * from "@/engine/mcp/mcp"
+export * from "@/engine/profiles/profiles"
+export * from "@/engine/settings/settings-reader"
+export * from "@/engine/settings/settings-store"
+export * from "@/engine/settings/mock-settings-reader"
+export * from "@/engine/settings/settings-schema"
 
-usage: funnel [command]
+// Engine — boundaries (abstract + Node / Memory implementations)
+export * from "@/engine/fs/file-system"
+export * from "@/engine/fs/node-file-system"
+export * from "@/engine/fs/memory-file-system"
 
-commands:
-  (none)                launch TUI
-  claude                launch Claude Code (default profile or --profile)
-  channels              manage subscription boxes (and their nested connectors)
-  profiles              manage launch profiles
-  gateway               manage the gateway daemon (HTTP + WS)
-  status                show overall connection status
-  update                update funnel to the latest version
-  mcp                   run as an MCP server (invoked from .mcp.json)
+export * from "@/engine/process/process-runner"
+export * from "@/engine/process/node-process-runner"
+export * from "@/engine/process/memory-process-runner"
 
-options:
-  --help, -h            show help
-  --version, -v         show version
+export * from "@/engine/logger/logger"
+export * from "@/engine/logger/node-logger"
+export * from "@/engine/logger/memory-logger"
+export * from "@/engine/logger/noop-logger"
 
-more: funnel <command> --help`
+export * from "@/engine/time/clock"
+export * from "@/engine/time/node-clock"
+export * from "@/engine/time/memory-clock"
 
-const args = process.argv.slice(2)
+export * from "@/engine/id/id-generator"
+export * from "@/engine/id/node-id-generator"
+export * from "@/engine/id/memory-id-generator"
 
-if (args.length === 0) {
-  await launchTui(new Funnel())
-  process.exit(0)
-}
+// Connectors
+export * from "@/connectors/connector-factory"
+export * from "@/connectors/connector-config-schema"
+export * from "@/connectors/schedule-connector-schema"
 
-if (args[0] === "--version" || args[0] === "-v") {
-  process.stdout.write(`${pkg.version}\n`)
-  process.exit(0)
-}
-
-if (args[0] === "mcp") {
-  await startChannelServer()
-} else {
-  const { method, url } = toRequest(args)
-
-  const parsed = new URL(url)
-
-  if (parsed.searchParams.has("help")) {
-    if (parsed.pathname === "/") {
-      process.stdout.write(`${HELP}\n`)
-      process.exit(0)
-    }
-
-    let res = await app.request(url, { method })
-
-    const segments = parsed.pathname.split("/").filter(Boolean)
-    const group = segments[0]
-
-    if (!res.ok && method !== "GET" && group && segments.length === 1) {
-      res = await app.request(`http://localhost/${group}/_help_?help=true`, { method })
-    }
-
-    if (!res.ok && method !== "GET") {
-      res = await app.request(url, { method: "GET" })
-    }
-
-    if (!res.ok && group) {
-      res = await app.request(`http://localhost/${group}?help=true`, { method: "GET" })
-    }
-
-    const text = res.ok ? await res.text() : HELP
-    process.stdout.write(`${text}\n`)
-    process.exit(0)
-  }
-
-  const res = await app.request(url, { method })
-
-  if (!res.ok) {
-    const text = await res.text()
-    if (text) process.stderr.write(`${text}\n`)
-    process.exit(1)
-  }
-
-  const body = await res.text()
-
-  if (body) process.stdout.write(`${body}\n`)
-}
+// Gateway
+export * from "@/gateway/gateway"
+export * from "@/gateway/gateway-server"
+export * from "@/gateway/broadcaster"
+export * from "@/gateway/funnel-event-store"
+export * from "@/gateway/listener-supervisor"
+export * from "@/gateway/listeners-client"

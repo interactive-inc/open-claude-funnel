@@ -26,8 +26,8 @@ CLI の引数を内部 HTTP リクエストに変換し、Hono アプリでル�
 レイヤは厳密な一方向依存：
 
 ```
-api.ts ─→ funnel.ts ─→ {engine, connectors, gateway}    cli ─→ funnel.ts
-                                                                ─→ {engine, connectors, gateway}
+index.ts ─→ funnel.ts ─→ {engine, connectors, gateway}    bin.ts ─→ funnel.ts
+                                                                  ─→ {engine, connectors, gateway, cli, tui}
 gateway ─→ {connectors, engine}
 connectors ─→ engine
 engine ─→ (プロジェクト内には依存しない)
@@ -39,9 +39,9 @@ UI は CLI の TUI（OpenTUI）のみ。Web UI は廃止済み。
 
 ```
 lib/
-├── api.ts               公開 API の re-export
+├── index.ts             公開 API の re-export（`export * from` で全モジュールを束ねる）
 ├── funnel.ts            Funnel facade（全 facet を束ねる）
-├── index.ts             CLI バイナリエントリ。argv → app.request()
+├── bin.ts               CLI バイナリエントリ（package.json `bin`）。argv → toRequest → app.request → stdout
 │
 ├── engine/              コアドメイン。他レイヤを知らない
 │   ├── channels/        FunnelChannels（購読箱）+ ConnectorExistenceChecker 型
@@ -57,11 +57,14 @@ lib/
 │   ├── time/            FunnelClock (abstract) + Node / Memory 実装
 │   └── id/              FunnelIdGenerator (abstract) + Node / Memory 実装
 │
+├── logger/              LeucoLogger 系（独立した汎用 logger）。`gateway/funnel-event-store.ts` が SQLite sink として利用
+├── tui/                 OpenTUI ダッシュボード（`bin.ts` から `launchTui(funnel)` で起動）
+│
 ├── connectors/          コネクタ実装。engine のみに依存
 │                        FunnelConnectors (facade) + per-type
 │                        Store/Listener/Adapter/EventProcessor + FunnelSchedule
 │
-├── gateway/             Web サーバ。connectors / engine / ui に依存
+├── gateway/             Web サーバ。connectors / engine に依存
 │   ├── gateway.ts                 daemon manager (PID + nohup)
 │   ├── gateway-server.ts          Bun.serve embedding (HTTP + WS)
 │   ├── listener-supervisor.ts     registry + health check
@@ -70,27 +73,37 @@ lib/
 │   ├── funnel-event-store.ts      SQLite event store (LeucoLoggerSqliteSink wrapper)
 │   ├── kill-competing-slack-gateways.ts
 │   ├── daemon.ts                  bun daemon entry
-│   └── routes/                    Hono ルート（CLI と対称）
-│       ├── health-route.ts        GET  /health
-│       ├── status-route.ts        GET  /status
-│       ├── hello-route.ts         GET  /api/hello
+│   └── routes/                    フラットな daemon 内部 API ルート（dotted name）
+│       ├── index.ts               gatewayRoutes（最上位 mount）
+│       ├── health.ts              GET  /health
+│       ├── status.ts              GET  /status
+│       ├── listeners.list.ts      GET    /listeners
+│       ├── listeners.start.ts     POST   /listeners/:channel/:connector/start
+│       ├── listeners.stop.ts      DELETE /listeners/:channel/:connector
+│       ├── listeners.restart.ts   POST   /listeners/:channel/:connector/restart
 │       ├── route-deps.ts          GatewayRouteDeps 型
-│       ├── routes.ts              buildGatewayRoutes（最上位）
-│       └── listeners/
-│           ├── list-route.ts      GET    /listeners
-│           ├── start-route.ts     POST   /listeners/:name/start
-│           ├── stop-route.ts      DELETE /listeners/:name
-│           ├── restart-route.ts   POST   /listeners/:name/restart
-│           └── routes.ts          listenersRoutes（mount）
+│       └── validator.ts           zParam helper
 │
-└── cli/                 CLI 機構。全レイヤに依存
+└── cli/                 CLI 機構。全レイヤに依存（bin.ts 経由で利用）
     ├── factory.ts       Hono factory
-    ├── routes.ts        sub-Hono の mount
-    ├── routes/          ルートハンドラ（connectors / channels / claude /
-    │                    gateway / profiles / repos / request /
-    │                    status / update）
-    ├── router/          toRequest / queryToCliArgs / zValidator
-    └── tui/             OpenTUI ダッシュボード（fnl 引数なしで起動）
+    ├── routes/          フラットなルートハンドラ群（URL パスベース命名 / `$param` で動的セグメント）
+    │   ├── index.ts                                                        app（middleware + onError + flat mount + 引数省略時の help shortcut）
+    │   ├── channels.ts                                                     GET /channels
+    │   ├── channels.$channel.ts                                            POST/GET/DELETE /channels/:channel
+    │   ├── channels.$channel.rename.$newName.ts                            PUT
+    │   ├── channels.$channel.set.delivery.$mode.ts                         PUT
+    │   ├── channels.$channel.connectors.ts                                 GET
+    │   ├── channels.$channel.connectors.$connector.ts                      POST/GET/PUT/DELETE
+    │   ├── channels.$channel.connectors.$connector.rename.$newName.ts     PUT
+    │   ├── channels.$channel.connectors.$connector.request.ts             POST
+    │   ├── channels.$channel.connectors.$connector.schedules.ts           GET
+    │   ├── channels.$channel.connectors.$connector.schedules.$id.ts       POST/DELETE
+    │   ├── claude.ts / status.ts / update.ts
+    │   ├── gateway.ts                                                      group + 共通 fetch 関数（status と共有）
+    │   ├── gateway.{status,start,stop,restart,run,logs,listeners}.ts
+    │   └── profiles.ts / profiles.$profile.ts / profiles.$profile.run.ts /
+    │       profiles.$profile.rename.$newName.ts / profiles.$profile.as-default.ts
+    └── router/          toRequest / queryToCliArgs / zValidator
 ```
 
 ## Design Rules
@@ -99,8 +112,17 @@ lib/
 
 - 対話禁止。全てオプション引数で完結する（Claude-first）
 - `export default` 禁止
-- ルートは `?help=true` に対してヘルプテキストを返すのが原則。`index.ts` 側で「ルートが該当しない / メソッドが合わない」場合は同 path の GET、続いてグループ help にフォールバックする
-- CLI verb は `lib/cli/router/to-request.ts` で HTTP method に変換される（`add` → POST, `remove` → DELETE, `set` → PUT, `rename` / `attach` → PUT, `detach` → DELETE）。GET 専用ではない
+- ルートファイルは `lib/cli/routes/` 直下にフラット配置。ファイル名は URL パスに 1:1 対応（ドット区切り、動的セグメントは `$param`）。例: `channels.$channel.connectors.$connector.schedules.$id.ts` ↔ `/channels/:channel/connectors/:connector/schedules/:id`。同じ URL パターンに複数 method がある場合は同じファイルに `xxxAddHandler` / `xxxShowHandler` などを並べる（method ごとに別ファイルにしない）
+- help は別ファイルにせず、エンドポイントのファイル内に `export const xxxHelp = \`...\`` で定義して `zValidator(..., xxxHelp)` の第3引数に渡す。`export` するのは shortcut 経由で bundler が再利用するため
+- 引数を省略した呼び出し（例 `funnel channels add`）は bundler の shortcut route が `?help=true` 不要で help を返す。具体的には `:param` 省略形の URL（`POST /channels` / `DELETE /channels/:channel/connectors` 等）に `helpRoute(xxxHelp)` を登録する
+- bin.ts のフォールバックは `?help=true` 付きでルートが 404 のとき `GET /<group>?help=true` → 最後に top-level `HELP` 文字列、の二段だけ。`_help_` プレースホルダ等の hack は使わない
+- CLI verb → HTTP method 変換（`lib/cli/router/to-request.ts`）:
+  - `add` → POST （セグメントから消える）
+  - `set` → PUT （セグメントから消える）
+  - `remove` → DELETE （セグメントから消える）
+  - `rename` → PUT （セグメントに残る → URL 上に `/rename/` が現れる）
+  - `as-default` → PUT （セグメントに残る）
+  - `request` → POST （セグメントに残る）
 
 ### Modules
 
@@ -112,10 +134,11 @@ lib/
 - `new ConnectorService({ store })` を薄くラップしただけの `createXxxService(store)` 関数は作らない（DI が複数になる場合のみ create 関数を置く）
 - 外部境界（FS / HTTP / process / settings / adapter / listener）は abstract class を切り、Node 実装と Memory 実装を並置
 - テストは Memory 実装で書く（実 FS / spawn / fetch / WebSocket に触れない）
-- ルートハンドラでは try/catch を書かず、サービスは throw。`lib/cli/routes.ts` の onError が捕捉して 400 テキストで返す
+- ルートハンドラでは try/catch を書かない。サービスは throw、エラー応答も `throw new HTTPException(status, { message })` で統一する（`return c.text("...", 4xx)` 禁止）。`lib/cli/routes/index.ts` の onError が捕捉して `error: <message>` で返す
 - ルートで `c.req.valid("param")` / `c.req.valid("query")` の結果は分割代入せず、`const param = ...` / `const query = ...` として保持する
-- ルートは `const funnel = c.var.funnel` で Funnel を取得して使う（`lib/cli/routes.ts` の base app に付けた `use("*", ...)` middleware で context に乗せる。sub-Hono の `factory` には initApp を設定しないこと — 二重生成を避けるため）
+- ルートは `const funnel = c.var.funnel` で Funnel を取得して使う（`lib/cli/routes/index.ts` の base app に付けた `use("*", ...)` middleware で context に乗せる）
 - CLI 経由で実行 argv を Claude Code に転送するときは `queryToCliArgs(url, RESERVED_KEYS)` を使い、funnel 自身の予約キーを除外する
+- 公開 API は `lib/index.ts` で `export * from` で集約。型を public にするかは「他モジュールから参照されるか」で判定し、参照のない module-internal な型（例: `AddConnectorInput`, `BroadcasterMetrics`, `ConnectorRegistry` 系の supervisor scaffolding）は元ファイル側で `export` を外す。ファイル間で共有する型は `export` のまま残す
 
 ### Settings
 

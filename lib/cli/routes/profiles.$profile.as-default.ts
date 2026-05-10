@@ -1,0 +1,22 @@
+import { z } from "zod"
+import { factory } from "@/cli/factory"
+import { zValidator } from "@/cli/router/validator"
+
+export const asDefaultHelp = `funnel profiles <name> as-default — move profile to the front of the list
+
+usage: funnel profiles <name> as-default
+
+the first profile in the list is treated as the default for fnl claude.`
+
+export const profilesAsDefaultHandler = factory.createHandlers(
+  zValidator("param", z.object({ profile: z.string() })),
+  zValidator("query", z.object({}), asDefaultHelp),
+  (c) => {
+    const param = c.req.valid("param")
+    const funnel = c.var.funnel
+
+    funnel.profiles.asDefault(param.profile)
+
+    return c.text(`profile "${param.profile}" is now the default`)
+  },
+)

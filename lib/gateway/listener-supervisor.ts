@@ -4,7 +4,7 @@ import type { ChannelConnectorView } from "@/engine/channels/channels"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 
-export type ConnectorRegistry = {
+type ConnectorRegistry = {
   listAllConnectors(): ChannelConnectorView[]
   createListener(
     channelName: string,
@@ -12,7 +12,7 @@ export type ConnectorRegistry = {
   ): { config: ConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null
 }
 
-export type SupervisorNotify = (
+type SupervisorNotify = (
   channelName: string,
   connectorName: string,
   content: string,
@@ -52,7 +52,7 @@ const defaultSleep = (ms: number): Promise<void> =>
     setTimeout(r, ms)
   })
 
-export type ListenerEntryStatus = {
+type ListenerEntryStatus = {
   channelName: string
   channelId: string
   name: string
