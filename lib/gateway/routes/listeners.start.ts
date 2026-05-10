@@ -1,15 +1,15 @@
+import { z } from "zod"
 import { factory } from "@/gateway/factory"
+import { zParam } from "@/gateway/routes/validator"
 
 /** POST /listeners/:channel/:connector/start — start a connector listener. */
-export const listenersStartHandler = factory.createHandlers(async (c) => {
-  const channel = c.req.param("channel")
-  const connector = c.req.param("connector")
+export const listenersStartHandler = factory.createHandlers(
+  zParam(z.object({ channel: z.string().min(1), connector: z.string().min(1) })),
+  async (c) => {
+    const param = c.req.valid("param")
 
-  if (!channel || !connector) {
-    return c.json({ ok: false, reason: "channel and connector required" }, 400)
-  }
+    const result = await c.var.deps.supervisor.start(param.channel, param.connector)
 
-  const result = await c.var.deps.supervisor.start(channel, connector)
-
-  return c.json(result, result.ok ? 200 : 400)
-})
+    return c.json(result, result.ok ? 200 : 400)
+  },
+)
