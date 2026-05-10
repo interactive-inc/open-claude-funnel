@@ -1,4 +1,4 @@
-import type { App } from "@slack/bolt"
+import { App, LogLevel } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import { FunnelSlackEventProcessor } from "@/connectors/slack-event-processor"
@@ -29,12 +29,11 @@ export class FunnelSlackListener extends FunnelConnectorListener {
   }
 
   async start(notify: NotifyFn): Promise<void> {
-    const bolt = await import("@slack/bolt")
-    const app = new bolt.App({
+    const app = new App({
       token: this.config.botToken,
       appToken: this.config.appToken,
       socketMode: true,
-      logLevel: bolt.LogLevel.ERROR,
+      logLevel: LogLevel.ERROR,
     })
 
     const authResult = await app.client.auth.test({ token: this.config.botToken })
