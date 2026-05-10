@@ -1,5 +1,4 @@
-import { readdirSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync } from "node:fs"
 import { stringify } from "yaml"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
@@ -10,15 +9,15 @@ import { help } from "@/cli/routes/gateway/logs.help"
 const logger = new NodeFunnelLogger()
 
 type LogEntry = {
-  timestamp: string
-  eventType: string
+  time: string
+  level: string
+  message: string
   meta?: unknown
-  content: string
 }
 
-const tryParseJson = (s: string): unknown => {
+const tryParseJson = (line: string): unknown => {
   try {
-    return JSON.parse(s)
+    return JSON.parse(line)
   } catch {
     return null
   }
@@ -26,9 +25,9 @@ const tryParseJson = (s: string): unknown => {
 
 const isLogEntry = (value: unknown): value is LogEntry => {
   if (value === null || typeof value !== "object") return false
-  if (!("timestamp" in value) || typeof value.timestamp !== "string") return false
-  if (!("eventType" in value) || typeof value.eventType !== "string") return false
-  if (!("content" in value) || typeof value.content !== "string") return false
+  if (!("time" in value) || typeof value.time !== "string") return false
+  if (!("level" in value) || typeof value.level !== "string") return false
+  if (!("message" in value) || typeof value.message !== "string") return false
 
   return true
 }
@@ -43,21 +42,15 @@ export const gatewayLogsHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
-    const logDir = funnel.gateway.getLogDir()
+    const path = logger.file
 
-    const files = readdirSync(logDir)
-      .filter((name) => name.endsWith(".jsonl"))
-      .sort()
-
-    if (files.length === 0) {
+    if (!path || !existsSync(path)) {
       return c.text("no logs")
     }
 
-    const latestFile = join(logDir, files[files.length - 1]!)
     const lineCount = query.n ? Number(query.n) : 20
 
-    const tail = Bun.spawn(["tail", "-f", "-n", String(lineCount), latestFile], {
+    const tail = Bun.spawn(["tail", "-f", "-n", String(lineCount), path], {
       stdout: "pipe",
       stderr: "inherit",
     })
@@ -73,7 +66,7 @@ export const gatewayLogsHandler = factory.createHandlers(
     const decoder = new TextDecoder()
     let buffer = ""
 
-    logger.info("gateway.logs tail start", { file: latestFile })
+    logger.info("gateway.logs tail start", { file: path })
 
     while (true) {
       const result = await reader.read()
@@ -95,12 +88,11 @@ export const gatewayLogsHandler = factory.createHandlers(
           continue
         }
 
-        const parsedContent = tryParseJson(parsed.content) ?? parsed.content
         const output = {
-          time: parsed.timestamp,
-          type: parsed.eventType,
+          time: parsed.time,
+          level: parsed.level,
+          message: parsed.message,
           ...(parsed.meta ? { meta: parsed.meta } : {}),
-          content: parsedContent,
         }
 
         process.stdout.write(`---\n${stringify(output)}`)

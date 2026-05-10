@@ -46,7 +46,7 @@ export {
   type BroadcastEvent,
   type BroadcastSubscriber,
 } from "@/gateway/broadcaster"
-export { FunnelEventLogger } from "@/gateway/event-logger"
+export { FunnelEventStore, type FunnelEvent } from "@/gateway/funnel-event-store"
 export { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
 export {
   FunnelListenersClient,

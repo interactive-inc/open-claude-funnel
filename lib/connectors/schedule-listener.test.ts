@@ -1,9 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelScheduleListener } from "@/connectors/schedule-listener"
-import type {
-  ScheduleConnectorConfig,
-  ScheduleEntry,
-} from "@/connectors/schedule-connector-schema"
+import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedule-connector-schema"
 import { ScheduleStateStore } from "@/connectors/schedule-state-store"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
@@ -27,7 +24,10 @@ const buildConfig = (entries: ScheduleEntry[]): ScheduleConnectorConfig => ({
 const buildListener = (
   config: ScheduleConnectorConfig,
   now: Date,
-): { listener: FunnelScheduleListener; sent: { content: string; meta?: Record<string, string> }[] } => {
+): {
+  listener: FunnelScheduleListener
+  sent: { content: string; meta?: Record<string, string> }[]
+} => {
   const fs = new MemoryFunnelFileSystem()
   const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
   const listener = new FunnelScheduleListener({

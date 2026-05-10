@@ -80,11 +80,7 @@ export function ChannelsView(props: Props) {
         <EmptyState message="(none — use the button below to add one)" />
       ) : (
         channels.map((channel) => (
-          <Card
-            key={channel.id}
-            title={channel.name}
-            onDelete={() => removeChannel(channel.name)}
-          >
+          <Card key={channel.id} title={channel.name} onDelete={() => removeChannel(channel.name)}>
             <EditableField
               label="name"
               initialValue={channel.name}

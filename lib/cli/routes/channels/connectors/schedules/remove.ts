@@ -4,10 +4,7 @@ import { zValidator } from "@/cli/router/validator"
 import { help } from "@/cli/routes/channels/connectors/schedules/remove.help"
 
 export const channelsConnectorsSchedulesRemoveHandler = factory.createHandlers(
-  zValidator(
-    "param",
-    z.object({ channel: z.string(), connector: z.string(), id: z.string() }),
-  ),
+  zValidator("param", z.object({ channel: z.string(), connector: z.string(), id: z.string() })),
   zValidator("query", z.object({}), help),
   async (c) => {
     const param = c.req.valid("param")

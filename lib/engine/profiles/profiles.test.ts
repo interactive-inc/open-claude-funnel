@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 
@@ -33,9 +33,9 @@ describe("FunnelProfiles", () => {
 
   test("add rejects unknown channel ids", () => {
     const { profiles } = buildProfiles()
-    expect(() =>
-      profiles.add({ ...sampleProfile, channelId: "ch-missing" }),
-    ).toThrow(/channel id "ch-missing" not found/)
+    expect(() => profiles.add({ ...sampleProfile, channelId: "ch-missing" })).toThrow(
+      /channel id "ch-missing" not found/,
+    )
   })
 
   test("getDefault returns the first entry", () => {
@@ -93,6 +93,11 @@ describe("FunnelProfiles", () => {
     expect(() => profiles.rename("a", "b")).toThrow(/already exists/)
     profiles.rename("a", "c")
 
-    expect(profiles.list().map((p) => p.name).sort()).toEqual(["b", "c"])
+    expect(
+      profiles
+        .list()
+        .map((p) => p.name)
+        .sort(),
+    ).toEqual(["b", "c"])
   })
 })

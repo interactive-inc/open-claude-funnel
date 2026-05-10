@@ -23,10 +23,7 @@ export const channelsConnectorsSetHandler = factory.createHandlers(
     const existing = funnel.channels.getConnector(param.channel, param.connector)
 
     if (!existing) {
-      return c.text(
-        `connector "${param.connector}" not found in channel "${param.channel}"`,
-        404,
-      )
+      return c.text(`connector "${param.connector}" not found in channel "${param.channel}"`, 404)
     }
 
     if (existing.type === "slack") {
@@ -35,13 +32,17 @@ export const channelsConnectorsSetHandler = factory.createHandlers(
         ...(query.appToken !== undefined ? { appToken: query.appToken } : {}),
       })
     } else if (existing.type === "discord") {
-      funnel.channels.updateDiscordConnector(param.channel, param.connector, {
-        ...(query.botToken !== undefined ? { botToken: query.botToken } : {}),
-      })
+      funnel.channels.updateDiscordConnector(
+        param.channel,
+        param.connector,
+        query.botToken !== undefined ? { botToken: query.botToken } : {},
+      )
     } else if (existing.type === "gh") {
-      funnel.channels.updateGhConnector(param.channel, param.connector, {
-        ...(query.pollInterval !== undefined ? { pollInterval: query.pollInterval } : {}),
-      })
+      funnel.channels.updateGhConnector(
+        param.channel,
+        param.connector,
+        query.pollInterval !== undefined ? { pollInterval: query.pollInterval } : {},
+      )
     } else {
       return c.text(`schedule connectors have no settable fields`, 400)
     }

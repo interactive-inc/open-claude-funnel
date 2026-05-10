@@ -14,9 +14,7 @@ export const channelsConnectorsSchedulesGroupHandler = factory.createHandlers(
     if (entries.length === 0) return c.text("no schedule entries")
 
     return c.text(
-      entries
-        .map((e) => `${e.id}\t${e.cron}\t${e.enabled ? "on" : "off"}\t${e.prompt}`)
-        .join("\n"),
+      entries.map((e) => `${e.id}\t${e.cron}\t${e.enabled ? "on" : "off"}\t${e.prompt}`).join("\n"),
     )
   },
 )

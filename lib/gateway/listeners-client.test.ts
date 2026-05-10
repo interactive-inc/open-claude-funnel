@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "vitest"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
 
 const originalFetch = globalThis.fetch
@@ -50,7 +50,10 @@ describe("FunnelListenersClient", () => {
     let capturedAuth = ""
     let capturedMethod = ""
 
-    globalThis.fetch = (async (url: string, init?: { method?: string; headers?: Record<string, string> }) => {
+    globalThis.fetch = (async (
+      url: string,
+      init?: { method?: string; headers?: Record<string, string> },
+    ) => {
       capturedUrl = url
       capturedMethod = init?.method ?? "GET"
       capturedAuth = init?.headers?.authorization ?? ""

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 

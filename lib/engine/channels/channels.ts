@@ -4,10 +4,7 @@ import type { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import type { FunnelConnectorListener } from "@/connectors/connector-listener"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
 import type { GhConnectorConfig } from "@/connectors/gh-connector-schema"
-import type {
-  ScheduleConnectorConfig,
-  ScheduleEntry,
-} from "@/connectors/schedule-connector-schema"
+import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedule-connector-schema"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
 import { FunnelClock } from "@/engine/time/clock"

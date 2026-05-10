@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import type { ServerWebSocket } from "bun"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
@@ -188,7 +188,7 @@ describe("FunnelBroadcaster", () => {
     expect(replay.map((e) => e.offset)).toEqual([1, 2, 3, 4, 5])
   })
 
-  test("replaySince does not double-count events that exist in both memory and jsonl", () => {
+  test("replaySince does not double-count events that exist in both memory and the persistent store", () => {
     const broadcaster = new FunnelBroadcaster({
       replayBufferSize: 5,
       persistentReplay: {

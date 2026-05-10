@@ -1,12 +1,12 @@
+import { existsSync, mkdirSync } from "node:fs"
+import { join } from "node:path"
 import type { Server, ServerWebSocket } from "bun"
 import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
-import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
 import { type Env, factory } from "@/gateway/factory"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
-import { FunnelEventLogger } from "@/gateway/event-logger"
-import { JsonlReplaySource } from "@/gateway/jsonl-replay-source"
+import { FunnelEventStore } from "@/gateway/funnel-event-store"
 import { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
 import { gatewayRoutes } from "@/gateway/routes"
@@ -18,15 +18,14 @@ import type { FunnelClock } from "@/engine/time/clock"
 
 const DEFAULT_PORT = 9742
 const DEFAULT_LOG_DIR = "/tmp/funnel/events"
+const DB_FILENAME = "events.db"
 
 type Deps = {
   channels: FunnelChannels
   settings: FunnelSettingsReader
   port?: number
+  /** Directory holding the SQLite event store. The DB file lives at `<logDir>/events.db`. */
   logDir?: string
-  /** Funnel home dir for per-channel/per-connector log storage. Defaults to ~/.funnel. */
-  funnelDir?: string
-  fs?: FunnelFileSystem
   process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
@@ -55,23 +54,25 @@ const defaultLogger = new NodeFunnelLogger()
 /**
  * In-process gateway: runs `Bun.serve` (HTTP + WebSocket /ws), boots connector
  * listeners through `FunnelListenerSupervisor`, fans events out via
- * `FunnelBroadcaster`, and persists them via `FunnelEventLogger`. Exposes
- * `/listeners` HTTP for runtime start/stop/restart of individual connectors.
+ * `FunnelBroadcaster`, and persists them via `FunnelEventStore` (SQLite).
+ * System events (gateway lifecycle, connect/disconnect) flow to `FunnelLogger`
+ * instead — keeping the SQLite seq space exclusive to broadcaster traffic so
+ * the broadcaster's offset counter and `getMaxSeq()` stay aligned without
+ * per-event coordination. Exposes `/listeners` HTTP for runtime
+ * start/stop/restart of individual connectors.
  */
 export class FunnelGatewayServer {
   private readonly channels: FunnelChannels
   private readonly settings: FunnelSettingsReader
   private readonly port: number
   private readonly logDir: string
-  private readonly funnelDir: string | null
-  private readonly fs?: FunnelFileSystem
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger
   private readonly selfPid: number
   private readonly killCompetingSlack: boolean
   private readonly token: string
   private readonly broadcaster: FunnelBroadcaster
-  private readonly eventLogger: FunnelEventLogger
+  private readonly eventStore: FunnelEventStore
   private readonly supervisor: FunnelListenerSupervisor
   private readonly nowMs: () => number
   private startedAt: number | null = null
@@ -82,8 +83,6 @@ export class FunnelGatewayServer {
     this.settings = deps.settings
     this.port = deps.port ?? DEFAULT_PORT
     this.logDir = deps.logDir ?? DEFAULT_LOG_DIR
-    this.funnelDir = deps.funnelDir ?? null
-    this.fs = deps.fs
     this.process = deps.process
     this.logger = deps.logger ?? defaultLogger
     this.selfPid = deps.selfPid ?? globalThis.process.pid
@@ -91,23 +90,17 @@ export class FunnelGatewayServer {
     this.token = deps.token ?? ""
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
-    const persistentReplay = new JsonlReplaySource({
-      logDir: this.logDir,
-      ...(this.funnelDir ? { funnelDir: this.funnelDir } : {}),
-      fs: this.fs,
+    if (!existsSync(this.logDir)) mkdirSync(this.logDir, { recursive: true })
+    this.eventStore = new FunnelEventStore({
+      path: join(this.logDir, DB_FILENAME),
+      now: this.nowMs,
     })
     this.broadcaster = new FunnelBroadcaster({
       logger: this.logger,
       now: this.nowMs,
-      persistentReplay,
+      persistentReplay: this.eventStore,
     })
-    this.broadcaster.seedLatestOffset(persistentReplay.findMaxOffset())
-    this.eventLogger = new FunnelEventLogger({
-      logDir: this.logDir,
-      ...(this.funnelDir ? { funnelDir: this.funnelDir } : {}),
-      fs: this.fs,
-      now: this.nowMs,
-    })
+    this.broadcaster.seedLatestOffset(this.eventStore.findMaxOffset())
     this.supervisor = new FunnelListenerSupervisor({
       channels: this.channels,
       logger: this.logger,
@@ -164,6 +157,10 @@ export class FunnelGatewayServer {
 
   getSupervisor(): FunnelListenerSupervisor {
     return this.supervisor
+  }
+
+  getEventStore(): FunnelEventStore {
+    return this.eventStore
   }
 
   private handleFetch(
@@ -226,9 +223,9 @@ export class FunnelGatewayServer {
         total: String(this.broadcaster.getClientCount()),
       }
 
-      this.eventLogger.logChannel(ws.data.channel, "channel connected", meta)
+      this.logger.info("channel connected", meta)
     } else {
-      this.eventLogger.log("tap-all client connected", {
+      this.logger.info("tap-all client connected", {
         event_type: "system",
         action: "tap_connect",
         total: String(this.broadcaster.getClientCount()),
@@ -240,7 +237,7 @@ export class FunnelGatewayServer {
     this.broadcaster.removeClient(ws)
 
     if (ws.data.channelName) {
-      this.eventLogger.logChannel(ws.data.channel, "channel disconnected", {
+      this.logger.info("channel disconnected", {
         event_type: "system",
         action: "channel_disconnect",
         channel: ws.data.channelName,
@@ -248,7 +245,7 @@ export class FunnelGatewayServer {
         total: String(this.broadcaster.getClientCount()),
       })
     } else {
-      this.eventLogger.log("tap-all client disconnected", {
+      this.logger.info("tap-all client disconnected", {
         event_type: "system",
         action: "tap_disconnect",
         total: String(this.broadcaster.getClientCount()),
@@ -257,7 +254,7 @@ export class FunnelGatewayServer {
   }
 
   private logServerStarted(): void {
-    this.eventLogger.log("gateway started", {
+    this.logger.info("gateway started", {
       event_type: "system",
       action: "gateway_start",
       port: String(this.port),
@@ -349,7 +346,7 @@ export class FunnelGatewayServer {
       })
 
       if (killed.length > 0) {
-        this.eventLogger.log("killed competing Slack gateway processes", {
+        this.logger.info("killed competing Slack gateway processes", {
           event_type: "system",
           action: "kill_competing",
           pids: killed.join(","),
@@ -360,7 +357,7 @@ export class FunnelGatewayServer {
     await this.supervisor.startAll()
 
     for (const entry of this.supervisor.list()) {
-      this.eventLogger.log(`${entry.type} listener started: ${entry.name}`, {
+      this.logger.info(`${entry.type} listener started: ${entry.name}`, {
         event_type: "system",
         action: `${entry.type}_connect`,
         channel: entry.channelName,
@@ -368,7 +365,7 @@ export class FunnelGatewayServer {
       })
     }
 
-    this.logger.info(`event logs: ${this.logDir}`)
+    this.logger.info(`event store: ${join(this.logDir, DB_FILENAME)}`)
     this.logger.info("funnel gateway running")
   }
 
@@ -391,11 +388,13 @@ export class FunnelGatewayServer {
 
     const event = this.broadcaster.broadcast(content, enriched)
 
-    if (channelId && connectorId) {
-      this.eventLogger.logConnector(channelId, connectorId, content, enriched, event.offset)
-    } else {
-      this.eventLogger.log(content, enriched, event.offset)
-    }
+    this.eventStore.record({
+      content,
+      channelId: channelId ?? null,
+      connectorId: connectorId ?? null,
+      meta: enriched,
+      offset: event.offset,
+    })
   }
 
   private lookupChannelId(channelName: string): string | null {

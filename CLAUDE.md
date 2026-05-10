@@ -67,7 +67,7 @@ lib/
 │   ├── listener-supervisor.ts     registry + health check
 │   ├── listeners-client.ts        HTTP client to running daemon
 │   ├── broadcaster.ts             WS fanout + subscribers + backpressure
-│   ├── event-logger.ts            /tmp/funnel/events/*.jsonl
+│   ├── funnel-event-store.ts      SQLite event store (LeucoLoggerSqliteSink wrapper)
 │   ├── kill-competing-slack-gateways.ts
 │   ├── daemon.ts                  bun daemon entry
 │   └── routes/                    Hono ルート（CLI と対称）
@@ -152,8 +152,9 @@ lib/
 
 - ポート: 9742（`FUNNEL_PORT` で変更可）
 - PID: `~/.funnel/gateway.pid`
-- イベントログ: `/tmp/funnel/events/*.jsonl`
-- プロセスログ: `/tmp/funnel/gateway.log`
+- イベントストア: `/tmp/funnel/events/events.db` — SQLite。broadcaster の `offset` を seq として保持、`channel_id` / `connector_id` を indexed カラム。再接続 replay は `WHERE seq > ?` の indexed range scan
+- 診断ログ: `/tmp/funnel/funnel.log` — `NodeFunnelLogger` が gateway ライフサイクル / 接続切断 / listener 起動を JSON で append。`funnel gateway logs` がこれを tail する
+- プロセスログ: `/tmp/funnel/gateway.log` — daemon の stdout/stderr
 - `nohup` でバックグラウンド起動
 - 同一 `Bun.serve` で WebSocket（`/ws`）と内部管理 API（`/health` `/status` `/listeners*`）をホストする
 - WebSocket クライアントは `?channel=<name>` で接続し、そのチャネルが購読する Connector のイベントのみ受信

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
@@ -80,8 +80,8 @@ describe("FunnelClaude", () => {
     fs.mkdirSync("/funnel/claude", { recursive: true })
     fs.writeFileSync("/funnel/claude/dev.pid", String(globalThis.process.pid))
 
-    await expect(
-      claude.launch({ channel: "ops", profileName: "dev" }),
-    ).rejects.toThrow(/already running/)
+    await expect(claude.launch({ channel: "ops", profileName: "dev" })).rejects.toThrow(
+      /already running/,
+    )
   })
 })

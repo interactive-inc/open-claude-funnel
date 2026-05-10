@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, test, vi } from "vitest"
 import { FunnelSlackAdapter, type SlackWebClientLike } from "@/connectors/slack-adapter"
 
 const config = {
@@ -11,7 +11,7 @@ const config = {
 
 describe("FunnelSlackAdapter", () => {
   test("calls client.apiCall(path, body)", async () => {
-    const apiCall = mock(async () => ({ ok: true }))
+    const apiCall = vi.fn(async () => ({ ok: true }))
     const client: SlackWebClientLike = { apiCall }
 
     const adapter = new FunnelSlackAdapter({ config, client })
@@ -27,7 +27,7 @@ describe("FunnelSlackAdapter", () => {
   })
 
   test("passes {} when body is not an object", async () => {
-    const apiCall = mock(async () => ({ ok: true }))
+    const apiCall = vi.fn(async () => ({ ok: true }))
     const client: SlackWebClientLike = { apiCall }
 
     const adapter = new FunnelSlackAdapter({ config, client })

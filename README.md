@@ -294,8 +294,9 @@ After this, Claude Code will load the skill in any session.
   - `schedule/<name>.jsonl` (one entry per line) and `schedule/<name>.state.json` (last-fired timestamps for catch-up)
 - PID: `~/.funnel/gateway.pid`
 - Claude PIDs: `~/.funnel/claude/<profile>.pid`
-- Event log: `/tmp/funnel/events/*.jsonl` (auto-deleted after 30 days)
-- Process log: `/tmp/funnel/gateway.log`
+- Event store: `/tmp/funnel/events/events.db` (SQLite; broadcaster events with replay-by-seq)
+- Diagnostic log: `/tmp/funnel/funnel.log` (gateway lifecycle, connect/disconnect — what `funnel gateway logs` tails)
+- Process log: `/tmp/funnel/gateway.log` (daemon stdout/stderr)
 
 ## Links
 

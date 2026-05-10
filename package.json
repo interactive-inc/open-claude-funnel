@@ -31,6 +31,7 @@
     "lib/**/*.tsx",
     "!lib/**/*.test.ts",
     "!lib/**/*.test.tsx",
+    "!lib/**/*.bun-test.ts",
     "README.md",
     "LICENSE"
   ],

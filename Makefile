@@ -1,4 +1,4 @@
-.PHONY: help dev tui test typecheck check install link
+.PHONY: help dev tui test bun-test typecheck check install link
 
 components:
 	npx shadcn@latest add http://localhost:4445/all.json
@@ -12,7 +12,11 @@ tui:
 	@bun lib/index.ts
 
 test:
-	@bun test
+	@bunx vp test run
+	@$(MAKE) bun-test
+
+bun-test:
+	@bun test $$(find lib -name "*.bun-test.ts" | sed 's|^|./|')
 
 typecheck:
 	@bunx tsc -b

@@ -36,9 +36,10 @@ export type ReplayableEvent = BroadcastEvent & { offset: number }
 export type BroadcastSubscriber = (event: ReplayableEvent) => void
 
 /**
- * Optional persistent replay source. Wired in by the gateway-server with a
- * `JsonlReplaySource` that reads from the on-disk event log so reconnects
- * across daemon restarts can recover events older than the in-memory buffer.
+ * Optional persistent replay source. Wired in by the gateway-server with
+ * `FunnelEventStore` (SQLite-backed) so reconnects across daemon restarts
+ * can recover events older than the in-memory buffer via an indexed
+ * `seq > since` range scan.
  */
 export type ReplaySource = {
   loadSince(since: number): ReplayableEvent[]
@@ -87,8 +88,9 @@ export type BroadcasterMetrics = {
  * Replay: every emitted event gets a strictly increasing `offset`. The latest
  * `replayBufferSize` events are kept in memory; reconnecting WS clients can
  * pass `?since=<offset>` and the broadcaster resends matching events before
- * resuming the live stream. Replay only spans the current daemon process —
- * older history lives in the jsonl event log.
+ * resuming the live stream. The in-memory ring covers short reconnects;
+ * older history is served from the SQLite event store wired in as
+ * `persistentReplay`.
  */
 export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
@@ -138,7 +140,7 @@ export class FunnelBroadcaster {
    * Two-tier lookup:
    *   1. The in-memory ring buffer (covers short reconnects, last `replayBufferSize` events).
    *   2. If `since` predates the oldest in-memory entry and a persistent replay source
-   *      is wired in (jsonl), the gap is filled from disk. This covers reconnects across
+   *      is wired in (SQLite), the gap is filled from disk. This covers reconnects across
    *      daemon restarts where the in-memory buffer was lost.
    *
    * Result is sorted ascending by offset and de-duplicated against the in-memory buffer.
@@ -310,7 +312,7 @@ export class FunnelBroadcaster {
     return event
   }
 
-  /** Forward-seed the offset counter (used at startup from the persisted jsonl log). */
+  /** Forward-seed the offset counter (used at startup from the persisted event store). */
   seedLatestOffset(offset: number): void {
     if (offset > this.latestOffset) this.latestOffset = offset
   }

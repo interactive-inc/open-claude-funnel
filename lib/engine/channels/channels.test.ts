@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
@@ -104,7 +104,12 @@ describe("FunnelChannels", () => {
 
     expect(() => channels.renameConnector("ops", "a", "b")).toThrow(/already exists/)
     channels.renameConnector("ops", "a", "c")
-    expect(channels.listConnectors("ops").map((c) => c.name).sort()).toEqual(["b", "c"])
+    expect(
+      channels
+        .listConnectors("ops")
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual(["b", "c"])
   })
 
   test("schedule entry CRUD lives on the connector", () => {

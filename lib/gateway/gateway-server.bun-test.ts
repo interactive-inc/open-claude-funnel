@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "vitest"
 import type { Server } from "bun"
 import { Funnel } from "@/funnel"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"

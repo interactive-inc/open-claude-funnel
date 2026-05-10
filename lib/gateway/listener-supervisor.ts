@@ -184,7 +184,10 @@ export class FunnelListenerSupervisor {
     }
   }
 
-  async stop(channelName: string, connectorName: string): Promise<{ ok: boolean; reason?: string }> {
+  async stop(
+    channelName: string,
+    connectorName: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
     const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
     const entry = this.running.get(key)
 

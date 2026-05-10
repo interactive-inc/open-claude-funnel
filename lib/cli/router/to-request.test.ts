@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { toRequest } from "@/cli/router/to-request"
 
 describe("toRequest", () => {
