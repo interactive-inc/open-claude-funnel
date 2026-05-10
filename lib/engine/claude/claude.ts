@@ -59,7 +59,7 @@ export class FunnelClaude {
   }
 
   async launch(options: LaunchOptions): Promise<number> {
-    const channel = this.channels.get(options.channel)
+    const channel = this.channels.get(options.channel) ?? this.channels.getById(options.channel)
 
     if (!channel) {
       throw new Error(`channel "${options.channel}" not found`)

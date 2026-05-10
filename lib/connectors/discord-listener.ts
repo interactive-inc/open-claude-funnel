@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from "discord.js"
+import type { Client } from "discord.js"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor"
 import { FunnelLogger } from "@/engine/logger/logger"
@@ -24,14 +24,15 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
   }
 
   async start(notify: NotifyFn): Promise<void> {
-    const client = new Client({
+    const discord = await import("discord.js")
+    const client = new discord.Client({
       intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
+        discord.GatewayIntentBits.Guilds,
+        discord.GatewayIntentBits.GuildMessages,
+        discord.GatewayIntentBits.MessageContent,
+        discord.GatewayIntentBits.DirectMessages,
       ],
-      partials: [Partials.Channel],
+      partials: [discord.Partials.Channel],
     })
 
     client.on("messageCreate", async (message) => {

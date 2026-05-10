@@ -1,4 +1,3 @@
-import { WebClient } from "@slack/web-api"
 import { FunnelConnectorAdapter, type CallInput } from "@/connectors/connector-adapter"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 
@@ -20,17 +19,30 @@ type Deps = {
 }
 
 export class FunnelSlackAdapter extends FunnelConnectorAdapter {
-  private readonly client: SlackWebClientLike
+  private readonly config: SlackConnectorConfig
+  private readonly injectedClient: SlackWebClientLike | null
+  private cachedClient: SlackWebClientLike | null = null
 
   constructor(deps: Deps) {
     super()
-    this.client = deps.client ?? new WebClient(deps.config.botToken)
-    Object.freeze(this)
+    this.config = deps.config
+    this.injectedClient = deps.client ?? null
+  }
+
+  private async getClient(): Promise<SlackWebClientLike> {
+    if (this.injectedClient) return this.injectedClient
+    if (this.cachedClient) return this.cachedClient
+
+    const { WebClient } = await import("@slack/web-api")
+    this.cachedClient = new WebClient(this.config.botToken)
+
+    return this.cachedClient
   }
 
   async call(input: CallInput): Promise<unknown> {
     const body = input.body !== null && typeof input.body === "object" ? toRecord(input.body) : {}
+    const client = await this.getClient()
 
-    return await this.client.apiCall(input.path, body)
+    return await client.apiCall(input.path, body)
   }
 }

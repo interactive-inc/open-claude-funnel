@@ -235,5 +235,5 @@ lib/
 - ランタイム: Bun（ESM）
 - パスエイリアス: `@/*` → `./lib/*`
 - 言語: コード・CLI 出力・コメントは英語。ドキュメント (.md) は日本語
-- `require()` 禁止。動的 import も禁止
+- `require()` 禁止。動的 `import()` は原則禁止。ただし重い外部 SDK（`@slack/bolt` / `@slack/web-api` / `discord.js` 等）は CLI 起動時間を直撃するので listener / adapter の `start()` / `call()` 内で `await import("...")` で遅延ロード可。型は `import type` で別経路で取り込む
 - `let` / `var` 回避、`const` 優先
