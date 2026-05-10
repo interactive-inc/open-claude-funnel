@@ -23,8 +23,8 @@
     "url": "git+https://github.com/interactive-inc/open-claude-funnel.git"
   },
   "bin": {
-    "fnl": "./lib/bin.ts",
-    "funnel": "./lib/bin.ts"
+    "fnl": "./dist/bin.js",
+    "funnel": "./dist/bin.js"
   },
   "files": [
     "lib/**/*.ts",
@@ -32,9 +32,14 @@
     "!lib/**/*.test.ts",
     "!lib/**/*.test.tsx",
     "!lib/**/*.bun-test.ts",
+    "dist/**/*",
     "README.md",
     "LICENSE"
   ],
+  "scripts": {
+    "build": "bun build lib/bin.ts --target=bun --outdir dist --minify",
+    "prepare": "bun run build"
+  },
   "type": "module",
   "main": "./lib/index.ts",
   "module": "./lib/index.ts",
