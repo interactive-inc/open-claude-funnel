@@ -276,6 +276,7 @@ export class FunnelGatewayServer {
         selfPid: this.selfPid,
         broadcaster: this.broadcaster,
         supervisor: this.supervisor,
+        channels: this.channels,
         uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
       })
 
@@ -285,6 +286,7 @@ export class FunnelGatewayServer {
     if (this.token) {
       base.use("/listeners/*", requireBearerToken({ expected: this.token }))
       base.use("/status", requireBearerToken({ expected: this.token }))
+      base.use("/channels/*", requireBearerToken({ expected: this.token }))
     }
 
     return base.route("/", gatewayRoutes)

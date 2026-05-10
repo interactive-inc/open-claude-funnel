@@ -3,11 +3,19 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js"
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
+import { settingsSchema } from "@/engine/settings/settings-schema"
 
-const GATEWAY_WS_URL = process.env.FUNNEL_GATEWAY_URL ?? "ws://localhost:9742/ws"
+const GATEWAY_BASE_URL = process.env.FUNNEL_GATEWAY_URL ?? "http://localhost:9742"
+const GATEWAY_WS_URL = `${GATEWAY_BASE_URL.replace(/^http/, "ws")}/ws`
 const RECONNECT_DELAY = 1000
 const MAX_RECONNECT_DELAY = 10000
+const SETTINGS_PATH = join(homedir(), ".funnel", "settings.json")
+const TOOL_CONNECTOR_TYPES = new Set(["slack", "gh", "discord"])
 
 const readGatewayToken = (): string | null => {
   const fromEnv = process.env.FUNNEL_GATEWAY_TOKEN
@@ -23,32 +31,124 @@ const readGatewayToken = (): string | null => {
   return value.length > 0 ? value : null
 }
 
+const readChannelConnectors = (
+  channelId: string,
+): { channelName: string; connectors: { name: string; type: string }[] } | null => {
+  if (!existsSync(SETTINGS_PATH)) return null
+
+  const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"))
+  const parsed = settingsSchema.safeParse(raw)
+
+  if (!parsed.success) return null
+
+  const channel = parsed.data.channels.find((c) => c.id === channelId)
+
+  if (!channel) return null
+
+  const connectors = channel.connectors
+    .filter((c) => TOOL_CONNECTOR_TYPES.has(c.type))
+    .map((c) => ({ name: c.name, type: c.type }))
+
+  return { channelName: channel.name, connectors }
+}
+
+const usageHintForType = (type: string): string => {
+  if (type === "slack") {
+    return "Slack Web API. method=POST path=chat.postMessage body={channel,text,thread_ts?}"
+  }
+
+  if (type === "discord") {
+    return "Discord REST API. method=POST path=/channels/<id>/messages body={content,...}"
+  }
+
+  if (type === "gh") {
+    return "GitHub REST via gh CLI. method=POST path=repos/owner/repo/issues/N/comments body={body}"
+  }
+
+  return "Generic adapter call."
+}
+
 export const startChannelServer = async (): Promise<void> => {
+  const channelId = process.env.FUNNEL_CHANNEL_ID
+  const channel = channelId ? readChannelConnectors(channelId) : null
+  const token = readGatewayToken()
+
   const server = new Server(
     { name: FUNNEL_MCP_NAME, version: "1.0.0" },
     {
       capabilities: {
         experimental: { "claude/channel": {} },
+        tools: {},
       },
       instructions: [
         `Events arrive inside <channel source="${FUNNEL_MCP_NAME}"> tags. Use meta.event_type to discriminate.`,
         "",
-        "Each event's meta carries the originating `channel` (name) and `connector` (name). To reply or act on an event, run",
-        "  funnel channels <channel> connectors <connector> request --method=<api.method> [--key=value ...]",
-        "via the Bash tool. For general CLI usage, run `funnel --help`.",
+        "To reply or act, call the connector tool exposed by this MCP (one tool per connector configured on this channel). Each tool takes { method, path, body } matching the underlying adapter's CallInput.",
       ].join("\n"),
     },
   )
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const tools = (channel?.connectors ?? []).map((c) => ({
+      name: c.name,
+      description: `Call the "${c.name}" (${c.type}) connector. ${usageHintForType(c.type)}`,
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          method: { type: "string", description: "HTTP verb or API method (e.g. POST, chat.postMessage)" },
+          path: { type: "string", description: "API path or method name (adapter-specific)" },
+          body: { type: "object", description: "Request body / params (adapter-specific)" },
+        },
+        required: ["method", "path"],
+      },
+    }))
+
+    return { tools }
+  })
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (!channel) {
+      throw new Error("FUNNEL_CHANNEL_ID is not set or channel not found in settings.json")
+    }
+
+    const connectorName = request.params.name
+    const args = (request.params.arguments ?? {}) as Record<string, unknown>
+    const method = typeof args.method === "string" ? args.method : ""
+    const path = typeof args.path === "string" ? args.path : ""
+    const body = args.body ?? {}
+
+    if (!method || !path) {
+      throw new Error("`method` and `path` are required")
+    }
+
+    const url = `${GATEWAY_BASE_URL}/channels/${encodeURIComponent(channel.channelName)}/connectors/${encodeURIComponent(connectorName)}/call`
+    const headers: Record<string, string> = { "content-type": "application/json" }
+
+    if (token) headers.authorization = `Bearer ${token}`
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ method, path, body }),
+    })
+
+    const text = await res.text()
+
+    if (!res.ok) {
+      throw new Error(`gateway call failed (${res.status}): ${text}`)
+    }
+
+    return {
+      content: [{ type: "text", text }],
+    }
+  })
 
   const transport = new StdioServerTransport()
 
   await server.connect(transport)
 
-  const channelId = process.env.FUNNEL_CHANNEL_ID
-
   if (!channelId) return
 
-  const token = readGatewayToken()
   const baseUrl = `${GATEWAY_WS_URL}?channel=${encodeURIComponent(channelId)}`
   const protocols = token ? [`funnel.token.${token}`] : undefined
   let reconnectDelay = RECONNECT_DELAY

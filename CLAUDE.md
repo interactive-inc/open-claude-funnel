@@ -216,6 +216,8 @@ lib/
 - `FUNNEL_CHANNEL_ID` が未設定なら WebSocket 接続しない（no-op）
 - `experimental: { "claude/channel": {} }` capability 必須
 - 対象リポジトリの `.mcp.json` に登録が必要（`fnl repos add` で自動書き込み）
+- 起動時に `~/.funnel/settings.json` を読んで該当チャネルの connectors を取得し、コネクタ 1 つにつき MCP tool 1 つを動的に `tools/list` で公開（schedule 型は callable adapter が無いので除外）。tool 名 = コネクタ名そのまま。引数は `{ method, path, body? }`（adapter 共通の `CallInput`）
+- tool 呼び出しは gateway daemon の `POST /channels/:channel/connectors/:connector/call` に Bearer auth 付きで HTTP POST → `FunnelChannels.call()` → adapter。CLI の `funnel channels … connectors … request` 相当だが bash 起動を回避してレスポンス JSON をそのまま Claude に返す
 
 ### TUI
 
