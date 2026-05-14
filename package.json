@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "keywords": [
     "bun",
@@ -37,20 +37,25 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build lib/bin.ts lib/gateway/daemon.ts --target=bun --outdir dist --minify",
+    "build": "bun run build:lib && bun run build:bin && bun run build:types && bun run build:resolve-aliases",
+    "build:lib": "bun scripts/build-lib.ts",
+    "build:bin": "bun build lib/bin.ts lib/gateway/daemon.ts --target=bun --outdir dist --minify",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build:resolve-aliases": "bun scripts/resolve-d-ts-aliases.ts",
     "prepare": "bun run build"
   },
   "type": "module",
-  "main": "./lib/index.ts",
-  "module": "./lib/index.ts",
-  "types": "./lib/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/index.ts",
-      "bun": "./lib/index.ts",
-      "default": "./lib/index.ts"
+      "types": "./dist/index.d.ts",
+      "bun": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
-    "./bin": "./lib/bin.ts",
+    "./bin": "./dist/bin.js",
     "./package.json": "./package.json"
   },
   "publishConfig": {
