@@ -39,7 +39,9 @@ export * from "@/engine/id/memory-id-generator"
 // Connectors
 export * from "@/connectors/connector-factory"
 export * from "@/connectors/connector-config-schema"
+export * from "@/connectors/connector-listener"
 export * from "@/connectors/schedule-connector-schema"
+export * from "@/connectors/slack-connector-schema"
 
 // Gateway
 export * from "@/gateway/gateway"
