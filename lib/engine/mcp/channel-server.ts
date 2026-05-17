@@ -10,19 +10,29 @@ import {
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
 import { settingsSchema } from "@/engine/settings/settings-schema"
 
-const GATEWAY_BASE_URL = process.env.FUNNEL_GATEWAY_URL ?? "http://localhost:9742"
-const GATEWAY_WS_URL = `${GATEWAY_BASE_URL.replace(/^http/, "ws")}/ws`
+const DEFAULT_FUNNEL_DIR = join(homedir(), ".funnel")
+const DEFAULT_GATEWAY_BASE_URL = "http://localhost:9742"
 const RECONNECT_DELAY = 1000
 const MAX_RECONNECT_DELAY = 10000
-const SETTINGS_PATH = join(homedir(), ".funnel", "settings.json")
 const TOOL_CONNECTOR_TYPES = new Set(["slack", "gh", "discord"])
 
-const readGatewayToken = (): string | null => {
+export type ChannelServerOptions = {
+  /** Funnel home directory (settings.json + gateway.token). Defaults to ~/.funnel. */
+  dir?: string
+  /** Gateway base URL. Defaults to `$FUNNEL_GATEWAY_URL` or `http://localhost:9742`. */
+  gatewayUrl?: string
+  /** Channel id to subscribe to. Defaults to `$FUNNEL_CHANNEL_ID`. */
+  channelId?: string
+  /** Auth token. Defaults to `$FUNNEL_GATEWAY_TOKEN` then `<dir>/gateway.token`. */
+  token?: string
+}
+
+const readGatewayToken = (dir: string): string | null => {
   const fromEnv = process.env.FUNNEL_GATEWAY_TOKEN
 
   if (fromEnv && fromEnv.length > 0) return fromEnv
 
-  const path = join(homedir(), ".funnel", "gateway.token")
+  const path = join(dir, "gateway.token")
 
   if (!existsSync(path)) return null
 
@@ -32,11 +42,14 @@ const readGatewayToken = (): string | null => {
 }
 
 const readChannelConnectors = (
+  dir: string,
   channelId: string,
 ): { channelName: string; connectors: { name: string; type: string }[] } | null => {
-  if (!existsSync(SETTINGS_PATH)) return null
+  const settingsPath = join(dir, "settings.json")
 
-  const raw = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8"))
+  if (!existsSync(settingsPath)) return null
+
+  const raw = JSON.parse(readFileSync(settingsPath, "utf-8"))
   const parsed = settingsSchema.safeParse(raw)
 
   if (!parsed.success) return null
@@ -68,10 +81,16 @@ const usageHintForType = (type: string): string => {
   return "Generic adapter call."
 }
 
-export const startChannelServer = async (): Promise<void> => {
-  const channelId = process.env.FUNNEL_CHANNEL_ID
-  const channel = channelId ? readChannelConnectors(channelId) : null
-  const token = readGatewayToken()
+export const startChannelServer = async (
+  options: ChannelServerOptions = {},
+): Promise<void> => {
+  const dir = options.dir ?? DEFAULT_FUNNEL_DIR
+  const gatewayBaseUrl =
+    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? DEFAULT_GATEWAY_BASE_URL
+  const gatewayWsUrl = `${gatewayBaseUrl.replace(/^http/, "ws")}/ws`
+  const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
+  const channel = channelId ? readChannelConnectors(dir, channelId) : null
+  const token = options.token ?? readGatewayToken(dir)
 
   const server = new Server(
     { name: FUNNEL_MCP_NAME, version: "1.0.0" },
@@ -121,7 +140,7 @@ export const startChannelServer = async (): Promise<void> => {
       throw new Error("`method` and `path` are required")
     }
 
-    const url = `${GATEWAY_BASE_URL}/channels/${encodeURIComponent(channel.channelName)}/connectors/${encodeURIComponent(connectorName)}/call`
+    const url = `${gatewayBaseUrl}/channels/${encodeURIComponent(channel.channelName)}/connectors/${encodeURIComponent(connectorName)}/call`
     const headers: Record<string, string> = { "content-type": "application/json" }
 
     if (token) headers.authorization = `Bearer ${token}`
@@ -149,7 +168,7 @@ export const startChannelServer = async (): Promise<void> => {
 
   if (!channelId) return
 
-  const baseUrl = `${GATEWAY_WS_URL}?channel=${encodeURIComponent(channelId)}`
+  const baseUrl = `${gatewayWsUrl}?channel=${encodeURIComponent(channelId)}`
   const protocols = token ? [`funnel.token.${token}`] : undefined
   let reconnectDelay = RECONNECT_DELAY
   let lastOffset = 0

@@ -2,21 +2,34 @@ import { join } from "node:path"
 import { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
-import type { FunnelFileSystem } from "@/engine/fs/file-system"
-import type { FunnelIdGenerator } from "@/engine/id/id-generator"
+import { FunnelFileSystem } from "@/engine/fs/file-system"
+import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
+import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
+import { FunnelIdGenerator } from "@/engine/id/id-generator"
+import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
+import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
+import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
+import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store"
-import type { FunnelClock } from "@/engine/time/clock"
+import { FunnelClock } from "@/engine/time/clock"
+import { MemoryFunnelClock } from "@/engine/time/memory-clock"
+import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
+
+const DEFAULT_TMP_DIR = "/tmp/funnel"
+const SANDBOX_DIR = "/sandbox/.funnel"
+const SANDBOX_TMP_DIR = "/sandbox/tmp"
 
 type Props = {
   /** Settings persistence (channels with nested connectors / profiles). Defaults to a FunnelSettingsStore rooted at `dir`. */
@@ -57,89 +70,162 @@ type Props = {
  * ```
  */
 export class Funnel {
+  private readonly cache = new Map<string, unknown>()
+
   constructor(private readonly props: Props = {}) {
     Object.freeze(this)
   }
 
-  /** Settings reader. If not injected, a FunnelSettingsStore rooted at `dir` is created. */
-  get store(): FunnelSettingsReader {
-    return (
-      this.props.store ??
-      new FunnelSettingsStore({
-        path: join(this.props.dir ?? FUNNEL_DIR, "settings.json"),
-        fs: this.props.fs,
-      })
-    )
+  /**
+   * Sandboxed Funnel wired with in-memory implementations for every IO boundary.
+   * Touches no real disk, processes, wall-clock time, or UUIDs — safe for tests
+   * and ad-hoc experiments. Override individual fields by passing them in `props`.
+   */
+  static inMemory(props: Props = {}): Funnel {
+    return new Funnel({
+      store: props.store ?? new MockFunnelSettingsReader(),
+      fs: props.fs ?? new MemoryFunnelFileSystem(),
+      process: props.process ?? new MemoryFunnelProcessRunner(),
+      logger: props.logger ?? new MemoryFunnelLogger(),
+      clock: props.clock ?? new MemoryFunnelClock(),
+      idGenerator: props.idGenerator ?? new MemoryFunnelIdGenerator(),
+      dir: props.dir ?? SANDBOX_DIR,
+      tmpDir: props.tmpDir ?? SANDBOX_TMP_DIR,
+    })
+  }
+
+  private memo<T>(key: string, build: () => T): T {
+    if (this.cache.has(key)) return this.cache.get(key) as T
+
+    const value = build()
+    this.cache.set(key, value)
+
+    return value
+  }
+
+  /** Resolved on-disk paths the facade will read/write when methods are called. Pure compute, not memoized. */
+  get paths(): { dir: string; tmpDir: string; settings: string } {
+    const dir = this.props.dir ?? FUNNEL_DIR
+    const tmpDir = this.props.tmpDir ?? DEFAULT_TMP_DIR
+
+    return { dir, tmpDir, settings: join(dir, "settings.json") }
+  }
+
+  /** Filesystem boundary. Defaults to NodeFunnelFileSystem. */
+  get fs(): FunnelFileSystem {
+    return this.memo("fs", () => this.props.fs ?? new NodeFunnelFileSystem())
   }
 
   /** Process runner boundary. Defaults to NodeFunnelProcessRunner. */
   get process(): FunnelProcessRunner {
-    return this.props.process ?? new NodeFunnelProcessRunner()
+    return this.memo("process", () => this.props.process ?? new NodeFunnelProcessRunner())
   }
 
   /** Logger boundary. Defaults to NodeFunnelLogger. */
   get logger(): FunnelLogger {
-    return this.props.logger ?? new NodeFunnelLogger()
+    return this.memo("logger", () => this.props.logger ?? new NodeFunnelLogger())
+  }
+
+  /** Clock boundary. Defaults to NodeFunnelClock. */
+  get clock(): FunnelClock {
+    return this.memo("clock", () => this.props.clock ?? new NodeFunnelClock())
+  }
+
+  /** ID generator boundary. Defaults to NodeFunnelIdGenerator. */
+  get idGenerator(): FunnelIdGenerator {
+    return this.memo("idGenerator", () => this.props.idGenerator ?? new NodeFunnelIdGenerator())
+  }
+
+  /** Settings reader. If not injected, a FunnelSettingsStore rooted at `dir` is created. */
+  get store(): FunnelSettingsReader {
+    return this.memo(
+      "store",
+      () =>
+        this.props.store ??
+        new FunnelSettingsStore({
+          path: this.paths.settings,
+          fs: this.fs,
+        }),
+    )
   }
 
   /** Pure factory that constructs per-type listeners and adapters from connector configs. */
   get factory(): FunnelConnectorFactory {
-    return new FunnelConnectorFactory({
-      fs: this.props.fs,
-      process: this.props.process,
-      logger: this.props.logger,
-      dir: this.props.dir,
-    })
+    return this.memo(
+      "factory",
+      () =>
+        new FunnelConnectorFactory({
+          fs: this.fs,
+          process: this.process,
+          logger: this.logger,
+          dir: this.paths.dir,
+        }),
+    )
   }
 
   /** Channel CRUD + nested connector CRUD + schedule entries + listener/adapter dispatch. */
   get channels(): FunnelChannels {
-    return new FunnelChannels({
-      store: this.store,
-      factory: this.factory,
-      profileChecker: this.profiles,
-      clock: this.props.clock,
-      idGenerator: this.props.idGenerator,
-    })
+    return this.memo(
+      "channels",
+      () =>
+        new FunnelChannels({
+          store: this.store,
+          factory: this.factory,
+          profileChecker: this.profiles,
+          clock: this.clock,
+          idGenerator: this.idGenerator,
+        }),
+    )
   }
 
   /** Launch profiles (named presets for `fnl claude`: path + sub-agent + channel id). */
   get profiles(): FunnelProfiles {
-    return new FunnelProfiles({ store: this.store })
+    return this.memo("profiles", () => new FunnelProfiles({ store: this.store }))
   }
 
   /** funnel MCP installer (writes/removes `.mcp.json` entries in target repos). */
   get mcp(): FunnelMcp {
-    return new FunnelMcp({ fs: this.props.fs })
+    return this.memo("mcp", () => new FunnelMcp({ fs: this.fs }))
   }
 
   /** Launch Claude Code with a channel injected via env, MCP installed, gateway ensured. */
   get claude(): FunnelClaude {
-    return new FunnelClaude({
-      channels: this.channels,
-      mcp: this.mcp,
-      gateway: this.gateway,
-      fs: this.props.fs,
-      process: this.props.process,
-      logger: this.props.logger,
-      dir: this.props.dir,
-    })
+    return this.memo(
+      "claude",
+      () =>
+        new FunnelClaude({
+          channels: this.channels,
+          mcp: this.mcp,
+          gateway: this.gateway,
+          fs: this.fs,
+          process: this.process,
+          logger: this.logger,
+          dir: this.paths.dir,
+        }),
+    )
   }
 
   /** Gateway daemon controller (PID-file, start/stop the separate `bun daemon.ts` process). */
   get gateway(): FunnelGateway {
-    return new FunnelGateway({
-      fs: this.props.fs,
-      process: this.props.process,
-      clock: this.props.clock,
-      dir: this.props.dir,
-      tmpDir: this.props.tmpDir,
-    })
+    return this.memo(
+      "gateway",
+      () =>
+        new FunnelGateway({
+          fs: this.fs,
+          process: this.process,
+          clock: this.clock,
+          dir: this.paths.dir,
+          tmpDir: this.paths.tmpDir,
+        }),
+    )
   }
 
   /** Read / generate the daemon's gateway token (mode 0600 file under `dir`). */
   get gatewayToken(): FunnelGatewayToken {
-    return new FunnelGatewayToken({ fs: this.props.fs, dir: this.props.dir })
+    return this.memo(
+      "gatewayToken",
+      () => new FunnelGatewayToken({ fs: this.fs, dir: this.paths.dir }),
+    )
   }
 
   /**
@@ -148,13 +234,15 @@ export class Funnel {
    * paths stay write-only without parsing strings.
    */
   get listeners(): FunnelListenersClient {
-    const gateway = this.gateway
-    const token = this.gatewayToken
+    return this.memo("listeners", () => {
+      const gateway = this.gateway
+      const token = this.gatewayToken
 
-    return new FunnelListenersClient({
-      port: gateway.getPort(),
-      isDaemonRunning: () => gateway.isRunning(),
-      getToken: () => token.read(),
+      return new FunnelListenersClient({
+        port: gateway.getPort(),
+        isDaemonRunning: () => gateway.isRunning(),
+        getToken: () => token.read(),
+      })
     })
   }
 
@@ -177,9 +265,9 @@ export class Funnel {
       settings: this.store,
       port: options.port,
       logDir: options.logDir,
-      process: this.props.process,
-      clock: this.props.clock,
-      logger: this.props.logger,
+      process: this.process,
+      clock: this.clock,
+      logger: this.logger,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
     })

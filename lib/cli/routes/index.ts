@@ -75,30 +75,37 @@ import { statusHandler } from "@/cli/routes/status"
 import { updateHandler } from "@/cli/routes/update"
 import { Funnel } from "@/funnel"
 
-const base = factory.createApp()
-
-base.use((c, next) => {
-  c.set("funnel", new Funnel())
-
-  return next()
-})
-
-base.onError((error, c) => {
-  if (error instanceof HTTPException) {
-    return c.text(`error: ${error.message}`, error.status)
-  }
-
-  return c.text(`error: ${error instanceof Error ? error.message : String(error)}`, 400)
-})
-
 const helpRoute = (text: string) => factory.createHandlers((c) => c.text(text))
 
-// All CLI verbs (`add` / `remove` / `set` / `rename` / `as-default` / `request`) map to POST in
-// to-request.ts and stay in the URL as a literal segment. Read paths (list / show / launch) keep GET.
-// Help shortcuts at parameterless URLs return the help text directly so `funnel <verb>` (no args) is
-// informative instead of 404.
-export const app = base
-  .get("/claude", ...claudeHandler)
+/**
+ * Build the CLI Hono app wired to a specific Funnel instance.
+ * Exposed so library consumers can mount the same routes their `fnl` CLI
+ * uses against a custom Funnel (e.g. one with sandboxed boundaries).
+ *
+ * All CLI verbs (`add` / `remove` / `set` / `rename` / `as-default` / `request`) map to POST in
+ * to-request.ts and stay in the URL as a literal segment. Read paths (list / show / launch) keep GET.
+ * Help shortcuts at parameterless URLs return the help text directly so `funnel <verb>` (no args) is
+ * informative instead of 404.
+ */
+export const createCliApp = (funnel: Funnel) => {
+  const base = factory.createApp()
+
+  base.use((c, next) => {
+    c.set("funnel", funnel)
+
+    return next()
+  })
+
+  base.onError((error, c) => {
+    if (error instanceof HTTPException) {
+      return c.text(`error: ${error.message}`, error.status)
+    }
+
+    return c.text(`error: ${error instanceof Error ? error.message : String(error)}`, 400)
+  })
+
+  return base
+    .get("/claude", ...claudeHandler)
   .get("/channels", ...channelsGroupHandler)
   .post("/channels/add", ...helpRoute(channelsAddHelp))
   .post("/channels/add/:channel", ...channelsAddHandler)
@@ -200,3 +207,7 @@ export const app = base
   .get("/gateway/listeners", ...gatewayListenersHandler)
   .get("/status", ...statusHandler)
   .get("/update", ...updateHandler)
+}
+
+/** CLI Hono app wired to a default `new Funnel()`. For embedding with a custom Funnel use `createCliApp`. */
+export const app = createCliApp(new Funnel())

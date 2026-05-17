@@ -3,10 +3,13 @@ import pkg from "../package.json" with { type: "json" }
 import { startChannelServer } from "@/engine/mcp/channel-server"
 import { toRequest } from "@/cli/router/to-request"
 import { launchTui } from "@/tui/tui"
-import { app } from "@/cli/routes"
+import { createCliApp } from "@/cli/routes"
 import { Funnel } from "@/funnel"
 
 process.title = "funnel"
+
+const funnel = new Funnel()
+const app = createCliApp(funnel)
 
 const HELP = `funnel — Open Claude Funnel
 
@@ -31,7 +34,7 @@ more: funnel <command> --help`
 const args = process.argv.slice(2)
 
 if (args.length === 0) {
-  await launchTui(new Funnel())
+  await launchTui(funnel)
   process.exit(0)
 }
 
@@ -41,7 +44,7 @@ if (args[0] === "--version" || args[0] === "-v") {
 }
 
 if (args[0] === "mcp") {
-  await startChannelServer()
+  await startChannelServer({ dir: funnel.paths.dir })
 } else {
   const { method, url } = toRequest(args)
   const parsed = new URL(url)

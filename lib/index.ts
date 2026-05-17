@@ -8,6 +8,7 @@ export * from "@/funnel"
 export * from "@/engine/channels/channels"
 export * from "@/engine/claude/claude"
 export * from "@/engine/mcp/mcp"
+export * from "@/engine/mcp/channel-server"
 export * from "@/engine/profiles/profiles"
 export * from "@/engine/settings/settings-reader"
 export * from "@/engine/settings/settings-store"
@@ -40,13 +41,25 @@ export * from "@/engine/id/memory-id-generator"
 export * from "@/connectors/connector-factory"
 export * from "@/connectors/connector-config-schema"
 export * from "@/connectors/connector-listener"
+export * from "@/connectors/discord-connector-schema"
+export * from "@/connectors/gh-connector-schema"
 export * from "@/connectors/schedule-connector-schema"
 export * from "@/connectors/slack-connector-schema"
 
 // Gateway
 export * from "@/gateway/gateway"
 export * from "@/gateway/gateway-server"
+export * from "@/gateway/gateway-token"
 export * from "@/gateway/broadcaster"
 export * from "@/gateway/funnel-event-store"
 export * from "@/gateway/listener-supervisor"
 export * from "@/gateway/listeners-client"
+
+// CLI — embeddable Hono app + argv translator
+export * from "@/cli/factory"
+export * from "@/cli/router/to-request"
+export * from "@/cli/router/query-to-cli-args"
+export { app as cliApp, createCliApp } from "@/cli/routes"
+
+// TUI — launcher (consumers can spawn the OpenTUI dashboard with their own Funnel)
+export * from "@/tui/tui"

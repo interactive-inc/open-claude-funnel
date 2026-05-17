@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "keywords": [
     "bun",
@@ -36,14 +36,6 @@
     "README.md",
     "LICENSE"
   ],
-  "scripts": {
-    "build": "bun run build:lib && bun run build:bin && bun run build:types && bun run build:resolve-aliases",
-    "build:lib": "bun scripts/build-lib.ts",
-    "build:bin": "bun build lib/bin.ts lib/gateway/daemon.ts --target=bun --outdir dist --minify",
-    "build:types": "tsc -p tsconfig.build.json",
-    "build:resolve-aliases": "bun scripts/resolve-d-ts-aliases.ts",
-    "prepare": "bun run build"
-  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -51,9 +43,28 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "bun": "./dist/index.js",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./connectors/slack": {
+      "types": "./dist/connectors/slack.d.ts",
+      "import": "./dist/connectors/slack.js",
+      "default": "./dist/connectors/slack.js"
+    },
+    "./connectors/discord": {
+      "types": "./dist/connectors/discord.d.ts",
+      "import": "./dist/connectors/discord.js",
+      "default": "./dist/connectors/discord.js"
+    },
+    "./connectors/gh": {
+      "types": "./dist/connectors/gh.d.ts",
+      "import": "./dist/connectors/gh.js",
+      "default": "./dist/connectors/gh.js"
+    },
+    "./connectors/schedule": {
+      "types": "./dist/connectors/schedule.d.ts",
+      "import": "./dist/connectors/schedule.js",
+      "default": "./dist/connectors/schedule.js"
     },
     "./bin": "./dist/bin.js",
     "./package.json": "./package.json"
@@ -62,24 +73,24 @@
     "access": "public"
   },
   "dependencies": {
-    "@hono/zod-validator": "^0.7.6",
+    "@hono/zod-validator": "^0.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opentui/core": "^0.2.2",
-    "@opentui/react": "^0.2.2",
+    "@opentui/core": "^0.2.12",
+    "@opentui/react": "^0.2.12",
     "@slack/bolt": "^4.7.2",
-    "@slack/web-api": "^7.15.1",
-    "@types/react": "^19.2.14",
+    "@slack/web-api": "^7.16.0",
     "discord.js": "^14.26.4",
-    "hono": "^4.12.16",
-    "react": "^19.2.5",
-    "yaml": "^2.8.4",
-    "zod": "^4.4.2"
+    "hono": "^4.12.19",
+    "react": "^19.2.6",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13",
-    "@typescript/native-preview": "^7.0.0-dev.20260503.1",
-    "vite-plus": "^0.1.20",
-    "vitest": "^4.1.5"
+    "@types/bun": "^1.3.14",
+    "@types/react": "^19.2.14",
+    "@typescript/native-preview": "^7.0.0-dev.20260516.1",
+    "vite-plus": "^0.1.21",
+    "vitest": "^4.1.6"
   },
   "engines": {
     "bun": ">=1.3.0"

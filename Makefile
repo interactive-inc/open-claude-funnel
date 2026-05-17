@@ -1,7 +1,18 @@
-.PHONY: help dev tui test bun-test typecheck check install link
+.PHONY: help dev tui test bun-test typecheck check install link build build-lib build-bin clean
 
 components:
 	npx shadcn@latest add http://localhost:4445/all.json
+
+build: build-lib build-bin
+
+build-lib:
+	@bunx vp pack
+
+build-bin:
+	@bun build lib/bin.ts lib/gateway/daemon.ts --target=bun --outdir dist --minify
+
+clean:
+	@rm -rf dist
 
 dev:
 	@bash -c 'trap "bun lib/index.ts gateway stop >/dev/null 2>&1" EXIT; \

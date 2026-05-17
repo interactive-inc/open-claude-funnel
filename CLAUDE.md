@@ -13,15 +13,18 @@ Connectors (Slack 等) ─→ Channels (購読箱) ─WebSocket→ Claude (MCP)
 ## Commands
 
 ```bash
-bun install          # 依存インストール（postinstall で `bun run build` が走り dist/bin.js が生成される）
-bun run build        # CLI バンドル再生成（lib/bin.ts → dist/bin.js, ~4MB minified）
+bun install          # 依存インストール（自動ビルドはしない。続けて `make build` を打つこと）
+make build           # ライブラリ + CLI ビルド（vp pack → dist/index.js + dist/connectors/*.js、bun build → dist/bin.js ~4MB minified）
+make build-lib       # ライブラリのみ（vp pack）
+make build-bin       # CLI/daemon のみ（bun build --minify）
+make clean           # dist 削除
 bun link             # funnel / fnl をグローバル登録（dist/bin.js を symlink）
 bunx tsc -b          # 型チェック
 bun test             # テスト実行
 bun lib/bin.ts <args># 開発用直接実行（build なしで即時。ただし起動 ~2s）
 ```
 
-`fnl` / `funnel` は `dist/bin.js`（minify した bundle）を指す。コード変更後に `fnl` 経由で動作確認するなら `bun run build` を再実行すること。日常の試行は `bun lib/bin.ts ...` で直接動かすのが速い。
+`fnl` / `funnel` は `dist/bin.js`（minify した bundle）を指す。コード変更後に `fnl` 経由で動作確認するなら `make build` を再実行すること。日常の試行は `bun lib/bin.ts ...` で直接動かすのが速い。
 
 ## Architecture
 

@@ -37,7 +37,7 @@ External sources                       Outbound calls
 bun add -g @interactive-inc/claude-funnel
 ```
 
-`postinstall` runs `bun run build` to produce a single bundled CLI at `dist/bin.js`. After install, `funnel` and `fnl` are available globally.
+The published package already ships the built `dist/`, so `bun add -g` makes `funnel` / `fnl` available immediately — no postinstall step.
 
 ## Quick start
 
@@ -175,12 +175,15 @@ Connectors are stored per type, one file per connector, under `~/.funnel/connect
 
 ## Programmable API (Bun)
 
-`funnel` is also usable as a library — the same `Funnel` facade the CLI uses is exported from the package root, with no CLI side effects.
+`funnel` is also usable as a library — the same `Funnel` facade the CLI uses is exported from the package root. The constructor is fully lazy: `new Funnel()` records its props and freezes, no disk / process / network access happens until a method is called.
 
 ```ts
 import { Funnel } from "@interactive-inc/claude-funnel"
 
-const funnel = new Funnel() // defaults to ~/.funnel + the local filesystem
+const funnel = new Funnel() // defaults to ~/.funnel + /tmp/funnel on the local filesystem
+
+funnel.paths
+// → { dir: "/Users/you/.funnel", tmpDir: "/tmp/funnel", settings: "/Users/you/.funnel/settings.json" }
 
 const channel = funnel.channels.add({ name: "inbox" })
 
@@ -194,7 +197,7 @@ funnel.channels.addConnector("inbox", {
 for (const c of funnel.channels.list()) console.log(c.name, c.connectors.length)
 ```
 
-Every facet — `channels` / `profiles` / `gateway` / `gatewayServer` / `gatewayToken` / `listeners` / `mcp` / `claude` / `factory` / `store` / `process` / `logger` — is reachable from the same instance:
+Every facet — `channels` / `profiles` / `gateway` / `gatewayServer` / `gatewayToken` / `listeners` / `mcp` / `claude` / `factory` / `store` / `process` / `logger` / `paths` — is reachable from the same instance:
 
 ```ts
 funnel.gateway.getStatus()       // { running, pid, port }
@@ -220,9 +223,20 @@ await server.stop()
 unsubscribe()
 ```
 
-The gateway daemon exposes `/health`, `/status`, `/listeners*`, `/channels/:channel/connectors/:connector/call`, plus the `/ws?channel=<name>` WebSocket. There is no SPA; for a visual operator view, run `fnl` with no arguments to launch the OpenTUI dashboard.
+The gateway daemon exposes `/health`, `/status`, `/listeners*`, `/channels/:channel/connectors/:connector/call`, plus the `/ws?channel=<name>` WebSocket.
 
-Every side-effecting boundary is a DI seam. For tests / sandbox use, swap them all with the in-memory implementations and Funnel will not touch real disk, real processes, real time, or real UUIDs:
+### Sandboxed Funnel
+
+`Funnel.inMemory()` returns a Funnel pre-wired with Memory implementations for every IO boundary — useful for tests and ad-hoc experiments. Pass any subset of `props` to override individual seams:
+
+```ts
+import { Funnel } from "@interactive-inc/claude-funnel"
+
+const funnel = Funnel.inMemory()        // touches no real disk, processes, clock, or UUIDs
+funnel.channels.add({ name: "inbox" })  // mutates the in-memory store
+```
+
+The longhand form (for fine-grained control) is still available:
 
 ```ts
 import {
@@ -247,9 +261,51 @@ const funnel = new Funnel({
 })
 ```
 
-Available abstractions (each has `Funnel*` interface, `Node*` default, and `Memory*` for tests): `FunnelFileSystem`, `FunnelProcessRunner`, `FunnelLogger`, `FunnelClock`, `FunnelIdGenerator`. Plus `NoopFunnelLogger` for silent operation.
+Available abstractions (each has `Funnel*` interface, `Node*` default, and `Memory*` for tests): `FunnelFileSystem`, `FunnelProcessRunner`, `FunnelLogger`, `FunnelClock`, `FunnelIdGenerator`. Plus `NoopFunnelLogger` for silent operation and `MockFunnelSettingsReader` for an in-memory settings store.
 
-The published package ships both TypeScript sources (under `lib/`) for library consumers and a single bundled CLI (`dist/bin.js`) which is what the `fnl` / `funnel` bin entries point to. Importing `@interactive-inc/claude-funnel/bin` resolves to the bundled CLI entry — only do this if you're embedding the CLI rather than the library.
+### Embedding the CLI
+
+The same Hono app that backs `fnl` is published as `createCliApp(funnel)` — pass any `Funnel` instance to bind a custom store / boundaries to the routes. The pair `toRequest` (argv → request) and `queryToCliArgs` (URL search params → CLI flags) lets you drive the app programmatically:
+
+```ts
+import { Funnel, createCliApp, toRequest } from "@interactive-inc/claude-funnel"
+
+const app = createCliApp(Funnel.inMemory())
+const { method, url } = toRequest(["channels", "add", "inbox"])
+const res = await app.request(url, { method })
+console.log(await res.text())
+```
+
+`cliApp` is the same app pre-wired to `new Funnel()` for callers who just want the default. The middleware sets the chosen Funnel onto `c.var.funnel`; the matching `Env` type is exported for composing custom routes that share the same context variable.
+
+### Launching the TUI
+
+`launchTui(funnel)` boots the OpenTUI dashboard against any `Funnel` instance — pass `Funnel.inMemory()` to drive it against a fake state, or your production funnel for a live view.
+
+```ts
+import { Funnel, launchTui } from "@interactive-inc/claude-funnel"
+
+await launchTui(new Funnel())
+```
+
+### Validating connector configs
+
+Each connector type publishes its Zod schema, so consumers can parse external configs (JSON files, API payloads, etc.) before handing them to `addConnector`. The discriminated union `connectorConfigSchema` covers the whole set.
+
+```ts
+import {
+  connectorConfigSchema,
+  slackConnectorSchema,
+  type SlackConnectorConfig,
+} from "@interactive-inc/claude-funnel"
+
+const slack: SlackConnectorConfig = slackConnectorSchema.parse(json)
+const any = connectorConfigSchema.parse(json)   // narrows by `type`
+```
+
+### Packaging
+
+The published package ships a bundled library entry (`dist/index.js`) plus generated declarations (`dist/**/*.d.ts`), so consumers do not need a matching tsconfig paths setup to resolve `@/...` imports. The `fnl` / `funnel` bin entries point to a separately bundled `dist/bin.js`. Import `@interactive-inc/claude-funnel/bin` only if you are embedding the CLI binary rather than the library.
 
 ## Claude Code skill
 
@@ -317,9 +373,13 @@ After this, Claude Code will load the skill in any session.
 ```bash
 git clone https://github.com/interactive-inc/open-claude-funnel.git
 cd open-claude-funnel
-bun install         # postinstall builds dist/bin.js
+bun install         # install deps (no auto-build)
+make build          # produce dist/ — run this once after install
 bun link            # symlinks fnl / funnel → dist/bin.js
-bun run build       # rebuild after editing the cli
+make build          # rebuild library + CLI after editing
+make build-lib      # library only (vp pack)
+make build-bin      # CLI / daemon only (bun build --minify)
+make clean          # remove dist/
 bun test            # run tests
 bunx tsc -b         # type check
 bun lib/bin.ts ...  # run the cli from source (no build) for fast iteration
