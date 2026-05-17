@@ -27,10 +27,6 @@
     "funnel": "./dist/bin.js"
   },
   "files": [
-    "lib/**/*.ts",
-    "lib/**/*.tsx",
-    "!lib/**/*.test.ts",
-    "!lib/**/*.test.tsx",
     "dist/**/*",
     "README.md",
     "LICENSE"
