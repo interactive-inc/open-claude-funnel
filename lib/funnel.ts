@@ -71,7 +71,23 @@ type Props = {
  * ```
  */
 export class Funnel {
-  private readonly cache = new Map<string, unknown>()
+  private readonly memos: {
+    fs?: FunnelFileSystem
+    process?: FunnelProcessRunner
+    logger?: FunnelLogger
+    clock?: FunnelClock
+    idGenerator?: FunnelIdGenerator
+    store?: FunnelSettingsReader
+    factory?: FunnelConnectorFactory
+    channels?: FunnelChannels
+    profiles?: FunnelProfiles
+    mcp?: FunnelMcp
+    claude?: FunnelClaude
+    gateway?: FunnelGateway
+    gatewayToken?: FunnelGatewayToken
+    publisher?: FunnelChannelPublisher
+    listeners?: FunnelListenersClient
+  } = {}
 
   constructor(private readonly props: Props = {}) {
     Object.freeze(this)
@@ -95,15 +111,6 @@ export class Funnel {
     })
   }
 
-  private memo<T>(key: string, build: () => T): T {
-    if (this.cache.has(key)) return this.cache.get(key) as T
-
-    const value = build()
-    this.cache.set(key, value)
-
-    return value
-  }
-
   /** Resolved on-disk paths the facade will read/write when methods are called. Pure compute, not memoized. */
   get paths(): { dir: string; tmpDir: string; settings: string } {
     const dir = this.props.dir ?? FUNNEL_DIR
@@ -114,119 +121,137 @@ export class Funnel {
 
   /** Filesystem boundary. Defaults to NodeFunnelFileSystem. */
   get fs(): FunnelFileSystem {
-    return this.memo("fs", () => this.props.fs ?? new NodeFunnelFileSystem())
+    if (!this.memos.fs) this.memos.fs = this.props.fs ?? new NodeFunnelFileSystem()
+
+    return this.memos.fs
   }
 
   /** Process runner boundary. Defaults to NodeFunnelProcessRunner. */
   get process(): FunnelProcessRunner {
-    return this.memo("process", () => this.props.process ?? new NodeFunnelProcessRunner())
+    if (!this.memos.process) this.memos.process = this.props.process ?? new NodeFunnelProcessRunner()
+
+    return this.memos.process
   }
 
   /** Logger boundary. Defaults to NodeFunnelLogger. */
   get logger(): FunnelLogger {
-    return this.memo("logger", () => this.props.logger ?? new NodeFunnelLogger())
+    if (!this.memos.logger) this.memos.logger = this.props.logger ?? new NodeFunnelLogger()
+
+    return this.memos.logger
   }
 
   /** Clock boundary. Defaults to NodeFunnelClock. */
   get clock(): FunnelClock {
-    return this.memo("clock", () => this.props.clock ?? new NodeFunnelClock())
+    if (!this.memos.clock) this.memos.clock = this.props.clock ?? new NodeFunnelClock()
+
+    return this.memos.clock
   }
 
   /** ID generator boundary. Defaults to NodeFunnelIdGenerator. */
   get idGenerator(): FunnelIdGenerator {
-    return this.memo("idGenerator", () => this.props.idGenerator ?? new NodeFunnelIdGenerator())
+    if (!this.memos.idGenerator) {
+      this.memos.idGenerator = this.props.idGenerator ?? new NodeFunnelIdGenerator()
+    }
+
+    return this.memos.idGenerator
   }
 
   /** Settings reader. If not injected, a FunnelSettingsStore rooted at `dir` is created. */
   get store(): FunnelSettingsReader {
-    return this.memo(
-      "store",
-      () =>
+    if (!this.memos.store) {
+      this.memos.store =
         this.props.store ??
         new FunnelSettingsStore({
           path: this.paths.settings,
           fs: this.fs,
-        }),
-    )
+        })
+    }
+
+    return this.memos.store
   }
 
   /** Pure factory that constructs per-type listeners and adapters from connector configs. */
   get factory(): FunnelConnectorFactory {
-    return this.memo(
-      "factory",
-      () =>
-        new FunnelConnectorFactory({
-          fs: this.fs,
-          process: this.process,
-          logger: this.logger,
-          dir: this.paths.dir,
-        }),
-    )
+    if (!this.memos.factory) {
+      this.memos.factory = new FunnelConnectorFactory({
+        fs: this.fs,
+        process: this.process,
+        logger: this.logger,
+        dir: this.paths.dir,
+      })
+    }
+
+    return this.memos.factory
   }
 
   /** Channel CRUD + nested connector CRUD + schedule entries + listener/adapter dispatch. */
   get channels(): FunnelChannels {
-    return this.memo(
-      "channels",
-      () =>
-        new FunnelChannels({
-          store: this.store,
-          factory: this.factory,
-          profileChecker: this.profiles,
-          clock: this.clock,
-          idGenerator: this.idGenerator,
-        }),
-    )
+    if (!this.memos.channels) {
+      this.memos.channels = new FunnelChannels({
+        store: this.store,
+        factory: this.factory,
+        profileChecker: this.profiles,
+        clock: this.clock,
+        idGenerator: this.idGenerator,
+      })
+    }
+
+    return this.memos.channels
   }
 
   /** Launch profiles (named presets for `fnl claude`: path + sub-agent + channel id). */
   get profiles(): FunnelProfiles {
-    return this.memo("profiles", () => new FunnelProfiles({ store: this.store }))
+    if (!this.memos.profiles) this.memos.profiles = new FunnelProfiles({ store: this.store })
+
+    return this.memos.profiles
   }
 
   /** funnel MCP installer (writes/removes `.mcp.json` entries in target repos). */
   get mcp(): FunnelMcp {
-    return this.memo("mcp", () => new FunnelMcp({ fs: this.fs }))
+    if (!this.memos.mcp) this.memos.mcp = new FunnelMcp({ fs: this.fs })
+
+    return this.memos.mcp
   }
 
   /** Launch Claude Code with a channel injected via env, MCP installed, gateway ensured. */
   get claude(): FunnelClaude {
-    return this.memo(
-      "claude",
-      () =>
-        new FunnelClaude({
-          channels: this.channels,
-          mcp: this.mcp,
-          gateway: this.gateway,
-          fs: this.fs,
-          process: this.process,
-          logger: this.logger,
-          dir: this.paths.dir,
-        }),
-    )
+    if (!this.memos.claude) {
+      this.memos.claude = new FunnelClaude({
+        channels: this.channels,
+        mcp: this.mcp,
+        gateway: this.gateway,
+        fs: this.fs,
+        process: this.process,
+        logger: this.logger,
+        dir: this.paths.dir,
+      })
+    }
+
+    return this.memos.claude
   }
 
   /** Gateway daemon controller (PID-file, start/stop the separate `bun daemon.ts` process). */
   get gateway(): FunnelGateway {
-    return this.memo(
-      "gateway",
-      () =>
-        new FunnelGateway({
-          fs: this.fs,
-          process: this.process,
-          clock: this.clock,
-          dir: this.paths.dir,
-          tmpDir: this.paths.tmpDir,
-        }),
-    )
+    if (!this.memos.gateway) {
+      this.memos.gateway = new FunnelGateway({
+        fs: this.fs,
+        process: this.process,
+        clock: this.clock,
+        dir: this.paths.dir,
+        tmpDir: this.paths.tmpDir,
+      })
+    }
+
+    return this.memos.gateway
   }
 
   /** Read / generate the daemon's gateway token (mode 0600 file under `dir`). */
   get gatewayToken(): FunnelGatewayToken {
-    return this.memo(
-      "gatewayToken",
-      () => new FunnelGatewayToken({ fs: this.fs, dir: this.paths.dir }),
-    )
+    if (!this.memos.gatewayToken) {
+      this.memos.gatewayToken = new FunnelGatewayToken({ fs: this.fs, dir: this.paths.dir })
+    }
+
+    return this.memos.gatewayToken
   }
 
   /**
@@ -235,16 +260,18 @@ export class Funnel {
    * connector. Returns `{ state: "offline" }` if the daemon isn't up.
    */
   get publisher(): FunnelChannelPublisher {
-    return this.memo("publisher", () => {
+    if (!this.memos.publisher) {
       const gateway = this.gateway
       const token = this.gatewayToken
 
-      return new FunnelChannelPublisher({
+      this.memos.publisher = new FunnelChannelPublisher({
         port: gateway.getPort(),
         isDaemonRunning: () => gateway.isRunning(),
         getToken: () => token.read(),
       })
-    })
+    }
+
+    return this.memos.publisher
   }
 
   /**
@@ -253,16 +280,18 @@ export class Funnel {
    * paths stay write-only without parsing strings.
    */
   get listeners(): FunnelListenersClient {
-    return this.memo("listeners", () => {
+    if (!this.memos.listeners) {
       const gateway = this.gateway
       const token = this.gatewayToken
 
-      return new FunnelListenersClient({
+      this.memos.listeners = new FunnelListenersClient({
         port: gateway.getPort(),
         isDaemonRunning: () => gateway.isRunning(),
         getToken: () => token.read(),
       })
-    })
+    }
+
+    return this.memos.listeners
   }
 
   /**

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { FunnelGateway } from "@/gateway/gateway"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
+import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 
 const PID_FILE = `${process.env.HOME}/.funnel/gateway.pid`
 
@@ -71,7 +72,11 @@ describe("FunnelGateway", () => {
       stdout: "",
       stderr: "",
     }))
-    const gateway = new FunnelGateway({ fs, process: runner })
+    const clock = new MemoryFunnelClock()
+    const sleep = async (ms: number): Promise<void> => {
+      clock.advance(ms)
+    }
+    const gateway = new FunnelGateway({ fs, process: runner, clock, sleep })
 
     await gateway.start({ caffeinate: false })
 

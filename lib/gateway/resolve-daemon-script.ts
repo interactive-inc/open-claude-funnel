@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 
 /**
  * Locate the daemon entry script. Works in both dev (running from source)
@@ -8,14 +9,18 @@ import { resolve } from "node:path"
  * The candidates cover:
  *  1. dev: this helper lives at lib/gateway/, so daemon.ts is its sibling
  *  2. built sibling: dist/gateway/daemon.js if the helper itself ends up at dist/gateway/
- *  3. bundled: when this helper is inlined into dist/bin.js, import.meta.dir is dist/,
+ *  3. bundled: when this helper is inlined into dist/bin.js, the helper's dir is dist/,
  *     and daemon.js lives at dist/gateway/daemon.js
+ *
+ * `import.meta.url` works in both Bun and Node test runners; `import.meta.dir`
+ * is Bun-only and breaks vitest.
  */
 export const resolveDaemonScript = (): string => {
+  const here = dirname(fileURLToPath(import.meta.url))
   const candidates = [
-    resolve(import.meta.dir, "./daemon.ts"),
-    resolve(import.meta.dir, "./daemon.js"),
-    resolve(import.meta.dir, "./gateway/daemon.js"),
+    resolve(here, "./daemon.ts"),
+    resolve(here, "./daemon.js"),
+    resolve(here, "./gateway/daemon.js"),
   ]
 
   for (const candidate of candidates) {

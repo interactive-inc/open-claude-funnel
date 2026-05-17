@@ -26,8 +26,15 @@ test:
 	@bunx vp test run
 	@$(MAKE) bun-test
 
+# Tests that need Bun-runtime APIs (Bun.serve, bun:sqlite) at runtime.
+# Vitest's Node workers cannot run them; bun test executes them natively.
+# Keep this list in sync with vite.config.ts `test.exclude`.
 bun-test:
-	@bun test $$(find lib -name "*.bun-test.ts" | sed 's|^|./|')
+	@bun test \
+		./lib/funnel.test.ts \
+		./lib/gateway/gateway-server.test.ts \
+		./lib/gateway/funnel-event-store.test.ts \
+		./lib/logger/leuco-logger-sqlite-sink.test.ts
 
 typecheck:
 	@bunx tsc -b

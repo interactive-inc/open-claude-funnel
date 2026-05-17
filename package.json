@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "keywords": [
     "bun",
@@ -31,7 +31,6 @@
     "lib/**/*.tsx",
     "!lib/**/*.test.ts",
     "!lib/**/*.test.tsx",
-    "!lib/**/*.bun-test.ts",
     "dist/**/*",
     "README.md",
     "LICENSE"

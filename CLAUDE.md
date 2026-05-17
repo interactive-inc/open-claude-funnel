@@ -67,11 +67,13 @@ make build-bin        # CLI / daemon のみ（bun build --minify）
 make clean            # dist 削除
 bun link              # funnel / fnl をグローバル登録
 bunx tsc -b           # 型チェック
-bun test              # テスト
+make test             # テスト全実行（vitest + bun test）
 bun lib/bin.ts <args> # 開発用直接実行（build 不要、起動 ~2s）
 ```
 
 `fnl` / `funnel` は `dist/bin.js` を指す bundle。コード変更を `fnl` で確かめるなら `make build` を再実行。日常の試行は `bun lib/bin.ts ...` が速い。
+
+テストファイルは全て `.test.ts` で統一する。ほとんどは vite-plus（vitest）で走る Node ランナーのユニットテスト。`Bun.serve` や `bun:sqlite` を import チェーンに含む統合テストだけは Bun ランタイムを必要とするので、`vite.config.ts` の `test.exclude` で列挙して `bun test` 側に回す（Makefile の `bun-test` ターゲットに同じリストを並べる）。`make test` が両方を続けて走らせる。新規テストを書くときは、まず vitest で動くかを確かめて、`bun:` 系 import を chain に持ち込む場合だけ exclude リストに追加すること。
 
 ## レイヤ地図
 

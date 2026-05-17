@@ -3,9 +3,9 @@ import type { ConnectorConfig } from "@/connectors/connector-config-schema"
 import type { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import type { FunnelConnectorListener } from "@/connectors/connector-listener"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
-import type { GhConnectorConfig } from "@/connectors/gh-connector-schema"
-import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedule-connector-schema"
-import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
+import type { ScheduleEntry } from "@/connectors/schedule-connector-schema"
+import { connectorTokens } from "@/engine/channels/connector-tokens"
+import { requireConnectorOfType } from "@/engine/channels/require-connector"
 import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
@@ -182,47 +182,44 @@ export class FunnelChannels {
     const createdAt = now
     const updatedAt = now
 
-    if (input.type === "slack") {
-      return {
-        id,
-        type: "slack",
-        name: input.name,
-        botToken: input.botToken,
-        appToken: input.appToken,
-        createdAt,
-        updatedAt,
-      }
-    }
-
-    if (input.type === "gh") {
-      return {
-        id,
-        type: "gh",
-        name: input.name,
-        ...(input.pollInterval !== undefined ? { pollInterval: input.pollInterval } : {}),
-        createdAt,
-        updatedAt,
-      }
-    }
-
-    if (input.type === "discord") {
-      return {
-        id,
-        type: "discord",
-        name: input.name,
-        botToken: input.botToken,
-        createdAt,
-        updatedAt,
-      }
-    }
-
-    return {
-      id,
-      type: "schedule",
-      name: input.name,
-      entries: input.entries ?? [],
-      createdAt,
-      updatedAt,
+    switch (input.type) {
+      case "slack":
+        return {
+          id,
+          type: "slack",
+          name: input.name,
+          botToken: input.botToken,
+          appToken: input.appToken,
+          createdAt,
+          updatedAt,
+        }
+      case "gh":
+        return {
+          id,
+          type: "gh",
+          name: input.name,
+          ...(input.pollInterval !== undefined ? { pollInterval: input.pollInterval } : {}),
+          createdAt,
+          updatedAt,
+        }
+      case "discord":
+        return {
+          id,
+          type: "discord",
+          name: input.name,
+          botToken: input.botToken,
+          createdAt,
+          updatedAt,
+        }
+      case "schedule":
+        return {
+          id,
+          type: "schedule",
+          name: input.name,
+          entries: input.entries ?? [],
+          createdAt,
+          updatedAt,
+        }
     }
   }
 
@@ -264,9 +261,9 @@ export class FunnelChannels {
   ): void {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
-    const connector = this.requireSlackConnector(channel, connectorName)
+    const connector = requireConnectorOfType(channel, connectorName, "slack")
 
-    const updated: SlackConnectorConfig = {
+    const updated = {
       ...connector,
       botToken: fields.botToken ?? connector.botToken,
       appToken: fields.appToken ?? connector.appToken,
@@ -286,7 +283,7 @@ export class FunnelChannels {
   ): void {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
-    const connector = this.requireGhConnector(channel, connectorName)
+    const connector = requireConnectorOfType(channel, connectorName, "gh")
 
     if (fields.pollInterval !== undefined) connector.pollInterval = fields.pollInterval
     connector.updatedAt = this.clock.iso()
@@ -301,9 +298,9 @@ export class FunnelChannels {
   ): void {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
-    const connector = this.requireDiscordConnector(channel, connectorName)
+    const connector = requireConnectorOfType(channel, connectorName, "discord")
 
-    const updated: DiscordConnectorConfig = {
+    const updated = {
       ...connector,
       botToken: fields.botToken ?? connector.botToken,
       updatedAt: this.clock.iso(),
@@ -317,7 +314,7 @@ export class FunnelChannels {
 
   listScheduleEntries(channelName: string, connectorName: string): ScheduleEntry[] {
     const channel = this.requireChannel(this.store.read(), channelName)
-    const connector = this.requireScheduleConnector(channel, connectorName)
+    const connector = requireConnectorOfType(channel, connectorName, "schedule")
 
     return connector.entries
   }
@@ -330,7 +327,7 @@ export class FunnelChannels {
   ): ScheduleEntry {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
-    const connector = this.requireScheduleConnector(channel, connectorName)
+    const connector = requireConnectorOfType(channel, connectorName, "schedule")
 
     const persisted: ScheduleEntry = {
       id: entry.id ?? this.idGenerator.generate(),
@@ -350,7 +347,7 @@ export class FunnelChannels {
   removeScheduleEntry(channelName: string, connectorName: string, id: string): void {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
-    const connector = this.requireScheduleConnector(channel, connectorName)
+    const connector = requireConnectorOfType(channel, connectorName, "schedule")
     const index = connector.entries.findIndex((e) => e.id === id)
 
     if (index < 0) throw new Error(`schedule entry "${id}" not found`)
@@ -430,67 +427,8 @@ export class FunnelChannels {
     return channel
   }
 
-  private requireConnector(channel: ChannelConfig, connectorName: string): ConnectorConfig {
-    const connector = channel.connectors.find((c) => c.name === connectorName)
-
-    if (!connector) {
-      throw new Error(`connector "${connectorName}" not found in channel "${channel.name}"`)
-    }
-
-    return connector
-  }
-
-  private requireSlackConnector(
-    channel: ChannelConfig,
-    connectorName: string,
-  ): SlackConnectorConfig {
-    const connector = this.requireConnector(channel, connectorName)
-
-    if (connector.type !== "slack") {
-      throw new Error(`connector "${connectorName}" is type "${connector.type}", not "slack"`)
-    }
-
-    return connector
-  }
-
-  private requireGhConnector(channel: ChannelConfig, connectorName: string): GhConnectorConfig {
-    const connector = this.requireConnector(channel, connectorName)
-
-    if (connector.type !== "gh") {
-      throw new Error(`connector "${connectorName}" is type "${connector.type}", not "gh"`)
-    }
-
-    return connector
-  }
-
-  private requireDiscordConnector(
-    channel: ChannelConfig,
-    connectorName: string,
-  ): DiscordConnectorConfig {
-    const connector = this.requireConnector(channel, connectorName)
-
-    if (connector.type !== "discord") {
-      throw new Error(`connector "${connectorName}" is type "${connector.type}", not "discord"`)
-    }
-
-    return connector
-  }
-
-  private requireScheduleConnector(
-    channel: ChannelConfig,
-    connectorName: string,
-  ): ScheduleConnectorConfig {
-    const connector = this.requireConnector(channel, connectorName)
-
-    if (connector.type !== "schedule") {
-      throw new Error(`connector "${connectorName}" is type "${connector.type}", not "schedule"`)
-    }
-
-    return connector
-  }
-
   private assertNoTokenCollision(settings: Settings, candidate: ConnectorConfig): void {
-    const tokens = this.tokensOf(candidate)
+    const tokens = connectorTokens(candidate)
 
     if (tokens.length === 0) return
 
@@ -498,7 +436,7 @@ export class FunnelChannels {
       for (const other of channel.connectors) {
         if (other.id === candidate.id) continue
 
-        for (const token of this.tokensOf(other)) {
+        for (const token of connectorTokens(other)) {
           if (tokens.includes(token)) {
             throw new Error(
               `token already in use by connector "${other.name}" in channel "${channel.name}"`,
@@ -508,13 +446,4 @@ export class FunnelChannels {
       }
     }
   }
-
-  private tokensOf(connector: ConnectorConfig): string[] {
-    if (connector.type === "slack") return [connector.botToken, connector.appToken]
-    if (connector.type === "discord") return [connector.botToken]
-
-    return []
-  }
 }
-
-export type { ScheduleConnectorConfig }

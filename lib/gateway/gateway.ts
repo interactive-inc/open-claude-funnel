@@ -88,9 +88,9 @@ export class FunnelGateway {
 
     this.process.detach(["bash", "-c", command])
 
-    const deadline = Date.now() + STARTUP_TIMEOUT_MS
+    const deadline = this.clock.millis() + STARTUP_TIMEOUT_MS
 
-    while (Date.now() < deadline) {
+    while (this.clock.millis() < deadline) {
       if (this.isRunning()) return true
       await this.sleep(POLL_INTERVAL_MS)
     }
