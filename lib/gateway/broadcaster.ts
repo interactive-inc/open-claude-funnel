@@ -1,4 +1,4 @@
-import type { ServerWebSocket } from "bun"
+import { type ServerWebSocket } from "bun"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 

@@ -22,6 +22,7 @@ export default defineConfig({
     },
     format: "esm",
     dts: true,
+    deps: { neverBundle: ["bun", "bun:sqlite"] },
     outExtensions: () => ({ js: ".js" }),
   },
 })

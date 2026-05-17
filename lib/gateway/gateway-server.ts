@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
-import type { Server, ServerWebSocket } from "bun"
+import { type Server, type ServerWebSocket } from "bun"
 import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"

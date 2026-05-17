@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
@@ -7,14 +6,14 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js"
+import { FunnelChannelSubscriber } from "@/engine/mcp/channel-subscriber"
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
-import { settingsSchema } from "@/engine/settings/settings-schema"
+import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
+import { readGatewayToken } from "@/engine/mcp/read-gateway-token"
+import { usageHintForType } from "@/engine/mcp/usage-hint-for-type"
 
 const DEFAULT_FUNNEL_DIR = join(homedir(), ".funnel")
 const DEFAULT_GATEWAY_BASE_URL = "http://localhost:9742"
-const RECONNECT_DELAY = 1000
-const MAX_RECONNECT_DELAY = 10000
-const TOOL_CONNECTOR_TYPES = new Set(["slack", "gh", "discord"])
 
 export type ChannelServerOptions = {
   /** Funnel home directory (settings.json + gateway.token). Defaults to ~/.funnel. */
@@ -25,60 +24,6 @@ export type ChannelServerOptions = {
   channelId?: string
   /** Auth token. Defaults to `$FUNNEL_GATEWAY_TOKEN` then `<dir>/gateway.token`. */
   token?: string
-}
-
-const readGatewayToken = (dir: string): string | null => {
-  const fromEnv = process.env.FUNNEL_GATEWAY_TOKEN
-
-  if (fromEnv && fromEnv.length > 0) return fromEnv
-
-  const path = join(dir, "gateway.token")
-
-  if (!existsSync(path)) return null
-
-  const value = readFileSync(path, "utf-8").trim()
-
-  return value.length > 0 ? value : null
-}
-
-const readChannelConnectors = (
-  dir: string,
-  channelId: string,
-): { channelName: string; connectors: { name: string; type: string }[] } | null => {
-  const settingsPath = join(dir, "settings.json")
-
-  if (!existsSync(settingsPath)) return null
-
-  const raw = JSON.parse(readFileSync(settingsPath, "utf-8"))
-  const parsed = settingsSchema.safeParse(raw)
-
-  if (!parsed.success) return null
-
-  const channel = parsed.data.channels.find((c) => c.id === channelId)
-
-  if (!channel) return null
-
-  const connectors = channel.connectors
-    .filter((c) => TOOL_CONNECTOR_TYPES.has(c.type))
-    .map((c) => ({ name: c.name, type: c.type }))
-
-  return { channelName: channel.name, connectors }
-}
-
-const usageHintForType = (type: string): string => {
-  if (type === "slack") {
-    return "Slack Web API. method=POST path=chat.postMessage body={channel,text,thread_ts?}"
-  }
-
-  if (type === "discord") {
-    return "Discord REST API. method=POST path=/channels/<id>/messages body={content,...}"
-  }
-
-  if (type === "gh") {
-    return "GitHub REST via gh CLI. method=POST path=repos/owner/repo/issues/N/comments body={body}"
-  }
-
-  return "Generic adapter call."
 }
 
 export const startChannelServer = async (
@@ -168,56 +113,11 @@ export const startChannelServer = async (
 
   if (!channelId) return
 
-  const baseUrl = `${gatewayWsUrl}?channel=${encodeURIComponent(channelId)}`
-  const protocols = token ? [`funnel.token.${token}`] : undefined
-  let reconnectDelay = RECONNECT_DELAY
-  let lastOffset = 0
+  const subscriber = new FunnelChannelSubscriber({
+    server,
+    baseUrl: `${gatewayWsUrl}?channel=${encodeURIComponent(channelId)}`,
+    protocols: token ? [`funnel.token.${token}`] : undefined,
+  })
 
-  const connect = () => {
-    const sinceQuery = lastOffset > 0 ? `&since=${lastOffset}` : ""
-    const wsUrl = `${baseUrl}${sinceQuery}`
-    const ws = new WebSocket(wsUrl, protocols)
-
-    ws.addEventListener("open", () => {
-      reconnectDelay = RECONNECT_DELAY
-      process.stderr.write(`funnel: connected (${wsUrl})\n`)
-    })
-
-    ws.addEventListener("message", async (event) => {
-      try {
-        const payload = JSON.parse(String(event.data))
-        const eventType = payload.meta?.event_type ?? "unknown"
-
-        if (typeof payload.offset === "number" && payload.offset > lastOffset) {
-          lastOffset = payload.offset
-        }
-
-        process.stderr.write(`funnel: received event (${eventType})\n`)
-
-        await server.notification({
-          method: "notifications/claude/channel",
-          params: {
-            content: payload.content,
-            meta: payload.meta,
-          },
-        })
-      } catch (error) {
-        process.stderr.write(
-          `funnel: error: ${error instanceof Error ? error.message : String(error)}\n`,
-        )
-      }
-    })
-
-    ws.addEventListener("close", () => {
-      process.stderr.write(`funnel: disconnected, reconnecting in ${reconnectDelay}ms\n`)
-      setTimeout(connect, reconnectDelay)
-      reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY)
-    })
-
-    ws.addEventListener("error", () => {
-      // close handler will reconnect
-    })
-  }
-
-  connect()
+  subscriber.start()
 }
