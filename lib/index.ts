@@ -51,9 +51,11 @@ export * from "@/gateway/gateway"
 export * from "@/gateway/gateway-server"
 export * from "@/gateway/gateway-token"
 export * from "@/gateway/broadcaster"
+export * from "@/gateway/channel-publisher"
 export * from "@/gateway/funnel-event-store"
 export * from "@/gateway/listener-supervisor"
 export * from "@/gateway/listeners-client"
+export * from "@/gateway/publish-schema"
 
 // CLI — embeddable Hono app + argv translator
 export * from "@/cli/factory"

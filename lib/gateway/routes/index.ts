@@ -1,5 +1,6 @@
 import { factory } from "@/gateway/factory"
 import { channelsConnectorsCallHandler } from "@/gateway/routes/channels.connectors.call"
+import { channelsPublishHandler } from "@/gateway/routes/channels.publish"
 import { healthHandler } from "@/gateway/routes/health"
 import { listenersListHandler } from "@/gateway/routes/listeners.list"
 import { listenersRestartHandler } from "@/gateway/routes/listeners.restart"
@@ -22,3 +23,4 @@ export const gatewayRoutes = factory
   .delete("/listeners/:channel/:connector", ...listenersStopHandler)
   .post("/listeners/:channel/:connector/restart", ...listenersRestartHandler)
   .post("/channels/:channel/connectors/:connector/call", ...channelsConnectorsCallHandler)
+  .post("/channels/:channel/publish", ...channelsPublishHandler)

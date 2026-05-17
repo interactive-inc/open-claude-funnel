@@ -30,6 +30,8 @@ export const profileConfigSchema = z.object({
   path: z.string(),
   subAgent: z.string(),
   channelId: z.string(),
+  /** Forwards `--brief` to claude on launch (enables the SendUserMessage tool). */
+  brief: z.boolean().optional(),
 })
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>

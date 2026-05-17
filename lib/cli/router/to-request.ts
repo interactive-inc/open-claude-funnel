@@ -13,6 +13,7 @@ const METHOD_KEYWORDS = new Set([
   "rename",
   "as-default",
   "request",
+  "publish",
 ])
 
 const API_CALL_METHODS = new Set(["get", "post", "put", "patch", "delete", "head", "options"])

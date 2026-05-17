@@ -104,8 +104,9 @@ export class FunnelGatewayServer {
     this.supervisor = new FunnelListenerSupervisor({
       channels: this.channels,
       logger: this.logger,
-      notify: (channelName, connectorName, content, meta) =>
-        this.notify(channelName, connectorName, content, meta),
+      notify: async (channelName, connectorName, content, meta) => {
+        this.emit({ channel: channelName, connector: connectorName, content, meta })
+      },
       now: this.nowMs,
     })
   }
@@ -278,6 +279,7 @@ export class FunnelGatewayServer {
         supervisor: this.supervisor,
         channels: this.channels,
         uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
+        emit: (input) => this.emit(input),
       })
 
       return next()
@@ -371,32 +373,42 @@ export class FunnelGatewayServer {
     this.logger.info("funnel gateway running")
   }
 
-  private async notify(
-    channelName: string,
-    connectorName: string,
-    content: string,
-    meta?: Record<string, string>,
-  ): Promise<void> {
-    const channelId = this.lookupChannelId(channelName)
-    const connectorId = channelId ? this.lookupConnectorId(channelId, connectorName) : null
+  /**
+   * Broadcast `content` to subscribers of `channel`, persisting the event in
+   * the SQLite store and stamping `meta.channel{,Id}` / `meta.connector{,Id}`
+   * when they resolve. Used by both the connector-listener path (via the
+   * supervisor's `notify` callback) and the public `/channels/:channel/publish`
+   * route. Returns the assigned event offset.
+   */
+  emit(input: {
+    channel: string
+    connector?: string
+    content: string
+    meta?: Record<string, string>
+  }): { offset: number } {
+    const channelId = this.lookupChannelId(input.channel)
+    const connectorId =
+      channelId && input.connector ? this.lookupConnectorId(channelId, input.connector) : null
     const enriched: Record<string, string> = {
-      ...meta,
-      channel: channelName,
-      connector: connectorName,
+      ...input.meta,
+      channel: input.channel,
     }
 
+    if (input.connector) enriched.connector = input.connector
     if (channelId) enriched.channelId = channelId
     if (connectorId) enriched.connectorId = connectorId
 
-    const event = this.broadcaster.broadcast(content, enriched)
+    const event = this.broadcaster.broadcast(input.content, enriched)
 
     this.eventStore.record({
-      content,
+      content: input.content,
       channelId: channelId ?? null,
       connectorId: connectorId ?? null,
       meta: enriched,
       offset: event.offset,
     })
+
+    return { offset: event.offset }
   }
 
   private lookupChannelId(channelName: string): string | null {

@@ -22,6 +22,7 @@ import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-stor
 import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
+import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
 import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
@@ -226,6 +227,24 @@ export class Funnel {
       "gatewayToken",
       () => new FunnelGatewayToken({ fs: this.fs, dir: this.paths.dir }),
     )
+  }
+
+  /**
+   * HTTP client for `POST /channels/:channel/publish` on the running gateway
+   * daemon. Use it to push arbitrary content into a channel from outside any
+   * connector. Returns `{ state: "offline" }` if the daemon isn't up.
+   */
+  get publisher(): FunnelChannelPublisher {
+    return this.memo("publisher", () => {
+      const gateway = this.gateway
+      const token = this.gatewayToken
+
+      return new FunnelChannelPublisher({
+        port: gateway.getPort(),
+        isDaemonRunning: () => gateway.isRunning(),
+        getToken: () => token.read(),
+      })
+    })
   }
 
   /**

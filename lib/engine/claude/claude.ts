@@ -16,6 +16,8 @@ export type LaunchOptions = {
   subAgent?: string
   userArgs?: string[]
   profileName?: string
+  /** Forward `--brief` to claude on launch (enables the SendUserMessage tool). */
+  brief?: boolean
 }
 
 type Deps = {
@@ -180,6 +182,10 @@ export class FunnelClaude {
 
     if (!result.includes("--agent") && options.subAgent) {
       result.push("--agent", options.subAgent)
+    }
+
+    if (options.brief && !result.includes("--brief")) {
+      result.push("--brief")
     }
 
     return result

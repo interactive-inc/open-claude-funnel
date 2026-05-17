@@ -62,6 +62,7 @@ export const claudeHandler = factory.createHandlers(
       subAgent: profile.subAgent,
       userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
       profileName: profile.name,
+      brief: profile.brief,
     })
 
     process.exit(exitCode)

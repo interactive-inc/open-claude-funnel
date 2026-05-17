@@ -33,6 +33,10 @@ import {
   removeHelp as channelsConnectorsSchedulesRemoveHelp,
 } from "@/cli/routes/channels.$channel.connectors.$connector.schedules.remove.$id"
 import {
+  channelsPublishHandler,
+  publishHelp as channelsPublishHelp,
+} from "@/cli/routes/channels.$channel.publish"
+import {
   channelsRemoveHandler,
   removeHelp as channelsRemoveHelp,
 } from "@/cli/routes/channels.remove.$channel"
@@ -116,6 +120,8 @@ export const createCliApp = (funnel: Funnel) => {
   .post("/channels/rename", ...helpRoute(channelsRenameHelp))
   .post("/channels/:channel/rename", ...helpRoute(channelsRenameHelp))
   .post("/channels/:channel/set/delivery/:mode", ...channelsSetDeliveryHandler)
+  .post("/channels/publish", ...helpRoute(channelsPublishHelp))
+  .post("/channels/:channel/publish", ...channelsPublishHandler)
   .get("/channels/:channel", ...channelsShowHandler)
   .get("/channels/:channel/connectors", ...channelsConnectorsGroupHandler)
   .post(
