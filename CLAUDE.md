@@ -12,6 +12,51 @@ Connectors (Slack 等) ─→ Channels (購読箱) ─WebSocket→ Claude (MCP)
 
 CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core から共有する。Web UI は持たない。
 
+## ドメイン語彙
+
+新しい機能を足すときはここで概念の置き場所を決める。
+
+### Channel
+
+購読箱。`{ id, name, delivery, connectors[] }` を持ち、複数の Connector を nest する単位。WS クライアントはチャネル名で subscribe する。`delivery` は 2 種類。
+
+- `fanout` — 全 subscriber が全 event を受信する。各 subscriber が独立した仕事を持つ場合（複数 Profile が同じ source を別々に処理する、TUI が観察するなど）
+- `exclusive` — 1 event を 1 subscriber が round-robin で消費する。subscriber が交換可能な worker で、各 event を 1 回だけ処理させたい場合
+- `tap=all`（TUI 等の観察用クライアント）は delivery mode に関係なく常に全部受信する
+
+### Connector
+
+外部サービスとの 1 つの接続。`slack` / `gh` / `discord` / `schedule` の 4 型。Channel に nested で持つ（1 Channel に複数 Connector）。型ごとの内訳：
+
+- Listener — 外部 → Funnel の入口。push（Slack Socket Mode）か pull（GitHub poll）か tick（Schedule cron）かは型による
+- Adapter — Claude → 外部の出口（callable な型のみ。schedule にはない）
+- Schema / EventProcessor — 設定と event 整形
+
+### Profile
+
+1 つの Claude 起動設定。`{ name, path, subAgent, channelId }` の束。`fnl claude --profile <name>` で path（cwd）に移動し、sub-agent を選び、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。Profile 自身は Connector を持たない（Channel が持つ）。
+
+### Listener Supervisor と Broadcaster
+
+gateway 内に常駐する 2 つの裏方。Supervisor は Listener の起動 / 停止 / 自動再起動を管理する registry。Broadcaster は notify を受け取って WS クライアントに fanout し、event store に seq を打って永続化する。
+
+### イベントの旅
+
+1 つの Slack メッセージが Claude に届くまで。
+
+```
+Slack → SlackListener.start(notify) → notify(channel, connector, content, meta)
+     → GatewayServer.notify → Broadcaster.broadcast → event store に seq 付き保存
+     → 該当 Channel を subscribe している WS クライアントに fanout
+     → Claude 側 MCP（channel-server）が受信して Claude に events として渡す
+```
+
+逆方向（Claude → Slack）は MCP の per-connector tool 経由。Claude が tool を呼ぶ → MCP サーバが gateway の channel call エンドポイントに HTTP POST → `FunnelChannels.call()` → Adapter → Slack。Listener と Adapter は独立した一方向の通路で、Broadcaster は経由しない。
+
+### gateway の要否
+
+`fnl channels add` 等の store 編集系は gateway なしでも動く。Listener を起動するもの（実イベントを流す）と WS で受け取るもの（MCP / TUI 観察）だけが gateway を必要とする。store 編集後に gateway が動いていれば、対応する Listener を hot-reload する。
+
 ## コマンド
 
 ```bash
@@ -65,18 +110,16 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 
 汎用 LeucoLogger 系。gateway の event store が SQLite sink として利用。
 
-## ランタイムアセット
+## Storage 規約
 
-持続データは `~/.funnel/`、揮発ログは `/tmp/funnel/`。
+ファイル一覧そのものは README.md の File layout を参照。ここには Claude が新規に永続データを足すときの判断ルールだけを置く。
 
-- `~/.funnel/settings.json` — channels と profiles のみ。channels に connectors を nested で持つ
-- `~/.funnel/connectors/<type>/<name>.(json|jsonl)` — Connector 設定は型ごとに分散配置。`schedule` のみ jsonl + `.state.json`
-- `~/.funnel/gateway.pid` — daemon の PID
-- `~/.funnel/claude/<profile>.pid` — Claude 起動の二重起動防止
-- `/tmp/funnel/events/events.db` — SQLite event store（broadcaster の offset を seq として保持、再接続 replay は indexed range scan）
-- `/tmp/funnel/funnel.log` — 診断ログ（JSON append）。`fnl gateway logs` が tail する
-- `/tmp/funnel/gateway.log` — daemon の stdout/stderr
-- Gateway ポート 9742（`FUNNEL_PORT` で変更可）
+- 永続データは `~/.funnel/` 配下、揮発ログ / イベントストアは `/tmp/funnel/` 配下に置く
+- パスはハードコードせず、各モジュールが `FUNNEL_DIR`（または DI された `dir` / `tmpDir`）から `join` で構築する。Memory 実装でテストできるようにするため
+- Connector の per-instance な永続 state は `channels/<channel-id>/connectors/<connector-id>/` 配下に置く。id ベースで切るので rename しても追従する。name ベースで切らない
+- Connector の「設定」は settings.json に nested で入れる、「state」だけ上のディレクトリに分ける。設定と state を同じ場所に混ぜない
+- daemon 系の揮発ファイル（pid / token 等）は `~/.funnel/` 直下に置く
+- Gateway ポートは 9742（`FUNNEL_PORT` で変更可）
 
 ## 設計原則
 
@@ -131,11 +174,10 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 
 ### MCP Channel
 
-- Claude Code 側の stdio MCP サーバ
-- `FUNNEL_CHANNEL_ID` 未設定なら no-op
-- `experimental: { "claude/channel": {} }` capability 必須。対象リポジトリの `.mcp.json` に登録する（`fnl repos add` で自動書き込み）
-- 起動時に該当チャネルの connectors を読み、tool 1 つに 1 connector を動的公開する（schedule は除外）。tool 名 = connector 名、引数は `{ method, path, body? }`
-- tool 呼び出しは gateway の channel call エンドポイントへ Bearer auth 付き HTTP POST し、レスポンス JSON をそのまま Claude に返す（bash を経由せず）
+二系統を 1 つの stdio MCP サーバで提供する。受信（events）と送信（tools）は実装も方向も別。
+
+- 受信系 — gateway に WS 接続してイベントを Claude に流す。`FUNNEL_CHANNEL_ID` 未設定なら no-op。`experimental: { "claude/channel": {} }` capability 必須。対象リポジトリの `.mcp.json` に登録する（`fnl repos add` で自動書き込み）
+- 送信系 — 起動時に該当チャネルの connectors を読み、tool 1 つに 1 connector を動的公開する（schedule は除外）。tool 名 = connector 名、引数は `{ method, path, body? }`。tool 呼び出しは gateway の channel call エンドポイントへ Bearer auth 付き HTTP POST し、レスポンス JSON をそのまま Claude に返す（bash を経由しない）
 
 ### TUI と Claude 起動
 
