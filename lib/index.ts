@@ -45,6 +45,7 @@ export * from "@/connectors/discord-connector-schema"
 export * from "@/connectors/gh-connector-schema"
 export * from "@/connectors/schedule-connector-schema"
 export * from "@/connectors/slack-connector-schema"
+export * from "@/connectors/slack-event-processor"
 
 // Gateway
 export * from "@/gateway/gateway"
