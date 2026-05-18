@@ -10,42 +10,12 @@ type Deps = {
   env?: NodeJS.ProcessEnv
 }
 
-const ENV_REFERENCE = /^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/
-
-type Resolution =
-  | { kind: "value"; value: string }
-  | { kind: "absent" }
-  | { kind: "unresolved"; varName: string }
-
-const classify = (
-  raw: string | undefined,
-  env: NodeJS.ProcessEnv,
-  dotenv: Record<string, string>,
-): Resolution => {
-  if (raw === undefined || raw === "") return { kind: "absent" }
-
-  const match = raw.match(ENV_REFERENCE)
-
-  if (!match || !match[1]) return { kind: "value", value: raw }
-
-  const varName = match[1]
-  const fromProcessEnv = env[varName]
-
-  if (fromProcessEnv) return { kind: "value", value: fromProcessEnv }
-
-  const fromDotenv = dotenv[varName]
-
-  if (fromDotenv) return { kind: "value", value: fromDotenv }
-
-  return { kind: "unresolved", varName }
-}
-
 /**
- * Reconciles a funnel.json spec with `~/.funnel/settings.json`. Creates the
- * channel and any missing connectors, resolves token fields from $VAR / .env.local
- * / prompt, and updates existing connectors when funnel.json declares a fresh
- * token value (literal or resolved $VAR). Existing connectors that funnel.json
- * does not mention are left alone — the spec is additive.
+ * Reconciles a `funnel.json` spec with `~/.funnel/settings.json`. Creates the
+ * channel and any missing connectors, resolves token fields from literal /
+ * `env: { ... }` references / prompt, and updates existing connectors when
+ * the spec declares a fresh token value. Connectors not mentioned by the
+ * spec are left alone — the spec is additive.
  */
 export class FunnelLocalConfigSync {
   private readonly channels: FunnelChannels
@@ -83,18 +53,20 @@ export class FunnelLocalConfigSync {
     const existing = this.channels.getConnector(channelName, spec.name)
 
     if (spec.type === "slack") {
-      const botToken = await this.resolveToken(
-        spec.botToken,
+      const botToken = await this.resolveField({
+        literal: spec.botToken,
+        envVar: spec.env?.botToken,
         dotenv,
-        `${spec.name}.botToken`,
-        existing?.type === "slack" ? existing.botToken : undefined,
-      )
-      const appToken = await this.resolveToken(
-        spec.appToken,
+        label: `${spec.name}.botToken`,
+        existing: existing?.type === "slack" ? existing.botToken : undefined,
+      })
+      const appToken = await this.resolveField({
+        literal: spec.appToken,
+        envVar: spec.env?.appToken,
         dotenv,
-        `${spec.name}.appToken`,
-        existing?.type === "slack" ? existing.appToken : undefined,
-      )
+        label: `${spec.name}.appToken`,
+        existing: existing?.type === "slack" ? existing.appToken : undefined,
+      })
 
       if (!existing) {
         this.channels.addConnector(channelName, {
@@ -120,12 +92,13 @@ export class FunnelLocalConfigSync {
     }
 
     if (spec.type === "discord") {
-      const botToken = await this.resolveToken(
-        spec.botToken,
+      const botToken = await this.resolveField({
+        literal: spec.botToken,
+        envVar: spec.env?.botToken,
         dotenv,
-        `${spec.name}.botToken`,
-        existing?.type === "discord" ? existing.botToken : undefined,
-      )
+        label: `${spec.name}.botToken`,
+        existing: existing?.type === "discord" ? existing.botToken : undefined,
+      })
 
       if (!existing) {
         this.channels.addConnector(channelName, {
@@ -186,24 +159,37 @@ export class FunnelLocalConfigSync {
     }
   }
 
-  private async resolveToken(
-    raw: string | undefined,
-    dotenv: Record<string, string>,
-    label: string,
-    existing: string | undefined,
-  ): Promise<string> {
-    const resolution = classify(raw, this.env, dotenv)
-
-    if (resolution.kind === "value") return resolution.value
-
-    if (resolution.kind === "unresolved") {
+  private async resolveField(input: {
+    literal: string | undefined
+    envVar: string | undefined
+    dotenv: Record<string, string>
+    label: string
+    existing: string | undefined
+  }): Promise<string> {
+    if (input.literal !== undefined && input.envVar !== undefined) {
       throw new Error(
-        `${label} references $${resolution.varName} but it is not set in env or .env.local`,
+        `${input.label} is set both as a literal and as env.${input.label.split(".").pop()}; pick one`,
       )
     }
 
-    if (existing) return existing
+    if (input.literal !== undefined && input.literal !== "") return input.literal
 
-    return await this.prompter.promptSecret(label)
+    if (input.envVar !== undefined && input.envVar !== "") {
+      const fromProcessEnv = this.env[input.envVar]
+
+      if (fromProcessEnv) return fromProcessEnv
+
+      const fromDotenv = input.dotenv[input.envVar]
+
+      if (fromDotenv) return fromDotenv
+
+      throw new Error(
+        `${input.label} references env var "${input.envVar}" but it is not set in process env or .env.local`,
+      )
+    }
+
+    if (input.existing) return input.existing
+
+    return await this.prompter.promptSecret(input.label)
   }
 }

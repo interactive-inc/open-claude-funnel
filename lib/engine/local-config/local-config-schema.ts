@@ -6,25 +6,45 @@ import { z } from "zod"
  * `fnl claude` reads this when no --profile / --channel is given and uses it
  * to set the channel binding, sub-agent, and brief flag. When `connectors`
  * is declared, missing channels/connectors are materialized into the local
- * `~/.funnel/settings.json` on launch — token fields are resolved from
- * `$VAR` references (process env + `.env.local`) or prompted for once and
- * persisted.
+ * `~/.funnel/settings.json` on launch.
  *
- * Only `channel` is required. The file is intended to be committed; tokens
- * stay machine-global (in env or `~/.funnel`).
+ * Token fields per connector resolve in this order:
+ *
+ *   1. Literal value at the field itself (e.g. `botToken: "xoxb-..."`)
+ *   2. Env-var reference at `env.<field>` (e.g. `env: { botToken: "SLACK_BOT_TOKEN" }`);
+ *      resolved from process.env first, then ./.env.local
+ *   3. Field omitted everywhere → prompted for once on a TTY and persisted to
+ *      `~/.funnel/settings.json`; non-TTY launches fail fast.
+ *
+ * `funnel.json` itself is never written to. Only `channel` is required.
  */
+
+const slackEnvSchema = z
+  .object({
+    botToken: z.string().optional(),
+    appToken: z.string().optional(),
+  })
+  .optional()
 
 const slackConnectorSpecSchema = z.object({
   type: z.literal("slack"),
   name: z.string(),
   botToken: z.string().optional(),
   appToken: z.string().optional(),
+  env: slackEnvSchema,
 })
+
+const discordEnvSchema = z
+  .object({
+    botToken: z.string().optional(),
+  })
+  .optional()
 
 const discordConnectorSpecSchema = z.object({
   type: z.literal("discord"),
   name: z.string(),
   botToken: z.string().optional(),
+  env: discordEnvSchema,
 })
 
 const ghConnectorSpecSchema = z.object({

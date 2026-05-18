@@ -11,11 +11,13 @@ import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 
-const buildSync = (opts: {
-  files?: Record<string, string>
-  env?: NodeJS.ProcessEnv
-  answers?: Record<string, string>
-} = {}) => {
+const buildSync = (
+  opts: {
+    files?: Record<string, string>
+    env?: NodeJS.ProcessEnv
+    answers?: Record<string, string>
+  } = {},
+) => {
   const fs = new MemoryFunnelFileSystem({ files: opts.files })
   const store = new MockFunnelSettingsReader()
   const factory = new FunnelConnectorFactory({
@@ -52,7 +54,7 @@ describe("FunnelLocalConfigSync", () => {
     expect(channels.get("ops")).toMatchObject({ name: "ops" })
   })
 
-  test("resolves $VAR tokens from process env", async () => {
+  test("resolves env: { ... } references from process env", async () => {
     const { sync, channels } = buildSync({
       env: { SLACK_BOT_TOKEN: "xoxb-fromenv", SLACK_APP_TOKEN: "xapp-fromenv" },
     })
@@ -64,17 +66,14 @@ describe("FunnelLocalConfigSync", () => {
           {
             type: "slack",
             name: "my-slack",
-            botToken: "$SLACK_BOT_TOKEN",
-            appToken: "${SLACK_APP_TOKEN}",
+            env: { botToken: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN" },
           },
         ],
       },
       "/repo",
     )
 
-    const connector = channels.getConnector("ops", "my-slack")
-
-    expect(connector).toMatchObject({
+    expect(channels.getConnector("ops", "my-slack")).toMatchObject({
       type: "slack",
       botToken: "xoxb-fromenv",
       appToken: "xapp-fromenv",
@@ -95,8 +94,7 @@ describe("FunnelLocalConfigSync", () => {
           {
             type: "slack",
             name: "my-slack",
-            botToken: "$SLACK_BOT_TOKEN",
-            appToken: "$SLACK_APP_TOKEN",
+            env: { botToken: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN" },
           },
         ],
       },
@@ -109,7 +107,31 @@ describe("FunnelLocalConfigSync", () => {
     })
   })
 
-  test("throws when $VAR is referenced but not set anywhere", async () => {
+  test("uses a literal value as-is", async () => {
+    const { sync, channels } = buildSync()
+
+    await sync.ensure(
+      {
+        channel: "ops",
+        connectors: [
+          {
+            type: "slack",
+            name: "my-slack",
+            botToken: "xoxb-literal",
+            appToken: "xapp-literal",
+          },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(channels.getConnector("ops", "my-slack")).toMatchObject({
+      botToken: "xoxb-literal",
+      appToken: "xapp-literal",
+    })
+  })
+
+  test("throws when env var is referenced but not set anywhere", async () => {
     const { sync } = buildSync()
 
     await expect(
@@ -120,14 +142,34 @@ describe("FunnelLocalConfigSync", () => {
             {
               type: "slack",
               name: "my-slack",
-              botToken: "$MISSING",
-              appToken: "xapp-literal",
+              env: { botToken: "MISSING_BOT", appToken: "MISSING_APP" },
             },
           ],
         },
         "/repo",
       ),
-    ).rejects.toThrow(/MISSING/)
+    ).rejects.toThrow(/MISSING_BOT/)
+  })
+
+  test("throws when literal and env are set for the same field", async () => {
+    const { sync } = buildSync({ env: { X: "xoxb-x" } })
+
+    await expect(
+      sync.ensure(
+        {
+          channel: "ops",
+          connectors: [
+            {
+              type: "slack",
+              name: "my-slack",
+              botToken: "xoxb-literal",
+              env: { botToken: "X", appToken: "Y" },
+            },
+          ],
+        },
+        "/repo",
+      ),
+    ).rejects.toThrow(/pick one/)
   })
 
   test("prompts for absent tokens and persists the answer", async () => {
@@ -181,7 +223,7 @@ describe("FunnelLocalConfigSync", () => {
     })
   })
 
-  test("updates existing slack connector when spec declares a fresh token", async () => {
+  test("updates existing slack connector when spec declares a fresh env token", async () => {
     const { sync, channels } = buildSync({
       env: { SLACK_BOT_TOKEN: "xoxb-new", SLACK_APP_TOKEN: "xapp-new" },
     })
@@ -201,8 +243,7 @@ describe("FunnelLocalConfigSync", () => {
           {
             type: "slack",
             name: "my-slack",
-            botToken: "$SLACK_BOT_TOKEN",
-            appToken: "$SLACK_APP_TOKEN",
+            env: { botToken: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN" },
           },
         ],
       },

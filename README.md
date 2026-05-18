@@ -88,20 +88,27 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
   "channel": "ops",
   "subAgent": "cto",
   "connectors": [
-    { "type": "slack", "name": "my-slack",
-      "botToken": "$SLACK_BOT_TOKEN",
-      "appToken": "$SLACK_APP_TOKEN" }
+    {
+      "type": "slack",
+      "name": "my-slack",
+      "env": {
+        "botToken": "SLACK_BOT_TOKEN",
+        "appToken": "SLACK_APP_TOKEN"
+      }
+    }
   ]
 }
 ```
 
 Only `channel` is required. `connectors` is optional — when present, missing channels and connectors are created on launch.
 
-Token fields resolve in this order:
+Each token field resolves in this order:
 
-- literal string (e.g. `"xoxb-..."`) — used as-is
-- `$VAR` or `${VAR}` — read from `process.env`, falling back to `./.env.local` in the cwd; fails with a clear error when neither is set
-- field omitted — `fnl claude` prompts on a TTY and writes the answer to `~/.funnel/settings.json`; on non-TTY stdin the launch fails so CI / agent-spawned-agent runs do not hang
+- literal value at the field itself (e.g. `"botToken": "xoxb-..."`) — used as-is
+- env-var name at `env.<field>` (e.g. `"env": { "botToken": "SLACK_BOT_TOKEN" }`) — looked up in `process.env`, falling back to `./.env.local` in the cwd; fails with a clear error when neither is set
+- field omitted everywhere — `fnl claude` prompts on a TTY and writes the answer to `~/.funnel/settings.json`; on non-TTY stdin the launch fails so CI / agent-spawned-agent runs do not hang
+
+Setting both a literal and an `env.<field>` for the same field is an error (pick one).
 
 `funnel.json` itself is never written to — secrets stay in env vars, `.env.local`, or `~/.funnel`, never in the committed file.
 
@@ -221,8 +228,9 @@ Profile    = { name, path, subAgent, channelId }
 
 LocalConfig = { channel, subAgent?, brief?, connectors? }
         per-repo file (funnel.json) checked by `fnl claude` when no --profile / --channel is given
-        connectors[] declares connectors to materialize on launch; token fields accept literal,
-        `$VAR` / `${VAR}` (resolved from process.env and ./.env.local), or omitted (TTY prompt)
+        connectors[] declares connectors to materialize on launch; each token field accepts
+        a literal, an env-var reference at `env.<field>` (resolved from process.env and
+        ./.env.local), or omission (TTY prompt, persisted to ~/.funnel)
 
 Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json
 ```
