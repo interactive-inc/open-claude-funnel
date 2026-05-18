@@ -386,7 +386,7 @@ export class Funnel {
   gatewayServer(
     options: {
       port?: number
-      logDir?: string
+      dbPath?: string
       killCompetingSlack?: boolean
       /** Override the auth token. Defaults to the persisted gateway.token. Pass "" to disable auth (tests). */
       token?: string
@@ -403,7 +403,7 @@ export class Funnel {
       channels: this.channels,
       settings: this.store,
       port: options.port,
-      logDir: options.logDir,
+      dbPath: options.dbPath,
       process: this.process,
       clock: this.clock,
       logger: this.logger,

@@ -17,8 +17,8 @@ lifecycle, channel connect/disconnect, listener boot). Exit with SIGINT.
 Output is formatted as YAML.
 
 Domain events fanned out to WebSocket clients live in the SQLite event
-store (<logDir>/events.db); they are not shown here. Subscribe via the
-WS endpoint or query the store directly.
+store (/tmp/funnel/events.db); they are not shown here. Subscribe via
+the WS endpoint or query the store directly.
 
 examples:
   funnel gateway logs

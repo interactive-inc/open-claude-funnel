@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs"
-import { join } from "node:path"
+import { dirname } from "node:path"
 import type { Server, ServerWebSocket } from "bun"
 import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
@@ -18,15 +18,14 @@ import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 import type { FunnelClock } from "@/engine/time/clock"
 
 const DEFAULT_PORT = 9742
-const DEFAULT_LOG_DIR = "/tmp/funnel/events"
-const DB_FILENAME = "events.db"
+const DEFAULT_DB_PATH = "/tmp/funnel/events.db"
 
 type Deps = {
   channels: FunnelChannels
   settings: FunnelSettingsReader
   port?: number
-  /** Directory holding the SQLite event store. The DB file lives at `<logDir>/events.db`. */
-  logDir?: string
+  /** SQLite event store file path. Parent directory is created on demand. Defaults to `/tmp/funnel/events.db`. */
+  dbPath?: string
   process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
@@ -75,7 +74,7 @@ export class FunnelGatewayServer {
   private readonly channels: FunnelChannels
   private readonly settings: FunnelSettingsReader
   private readonly port: number
-  private readonly logDir: string
+  private readonly dbPath: string
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger
   private readonly selfPid: number
@@ -94,7 +93,7 @@ export class FunnelGatewayServer {
     this.channels = deps.channels
     this.settings = deps.settings
     this.port = deps.port ?? DEFAULT_PORT
-    this.logDir = deps.logDir ?? DEFAULT_LOG_DIR
+    this.dbPath = deps.dbPath ?? DEFAULT_DB_PATH
     this.process = deps.process
     this.logger = deps.logger ?? defaultLogger
     this.selfPid = deps.selfPid ?? globalThis.process.pid
@@ -104,9 +103,11 @@ export class FunnelGatewayServer {
     this.extraRoutes = deps.extraRoutes ?? null
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
-    if (!existsSync(this.logDir)) mkdirSync(this.logDir, { recursive: true })
+    const dbDir = dirname(this.dbPath)
+
+    if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
     this.eventStore = new FunnelEventStore({
-      path: join(this.logDir, DB_FILENAME),
+      path: this.dbPath,
       now: this.nowMs,
     })
     this.broadcaster = new FunnelBroadcaster({
@@ -385,7 +386,7 @@ export class FunnelGatewayServer {
       })
     }
 
-    this.logger.info(`event store: ${join(this.logDir, DB_FILENAME)}`)
+    this.logger.info(`event store: ${this.dbPath}`)
     this.logger.info("funnel gateway running")
   }
 

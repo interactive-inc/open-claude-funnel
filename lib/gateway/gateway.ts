@@ -44,7 +44,6 @@ export class FunnelGateway {
   private readonly clock: FunnelClock
   private readonly dir: string
   private readonly pidFile: string
-  private readonly logDir: string
   private readonly gatewayLog: string
   private readonly tmpDir: string
   private readonly port: number
@@ -57,7 +56,6 @@ export class FunnelGateway {
     this.dir = deps.dir ?? FUNNEL_DIR
     this.tmpDir = deps.tmpDir ?? DEFAULT_TMP_DIR
     this.pidFile = join(this.dir, "gateway.pid")
-    this.logDir = join(this.tmpDir, "events")
     this.gatewayLog = join(this.tmpDir, "gateway.log")
     this.port = deps.port ?? DEFAULT_PORT
     this.sleep = deps.sleep ?? defaultSleep
@@ -167,10 +165,6 @@ export class FunnelGateway {
     const started = await this.start({ caffeinate: options.caffeinate })
 
     return { ok: started, wasRunning, stopped, started }
-  }
-
-  getLogDir(): string {
-    return this.logDir
   }
 
   getGatewayLog(): string {

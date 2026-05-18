@@ -289,7 +289,7 @@ Persistent state lives under `~/.funnel/`. Volatile logs and the event store liv
                 └── state.json                          per-connector durable state (e.g. schedule lastFiredAt)
 
 /tmp/funnel/
-├── events/events.db                                    SQLite event store with replay-by-seq
+├── events.db                                           SQLite event store with replay-by-seq
 ├── funnel.log                                          diagnostic log (daemon lifecycle, listener boot, connects)
 └── gateway.log                                         daemon stdout/stderr
 ```

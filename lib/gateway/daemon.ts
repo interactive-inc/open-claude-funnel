@@ -7,7 +7,6 @@ import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 
 const PORT = Number(process.env.FUNNEL_PORT) || 9742
 const PID_FILE = join(FUNNEL_DIR, "gateway.pid")
-const LOG_DIR = "/tmp/funnel/events"
 
 process.title = `funnel-gateway[${FUNNEL_DIR}]`
 
@@ -44,6 +43,6 @@ process.on("SIGINT", () => process.exit(130))
 process.on("SIGTERM", () => process.exit(143))
 
 const funnel = new Funnel({ logger })
-const server = funnel.gatewayServer({ port: PORT, logDir: LOG_DIR })
+const server = funnel.gatewayServer({ port: PORT })
 
 await server.start()

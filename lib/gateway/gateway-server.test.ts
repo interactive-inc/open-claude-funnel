@@ -18,7 +18,7 @@ const startServer = async (token: string) => {
     port: 0,
     killCompetingSlack: false,
     token,
-    logDir: "/tmp/funnel-test/events",
+    dbPath: "/tmp/funnel-test/events.db",
   })
 
   const httpServer = await server.start()
@@ -37,7 +37,7 @@ const startServerWithExtras = async (extras: Hono<Env>) => {
     port: 0,
     killCompetingSlack: false,
     token: "",
-    logDir: "/tmp/funnel-test/events",
+    dbPath: "/tmp/funnel-test/events.db",
     extraRoutes: extras,
   })
 
