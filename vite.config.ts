@@ -11,6 +11,7 @@ export default defineConfig({
     // schemes, so they run via `bun test` instead (see Makefile bun-test).
     exclude: [
       "**/node_modules/**",
+      "lib/cli/dispatch-claude.test.ts",
       "lib/funnel.test.ts",
       "lib/gateway/gateway-server.test.ts",
       "lib/gateway/funnel-event-store.test.ts",

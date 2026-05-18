@@ -31,6 +31,7 @@ test:
 # Keep this list in sync with vite.config.ts `test.exclude`.
 bun-test:
 	@bun test \
+		./lib/cli/dispatch-claude.test.ts \
 		./lib/funnel.test.ts \
 		./lib/gateway/gateway-server.test.ts \
 		./lib/gateway/funnel-event-store.test.ts \

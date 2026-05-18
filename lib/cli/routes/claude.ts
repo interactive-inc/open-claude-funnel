@@ -11,16 +11,19 @@ usage:
   funnel claude -p <name>                launch a named profile
   funnel claude --profile <name>         (long form)
   funnel claude --channel <name>         raw launch (no profile, cwd = current dir)
+  funnel claude [...]                    any other argument is forwarded to the claude CLI
 
 resolution order when no --profile / --channel is given:
   1. ./funnel.json in the current directory
   2. the default profile (first entry in fnl profiles)
 
-options:
+funnel-specific options (everything else passes through to claude verbatim):
   -p, --profile      profile name to launch
   --channel          channel name (raw launch, ignored when --profile is given)
+  -h, --help         show this help
 
-Any other arguments are forwarded to the claude CLI.
+Positional args, unknown short flags (e.g. -c, -r), and claude's own flags
+(--agent, --resume, --model, --print, --output-format ...) are all forwarded.
 On launch the FUNNEL_CHANNEL_ID env var is set and MCP connects to the gateway.`
 
 const RESERVED_KEYS = ["profile", "channel"]

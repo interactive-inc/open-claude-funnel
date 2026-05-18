@@ -1,4 +1,5 @@
 import pkg from "@/../package.json" with { type: "json" }
+import { dispatchClaude } from "@/cli/dispatch-claude"
 import { startChannelServer } from "@/engine/mcp/channel-server"
 import { toRequest } from "@/cli/router/to-request"
 import { launchTui } from "@/tui/tui"
@@ -47,7 +48,16 @@ if (args[0] === "mcp") {
   await startChannelServer({ dir: funnel.paths.dir })
 }
 
-if (args[0] !== "mcp") {
+if (args[0] === "claude") {
+  const result = await dispatchClaude({ funnel }, args.slice(1))
+
+  if (result.stdout) process.stdout.write(`${result.stdout}\n`)
+  if (result.stderr) process.stderr.write(`${result.stderr}\n`)
+
+  process.exit(result.exitCode)
+}
+
+if (args[0] !== "mcp" && args[0] !== "claude") {
   const { method, url } = toRequest(args)
 
   const parsed = new URL(url)
