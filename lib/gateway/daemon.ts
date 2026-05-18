@@ -9,6 +9,8 @@ const PORT = Number(process.env.FUNNEL_PORT) || 9742
 const PID_FILE = join(FUNNEL_DIR, "gateway.pid")
 const LOG_DIR = "/tmp/funnel/events"
 
+process.title = `funnel-gateway[${FUNNEL_DIR}]`
+
 const logger = new NodeFunnelLogger()
 
 mkdirSync(FUNNEL_DIR, { recursive: true })

@@ -5,6 +5,8 @@ import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 
 type Props = {
   selfPid: number
+  /** Funnel home directory. Only daemons rooted at the same dir share Slack tokens and are killed. */
+  dir: string
   process?: FunnelProcessRunner
   logger?: FunnelLogger
 }
@@ -12,14 +14,16 @@ type Props = {
 const defaultProcess = new NodeFunnelProcessRunner()
 const defaultLogger = new NodeFunnelLogger()
 
-const isBun = (args: string): boolean => {
-  return args.includes("bun ") || /\/bun(\s|$)/.test(args)
-}
+const titleFor = (dir: string): string => `funnel-gateway[${dir}]`
 
-const looksLikeSlackGateway = (args: string): boolean => {
-  return /(gateway|bolt|slack)/i.test(args)
-}
-
+/**
+ * Kills other funnel daemon processes that share the SAME funnel home dir,
+ * which is the only situation that causes a real conflict (duplicate Slack
+ * Socket Mode connections with the same tokens). Daemons rooted at a
+ * different `~/.funnel/` are left alone — they hold different tokens and
+ * speak to different Slack apps. The daemon advertises its dir via
+ * `process.title = "funnel-gateway[<dir>]"`, which this routine matches.
+ */
 export const killCompetingSlackGateways = async (props: Props): Promise<number[]> => {
   const runner = props.process ?? defaultProcess
   const logger = props.logger ?? defaultLogger
@@ -27,6 +31,7 @@ export const killCompetingSlackGateways = async (props: Props): Promise<number[]
 
   if (result.exitCode !== 0) return []
 
+  const expectedTitle = titleFor(props.dir)
   const killed: number[] = []
 
   for (const raw of result.stdout.split("\n")) {
@@ -43,8 +48,7 @@ export const killCompetingSlackGateways = async (props: Props): Promise<number[]
 
     if (!Number.isInteger(pid) || pid <= 0) continue
     if (pid === props.selfPid) continue
-    if (!isBun(args)) continue
-    if (!looksLikeSlackGateway(args)) continue
+    if (!args.includes(expectedTitle)) continue
 
     runner.kill(pid, "SIGTERM")
     killed.push(pid)

@@ -14,6 +14,7 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import type { FunnelSettingsReader } from "@/engine/settings/settings-reader"
+import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 import type { FunnelClock } from "@/engine/time/clock"
 
 const DEFAULT_PORT = 9742
@@ -30,9 +31,18 @@ type Deps = {
   clock?: FunnelClock
   logger?: FunnelLogger
   selfPid?: number
+  /** Funnel home dir, used to scope kill-competing to daemons rooted at the same dir. Defaults to FUNNEL_DIR. */
+  dir?: string
   killCompetingSlack?: boolean
   /** Bearer token required for `/listeners*`, `/status`, and `/ws`. Empty string disables auth (tests only). */
   token?: string
+  /**
+   * Additional hono app mounted before the built-in gateway routes.
+   * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
+   * Host routes are mounted first; built-in `/listeners`, `/status`,
+   * `/channels`, `/health` are mounted after and take precedence on conflict.
+   */
+  extraRoutes?: Hono<Env>
 }
 
 type WsData = {
@@ -69,12 +79,14 @@ export class FunnelGatewayServer {
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger
   private readonly selfPid: number
+  private readonly dir: string
   private readonly killCompetingSlack: boolean
   private readonly token: string
   private readonly broadcaster: FunnelBroadcaster
   private readonly eventStore: FunnelEventStore
   private readonly supervisor: FunnelListenerSupervisor
   private readonly nowMs: () => number
+  private readonly extraRoutes: Hono<Env> | null
   private startedAt: number | null = null
   private server: Server<WsData> | null = null
 
@@ -86,8 +98,10 @@ export class FunnelGatewayServer {
     this.process = deps.process
     this.logger = deps.logger ?? defaultLogger
     this.selfPid = deps.selfPid ?? globalThis.process.pid
+    this.dir = deps.dir ?? FUNNEL_DIR
     this.killCompetingSlack = deps.killCompetingSlack ?? true
     this.token = deps.token ?? ""
+    this.extraRoutes = deps.extraRoutes ?? null
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
     if (!existsSync(this.logDir)) mkdirSync(this.logDir, { recursive: true })
@@ -291,7 +305,8 @@ export class FunnelGatewayServer {
       base.use("/channels/*", requireBearerToken({ expected: this.token }))
     }
 
-    return base.route("/", gatewayRoutes)
+    const withExtras = this.extraRoutes ? base.route("/", this.extraRoutes) : base
+    return withExtras.route("/", gatewayRoutes)
   }
 
   /**
@@ -345,6 +360,7 @@ export class FunnelGatewayServer {
     if (this.killCompetingSlack && allConnectors.some((c) => c.type === "slack")) {
       const killed = await killCompetingSlackGateways({
         selfPid: this.selfPid,
+        dir: this.dir,
         process: this.process,
         logger: this.logger,
       })
