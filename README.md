@@ -81,6 +81,18 @@ fnl profiles add cto --path=/repo/myapp --sub-agent=cto --channel=ops
 fnl claude --profile cto         # cd + sub-agent + channel binding in one shot
 ```
 
+Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo will use it:
+
+```json
+{
+  "channel": "ops",
+  "subAgent": "cto",
+  "brief": false
+}
+```
+
+Only `channel` is required; it must name an existing channel. The channel itself (and any tokens) stays machine-global — `funnel.json` only declares what the repo subscribes to, so it is safe to commit.
+
 Cron-driven agent runs:
 
 ```bash
@@ -135,9 +147,10 @@ fnl profiles <name> as-default               move to the front of the list
 fnl profiles rename <old> <new>
 fnl profiles remove <name>
 
-fnl claude                                   launch the default profile
+fnl claude                                   launch using ./funnel.json, or the default profile
 fnl claude --profile <name>                  launch a named profile
 fnl claude --channel <name>                  raw launch (no profile, cwd = current dir)
+fnl claude [...]                             any other arguments are forwarded to the claude CLI
 fnl mcp                                      run as an MCP server (invoked from .mcp.json)
 
 fnl gateway                                  status (default subcommand)
@@ -193,6 +206,9 @@ Connector  =
 
 Profile    = { name, path, subAgent, channelId }
         named launch preset; the first profile in the list is the default
+
+LocalConfig = { channel, subAgent?, brief? }
+        per-repo file (funnel.json) checked by `fnl claude` when no --profile / --channel is given
 
 Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json
 ```

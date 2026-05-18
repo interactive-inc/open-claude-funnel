@@ -8,6 +8,7 @@ import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
+import { FunnelLocalConfig } from "@/engine/local-config/local-config"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
@@ -81,6 +82,7 @@ export class Funnel {
     factory?: FunnelConnectorFactory
     channels?: FunnelChannels
     profiles?: FunnelProfiles
+    localConfig?: FunnelLocalConfig
     mcp?: FunnelMcp
     claude?: FunnelClaude
     gateway?: FunnelGateway
@@ -204,6 +206,15 @@ export class Funnel {
     if (!this.memos.profiles) this.memos.profiles = new FunnelProfiles({ store: this.store })
 
     return this.memos.profiles
+  }
+
+  /** Reads `funnel.json` from a cwd. `fnl claude` consults it before falling back to the default profile. */
+  get localConfig(): FunnelLocalConfig {
+    if (!this.memos.localConfig) {
+      this.memos.localConfig = new FunnelLocalConfig({ fs: this.fs })
+    }
+
+    return this.memos.localConfig
   }
 
   /** funnel MCP installer (writes/removes `.mcp.json` entries in target repos). */

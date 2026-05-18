@@ -7,10 +7,14 @@ import { zValidator } from "@/cli/router/validator"
 export const claudeHelp = `funnel claude — launch Claude Code
 
 usage:
-  funnel claude                          launch the default profile (first in the list)
+  funnel claude                          launch using funnel.json in cwd, or the default profile
   funnel claude -p <name>                launch a named profile
   funnel claude --profile <name>         (long form)
   funnel claude --channel <name>         raw launch (no profile, cwd = current dir)
+
+resolution order when no --profile / --channel is given:
+  1. ./funnel.json in the current directory
+  2. the default profile (first entry in fnl profiles)
 
 options:
   -p, --profile      profile name to launch
@@ -35,34 +39,64 @@ export const claudeHandler = factory.createHandlers(
   async (c) => {
     const query = c.req.valid("query")
     const funnel = c.var.funnel
+    const userArgs = queryToCliArgs(c.req.url, RESERVED_KEYS)
 
     if (query.channel && !query.profile) {
       const exitCode = await funnel.claude.launch({
         channel: query.channel,
-        userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
+        userArgs,
       })
 
       process.exit(exitCode)
     }
 
-    const profile = query.profile
-      ? funnel.profiles.get(query.profile)
-      : funnel.profiles.getDefault()
+    if (query.profile) {
+      const profile = funnel.profiles.get(query.profile)
 
-    if (!profile) {
-      if (query.profile) {
+      if (!profile) {
         throw new HTTPException(404, { message: `profile "${query.profile}" not found` })
       }
+
+      const exitCode = await funnel.claude.launch({
+        channel: profile.channelId,
+        cwd: profile.path,
+        subAgent: profile.subAgent,
+        userArgs,
+        profileName: profile.name,
+        brief: profile.brief,
+      })
+
+      process.exit(exitCode)
+    }
+
+    const cwd = process.cwd()
+    const local = funnel.localConfig.read(cwd)
+
+    if (local) {
+      const exitCode = await funnel.claude.launch({
+        channel: local.channel,
+        cwd,
+        subAgent: local.subAgent,
+        userArgs,
+        brief: local.brief,
+      })
+
+      process.exit(exitCode)
+    }
+
+    const defaultProfile = funnel.profiles.getDefault()
+
+    if (!defaultProfile) {
       return c.text(claudeHelp)
     }
 
     const exitCode = await funnel.claude.launch({
-      channel: profile.channelId,
-      cwd: profile.path,
-      subAgent: profile.subAgent,
-      userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
-      profileName: profile.name,
-      brief: profile.brief,
+      channel: defaultProfile.channelId,
+      cwd: defaultProfile.path,
+      subAgent: defaultProfile.subAgent,
+      userArgs,
+      profileName: defaultProfile.name,
+      brief: defaultProfile.brief,
     })
 
     process.exit(exitCode)
