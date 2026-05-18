@@ -14,6 +14,30 @@ const toRecord = (value: object): Record<string, unknown> => {
   return result
 }
 
+/**
+ * Recognises errors that @slack/web-api throws for Slack-side API failures
+ * (e.g. `cant_delete_message`, `channel_not_found`, rate limits). Every such
+ * error carries `code: "slack_webapi_*"` and a `data` field holding the raw
+ * Slack response with `ok: false`. We unwrap to that response so the caller
+ * receives a structured failure instead of having the gateway translate it
+ * into an opaque HTTP 500.
+ */
+const slackErrorResponse = (error: unknown): Record<string, unknown> | null => {
+  if (!error || typeof error !== "object") return null
+  if (!("code" in error)) return null
+
+  const code = (error as { code: unknown }).code
+
+  if (typeof code !== "string" || !code.startsWith("slack_webapi_")) return null
+  if (!("data" in error)) return null
+
+  const data = (error as { data: unknown }).data
+
+  if (!data || typeof data !== "object") return null
+
+  return data as Record<string, unknown>
+}
+
 type Deps = {
   config: SlackConnectorConfig
   client?: SlackWebClientLike
@@ -31,6 +55,14 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
   async call(input: CallInput): Promise<unknown> {
     const body = input.body !== null && typeof input.body === "object" ? toRecord(input.body) : {}
 
-    return await this.client.apiCall(input.path, body)
+    try {
+      return await this.client.apiCall(input.path, body)
+    } catch (error) {
+      const slackResponse = slackErrorResponse(error)
+
+      if (slackResponse) return slackResponse
+
+      throw error
+    }
   }
 }

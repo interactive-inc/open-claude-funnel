@@ -36,4 +36,55 @@ describe("FunnelSlackAdapter", () => {
 
     expect(apiCall).toHaveBeenCalledWith("auth.test", {})
   })
+
+  test("unwraps Slack platform errors and returns response.data", async () => {
+    const slackError = Object.assign(new Error("An API error occurred: channel_not_found"), {
+      code: "slack_webapi_platform_error",
+      data: { ok: false, error: "channel_not_found" },
+    })
+    const apiCall = vi.fn(async () => {
+      throw slackError
+    })
+    const client: SlackWebClientLike = { apiCall }
+
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    const result = await adapter.call({
+      method: "post",
+      path: "chat.postMessage",
+      body: { channel: "D1", text: "hi" },
+    })
+
+    expect(result).toEqual({ ok: false, error: "channel_not_found" })
+  })
+
+  test("unwraps Slack rate-limit errors the same way", async () => {
+    const slackError = Object.assign(new Error("A rate limit was exceeded"), {
+      code: "slack_webapi_rate_limited_error",
+      data: { ok: false, error: "ratelimited", retryAfter: 30 },
+    })
+    const apiCall = vi.fn(async () => {
+      throw slackError
+    })
+    const client: SlackWebClientLike = { apiCall }
+
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    const result = await adapter.call({ method: "post", path: "chat.postMessage" })
+
+    expect(result).toEqual({ ok: false, error: "ratelimited", retryAfter: 30 })
+  })
+
+  test("rethrows non-Slack errors so infrastructure failures still surface as 500", async () => {
+    const apiCall = vi.fn(async () => {
+      throw new Error("ECONNREFUSED")
+    })
+    const client: SlackWebClientLike = { apiCall }
+
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    await expect(adapter.call({ method: "post", path: "auth.test" })).rejects.toThrow(
+      /ECONNREFUSED/,
+    )
+  })
 })
