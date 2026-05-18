@@ -5,10 +5,14 @@ import { FunnelDiscordAdapter } from "@/connectors/discord-adapter"
 import { FunnelDiscordListener } from "@/connectors/discord-listener"
 import { FunnelGhAdapter } from "@/connectors/gh-adapter"
 import { FunnelGhListener } from "@/connectors/gh-listener"
-import { FunnelScheduleListener } from "@/connectors/schedule-listener"
+import { FunnelScheduleListener, type ScheduleOnFired } from "@/connectors/schedule-listener"
 import { ScheduleStateStore } from "@/connectors/schedule-state-store"
 import { FunnelSlackAdapter } from "@/connectors/slack-adapter"
-import { FunnelSlackListener } from "@/connectors/slack-listener"
+import {
+  FunnelSlackListener,
+  type SlackOnAppCreated,
+  type SlackPreprocessEvent,
+} from "@/connectors/slack-listener"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelLogger } from "@/engine/logger/logger"
@@ -18,11 +22,24 @@ import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 import { join } from "node:path"
 
+export type SlackListenerOptions = {
+  onAppCreated?: SlackOnAppCreated
+  preprocessEvent?: SlackPreprocessEvent
+}
+
+export type ScheduleListenerOptions = {
+  onFired?: ScheduleOnFired
+}
+
 type Deps = {
   fs?: FunnelFileSystem
   process?: FunnelProcessRunner
   logger?: FunnelLogger
   dir?: string
+  /** Per-listener hooks for the slack connector type. Threaded into every Slack listener built by this factory. */
+  slackListenerOptions?: SlackListenerOptions
+  /** Per-listener hooks for the schedule connector type. Threaded into every Schedule listener built by this factory. */
+  scheduleListenerOptions?: ScheduleListenerOptions
 }
 
 const defaultFs = new NodeFunnelFileSystem()
@@ -36,24 +53,37 @@ const defaultLogger = new NodeFunnelLogger()
  *
  * `dir` is the funnel home (defaults to ~/.funnel); per-connector state files
  * land at `<dir>/channels/<channel-id>/connectors/<connector-id>/state.json`.
+ *
+ * Host integrations can supply per-type listener hooks via
+ * `slackListenerOptions` / `scheduleListenerOptions` — e.g. to attach a
+ * Bolt `app.action` handler or to drop one-shot schedule entries on fire.
  */
 export class FunnelConnectorFactory {
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
   private readonly logger: FunnelLogger
   private readonly dir: string
+  private readonly slackListenerOptions: SlackListenerOptions
+  private readonly scheduleListenerOptions: ScheduleListenerOptions
 
   constructor(deps: Deps = {}) {
     this.fs = deps.fs ?? defaultFs
     this.process = deps.process ?? defaultProcess
     this.logger = deps.logger ?? defaultLogger
     this.dir = deps.dir ?? FUNNEL_DIR
+    this.slackListenerOptions = deps.slackListenerOptions ?? {}
+    this.scheduleListenerOptions = deps.scheduleListenerOptions ?? {}
     Object.freeze(this)
   }
 
   createListener(channelId: string, config: ConnectorConfig): FunnelConnectorListener {
     if (config.type === "slack") {
-      return new FunnelSlackListener({ config, logger: this.logger })
+      return new FunnelSlackListener({
+        config,
+        logger: this.logger,
+        onAppCreated: this.slackListenerOptions.onAppCreated,
+        preprocessEvent: this.slackListenerOptions.preprocessEvent,
+      })
     }
 
     if (config.type === "gh") {
@@ -73,6 +103,7 @@ export class FunnelConnectorFactory {
       config,
       lastFiredStore,
       logger: this.logger,
+      onFired: this.scheduleListenerOptions.onFired,
     })
   }
 

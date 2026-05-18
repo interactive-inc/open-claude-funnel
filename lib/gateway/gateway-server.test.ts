@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "vitest"
 import type { Server } from "bun"
+import { Hono } from "hono"
 import { Funnel } from "@/funnel"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
+import type { Env } from "@/gateway/factory"
 
 const startServer = async (token: string) => {
   const fs = new MemoryFunnelFileSystem()
@@ -17,6 +19,26 @@ const startServer = async (token: string) => {
     killCompetingSlack: false,
     token,
     logDir: "/tmp/funnel-test/events",
+  })
+
+  const httpServer = await server.start()
+  return { server, httpServer }
+}
+
+const startServerWithExtras = async (extras: Hono<Env>) => {
+  const fs = new MemoryFunnelFileSystem()
+  const funnel = new Funnel({
+    fs,
+    logger: new NoopFunnelLogger(),
+    dir: "/funnel",
+    tmpDir: "/tmp/funnel-test",
+  })
+  const server = funnel.gatewayServer({
+    port: 0,
+    killCompetingSlack: false,
+    token: "",
+    logDir: "/tmp/funnel-test/events",
+    extraRoutes: extras,
   })
 
   const httpServer = await server.start()
@@ -129,5 +151,45 @@ describe("FunnelGatewayServer auth integration", () => {
     })
 
     expect(res.status).toBe(401)
+  })
+})
+
+describe("FunnelGatewayServer extraRoutes", () => {
+  test("host routes are mounted and answer requests", async () => {
+    const extras = new Hono<Env>()
+    extras.get("/extra/ping", (c) => c.text("pong"))
+    active = await startServerWithExtras(extras)
+
+    const url = `http://localhost:${active.httpServer.port}/extra/ping`
+    const res = await fetch(url)
+
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe("pong")
+  })
+
+  test("built-in routes still answer with extraRoutes mounted", async () => {
+    const extras = new Hono<Env>()
+    extras.get("/extra", (c) => c.text("extra"))
+    active = await startServerWithExtras(extras)
+
+    const url = `http://localhost:${active.httpServer.port}/health`
+    const res = await fetch(url)
+
+    expect(res.status).toBe(200)
+  })
+
+  test("host routes can read gateway deps from the context", async () => {
+    const extras = new Hono<Env>()
+    extras.get("/extra/clients", (c) => {
+      const deps = c.get("deps")
+      return c.json({ clients: deps.broadcaster.getClientCount() })
+    })
+    active = await startServerWithExtras(extras)
+
+    const url = `http://localhost:${active.httpServer.port}/extra/clients`
+    const res = await fetch(url)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ clients: 0 })
   })
 })

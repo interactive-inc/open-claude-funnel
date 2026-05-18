@@ -1,0 +1,205 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { FunnelSlackListener } from "@/connectors/slack-listener"
+import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
+import type { SlackRawEvent } from "@/connectors/slack-event-processor"
+
+const hoisted = vi.hoisted(() => {
+  return {
+    middlewareHandlers: [] as ((args: unknown) => Promise<void>)[],
+    mockApp: null as MockApp | null,
+    appConstructorCalls: 0,
+  }
+})
+
+type MockApp = {
+  use: ReturnType<typeof vi.fn>
+  error: ReturnType<typeof vi.fn>
+  action: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
+  client: {
+    auth: { test: ReturnType<typeof vi.fn> }
+    reactions: { add: ReturnType<typeof vi.fn> }
+  }
+}
+
+vi.mock("@slack/bolt", () => {
+  class FakeApp {
+    use: ReturnType<typeof vi.fn>
+    error: ReturnType<typeof vi.fn>
+    action: ReturnType<typeof vi.fn>
+    start: ReturnType<typeof vi.fn>
+    stop: ReturnType<typeof vi.fn>
+    client = {
+      auth: { test: vi.fn().mockResolvedValue({ user_id: "U_BOT", bot_id: "B_BOT" }) },
+      reactions: { add: vi.fn().mockResolvedValue({ ok: true }) },
+    }
+
+    constructor() {
+      hoisted.appConstructorCalls += 1
+      this.use = vi.fn((handler: (args: unknown) => Promise<void>) => {
+        hoisted.middlewareHandlers.push(handler)
+      })
+      this.error = vi.fn()
+      this.action = vi.fn()
+      this.start = vi.fn().mockResolvedValue(undefined)
+      this.stop = vi.fn().mockResolvedValue(undefined)
+      hoisted.mockApp = this as unknown as MockApp
+    }
+  }
+
+  return {
+    LogLevel: { ERROR: "ERROR" },
+    App: FakeApp,
+  }
+})
+
+const buildConfig = (): SlackConnectorConfig => ({
+  id: "co-1",
+  type: "slack",
+  name: "test",
+  botToken: "xoxb-test",
+  appToken: "xapp-test",
+})
+
+beforeEach(() => {
+  hoisted.middlewareHandlers.length = 0
+  hoisted.mockApp = null
+  hoisted.appConstructorCalls = 0
+})
+
+afterEach(() => {
+  hoisted.middlewareHandlers.length = 0
+  hoisted.mockApp = null
+})
+
+describe("FunnelSlackListener.onAppCreated", () => {
+  test("invokes onAppCreated after constructing the Bolt App, before app.start", async () => {
+    const calls: { hasUse: boolean; startCalls: number }[] = []
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      onAppCreated: (app) => {
+        const mock = app as unknown as MockApp
+        calls.push({
+          hasUse: typeof mock.use === "function",
+          startCalls: mock.start.mock.calls.length,
+        })
+      },
+    })
+
+    await listener.start(async () => {})
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.hasUse).toBe(true)
+    expect(calls[0]?.startCalls).toBe(0)
+    expect(hoisted.mockApp?.start.mock.calls.length).toBe(1)
+  })
+
+  test("supports async onAppCreated", async () => {
+    let invoked = false
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      onAppCreated: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        invoked = true
+      },
+    })
+
+    await listener.start(async () => {})
+
+    expect(invoked).toBe(true)
+  })
+})
+
+describe("FunnelSlackListener.preprocessEvent", () => {
+  test("drops the event when preprocessEvent returns null", async () => {
+    const notify = vi.fn(async () => {})
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      preprocessEvent: () => null,
+    })
+
+    await listener.start(notify)
+
+    expect(hoisted.middlewareHandlers).toHaveLength(1)
+    await hoisted.middlewareHandlers[0]?.({
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hello",
+      },
+    })
+
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  test("forwards the transformed event to the processor", async () => {
+    const notify = vi.fn(async () => {})
+    const captured: SlackRawEvent[] = []
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      preprocessEvent: (event) => {
+        captured.push(event)
+        return { ...event, files: undefined }
+      },
+    })
+
+    await listener.start(notify)
+
+    await hoisted.middlewareHandlers[0]?.({
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "with images",
+        files: [{ id: "F1" }],
+      },
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.files).toEqual([{ id: "F1" }])
+    expect(notify).toHaveBeenCalledTimes(1)
+    const passedContent = notify.mock.calls.at(0)?.at(0)
+    expect(typeof passedContent).toBe("string")
+    const parsedSent = JSON.parse(passedContent as unknown as string) as Record<string, unknown>
+    expect(parsedSent.files).toBeUndefined()
+  })
+
+  test("passes the raw event through when no preprocessEvent is supplied", async () => {
+    const notify = vi.fn(async () => {})
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+    })
+
+    await listener.start(notify)
+
+    await hoisted.middlewareHandlers[0]?.({
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hi",
+      },
+    })
+
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("FunnelSlackListener: backwards compatibility", () => {
+  test("constructor works without any hooks (no onAppCreated, no preprocessEvent)", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+
+    expect(hoisted.appConstructorCalls).toBe(1)
+    expect(hoisted.mockApp?.start.mock.calls.length).toBe(1)
+  })
+})

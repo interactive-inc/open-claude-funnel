@@ -91,6 +91,53 @@ describe("FunnelScheduleListener", () => {
     expect(listener.isAlive()).toBe(false)
   })
 
+  test("invokes onFired after each successful fire", async () => {
+    const fired: { id: string; firedAt: Date }[] = []
+    const config = buildConfig([buildEntry({ cron: "* * * * *" })])
+    const fs = new MemoryFunnelFileSystem()
+    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const listener = new FunnelScheduleListener({
+      config,
+      lastFiredStore,
+      logger: new NoopFunnelLogger(),
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+      onFired: (entry, firedAt) => {
+        fired.push({ id: entry.id, firedAt })
+      },
+    })
+
+    await listener.tick(async () => {})
+
+    expect(fired).toHaveLength(1)
+    expect(fired[0]?.id).toBe("e1")
+    expect(fired[0]?.firedAt.toISOString()).toBe("2026-01-01T00:00:00.000Z")
+  })
+
+  test("onFired errors do not abort the tick", async () => {
+    const config = buildConfig([
+      buildEntry({ id: "a", cron: "* * * * *" }),
+      buildEntry({ id: "b", cron: "* * * * *" }),
+    ])
+    const fs = new MemoryFunnelFileSystem()
+    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const sent: string[] = []
+    const listener = new FunnelScheduleListener({
+      config,
+      lastFiredStore,
+      logger: new NoopFunnelLogger(),
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+      onFired: () => {
+        throw new Error("boom")
+      },
+    })
+
+    await listener.tick(async (content) => {
+      sent.push(content)
+    })
+
+    expect(sent).toHaveLength(2)
+  })
+
   test("persists lastFiredAt across constructor reloads (catch-up: latest)", async () => {
     const fs = new MemoryFunnelFileSystem()
     const path = "/funnel/state.json"

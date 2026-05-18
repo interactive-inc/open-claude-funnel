@@ -1,7 +1,10 @@
 import { App, LogLevel } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
-import { FunnelSlackEventProcessor } from "@/connectors/slack-event-processor"
+import {
+  FunnelSlackEventProcessor,
+  type SlackRawEvent,
+} from "@/connectors/slack-event-processor"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
@@ -10,9 +13,22 @@ const middlewareArgsSchema = z.object({
   event: z.record(z.string(), z.unknown()).optional(),
 })
 
+export type SlackOnAppCreated = (app: App) => void | Promise<void>
+export type SlackPreprocessEvent = (event: SlackRawEvent) => SlackRawEvent | null
+
 type Deps = {
   config: SlackConnectorConfig
   logger?: FunnelLogger
+  /**
+   * Invoked after the Bolt App is constructed, before it starts.
+   * Use to attach app.action handlers, custom middleware, etc.
+   */
+  onAppCreated?: SlackOnAppCreated
+  /**
+   * Transform or drop the raw Slack event before the built-in processor sees it.
+   * Return null to drop the event entirely.
+   */
+  preprocessEvent?: SlackPreprocessEvent
 }
 
 const defaultLogger = new NodeFunnelLogger()
@@ -20,12 +36,16 @@ const defaultLogger = new NodeFunnelLogger()
 export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly config: SlackConnectorConfig
   private readonly logger: FunnelLogger
+  private readonly onAppCreated: SlackOnAppCreated | null
+  private readonly preprocessEvent: SlackPreprocessEvent | null
   private app: App | null = null
 
   constructor(deps: Deps) {
     super()
     this.config = deps.config
     this.logger = deps.logger ?? defaultLogger
+    this.onAppCreated = deps.onAppCreated ?? null
+    this.preprocessEvent = deps.preprocessEvent ?? null
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -42,12 +62,19 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       ownBotId: authResult.bot_id ?? "",
     })
 
+    const preprocess = this.preprocessEvent
+
     app.use(async (args) => {
       const parsed = middlewareArgsSchema.safeParse(args)
 
       if (!parsed.success || !parsed.data.event) return
 
-      const result = processor.process(parsed.data.event)
+      const rawEvent = parsed.data.event as SlackRawEvent
+      const event = preprocess ? preprocess(rawEvent) : rawEvent
+
+      if (event === null) return
+
+      const result = processor.process(event)
 
       if (result.skip) return
 
@@ -72,6 +99,8 @@ export class FunnelSlackListener extends FunnelConnectorListener {
         error: error instanceof Error ? error.message : String(error),
       })
     })
+
+    if (this.onAppCreated) await this.onAppCreated(app)
 
     await app.start()
     this.app = app

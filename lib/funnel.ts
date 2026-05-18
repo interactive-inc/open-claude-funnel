@@ -1,5 +1,10 @@
 import { join } from "node:path"
-import { FunnelConnectorFactory } from "@/connectors/connector-factory"
+import type { Hono } from "hono"
+import {
+  FunnelConnectorFactory,
+  type ScheduleListenerOptions,
+  type SlackListenerOptions,
+} from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
@@ -28,6 +33,7 @@ import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
+import type { Env } from "@/gateway/factory"
 import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
@@ -56,6 +62,17 @@ type Props = {
   dir?: string
   /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to /tmp/funnel. */
   tmpDir?: string
+  /**
+   * Host integration hooks for Slack listeners — `onAppCreated` for attaching
+   * Bolt `app.action` handlers, `preprocessEvent` for transforming/dropping
+   * raw Slack events before the built-in processor sees them.
+   */
+  slackListenerOptions?: SlackListenerOptions
+  /**
+   * Host integration hooks for Schedule listeners — `onFired` is invoked after
+   * each successful fire, useful for dropping one-shot entries.
+   */
+  scheduleListenerOptions?: ScheduleListenerOptions
 }
 
 /**
@@ -189,6 +206,8 @@ export class Funnel {
         process: this.process,
         logger: this.logger,
         dir: this.paths.dir,
+        slackListenerOptions: this.props.slackListenerOptions,
+        scheduleListenerOptions: this.props.scheduleListenerOptions,
       })
     }
 
@@ -355,6 +374,13 @@ export class Funnel {
       killCompetingSlack?: boolean
       /** Override the auth token. Defaults to the persisted gateway.token. Pass "" to disable auth (tests). */
       token?: string
+      /**
+       * Additional hono app mounted before the built-in gateway routes.
+       * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
+       * Host routes are mounted first; built-in `/listeners`, `/status`,
+       * `/channels`, `/health` are mounted after and take precedence on conflict.
+       */
+      extraRoutes?: Hono<Env>
     } = {},
   ): FunnelGatewayServer {
     return new FunnelGatewayServer({
@@ -367,6 +393,7 @@ export class Funnel {
       logger: this.logger,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
+      extraRoutes: options.extraRoutes,
     })
   }
 }

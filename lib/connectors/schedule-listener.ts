@@ -5,11 +5,19 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedule-connector-schema"
 
+export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Promise<void>
+
 type Deps = {
   config: ScheduleConnectorConfig
   lastFiredStore: ScheduleStateStore
   logger?: FunnelLogger
   now?: () => Date
+  /**
+   * Invoked after a schedule entry fires successfully. Use to remove one-shot
+   * entries from the connector config, or to log per-fire side effects.
+   * Errors from this callback are caught and logged; they do not abort the tick.
+   */
+  onFired?: ScheduleOnFired
 }
 
 const defaultLogger = new NodeFunnelLogger()
@@ -21,6 +29,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly lastFiredStore: ScheduleStateStore
   private readonly logger: FunnelLogger
   private readonly now: () => Date
+  private readonly onFired: ScheduleOnFired | null
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
 
@@ -30,6 +39,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     this.lastFiredStore = deps.lastFiredStore
     this.logger = deps.logger ?? defaultLogger
     this.now = deps.now ?? (() => new Date())
+    this.onFired = deps.onFired ?? null
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -145,6 +155,18 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     if (catchup) meta.catchup = "true"
 
     await notify(entry.prompt, meta)
+
+    if (this.onFired) {
+      try {
+        await this.onFired(entry, firedAt)
+      } catch (error) {
+        this.logger.error("schedule onFired callback failed", {
+          connector: this.config.name,
+          id: entry.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
   }
 
   private findMostRecentMatch(cron: string, from: Date, until: Date, entryId: string): Date | null {
