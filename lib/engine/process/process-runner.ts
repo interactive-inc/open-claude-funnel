@@ -13,6 +13,9 @@ export type RunResult = {
 export type AttachOptions = {
   cwd?: string
   env?: Record<string, string>
+  /** Invoked synchronously after the child process has been spawned, with its PID.
+   *  Useful for hosts that need to register the spawned process before it exits. */
+  onSpawned?: (pid: number) => void
 }
 
 export type DetachOptions = {

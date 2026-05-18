@@ -72,6 +72,10 @@ export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
   async attach(command: string[], options: AttachOptions = {}): Promise<number> {
     this.calls.push({ kind: "attach", command, options })
 
+    if (options.onSpawned) {
+      options.onSpawned(1)
+    }
+
     const result = await this.handler(command)
 
     return result.exitCode ?? 0

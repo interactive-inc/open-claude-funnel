@@ -69,6 +69,10 @@ export class NodeFunnelProcessRunner extends FunnelProcessRunner {
       stdio: ["inherit", "inherit", "inherit"],
     })
 
+    if (options.onSpawned) {
+      options.onSpawned(proc.pid)
+    }
+
     return await proc.exited
   }
 

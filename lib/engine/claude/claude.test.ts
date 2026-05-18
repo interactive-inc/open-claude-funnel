@@ -84,4 +84,20 @@ describe("FunnelClaude", () => {
       /already running/,
     )
   })
+
+  test("launch forwards onSpawned callback to the process runner", async () => {
+    const { claude, fs } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    const spawnedPids: number[] = []
+    await claude.launch({
+      channel: "ops",
+      cwd: "/work",
+      onSpawned: (pid) => spawnedPids.push(pid),
+    })
+
+    expect(spawnedPids).toHaveLength(1)
+    expect(spawnedPids[0]).toBe(1)
+  })
 })

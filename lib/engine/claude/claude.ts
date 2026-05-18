@@ -15,6 +15,10 @@ export type LaunchOptions = {
   cwd?: string
   userArgs?: string[]
   profileName?: string
+  /** Invoked synchronously after the child claude process has been spawned, with its PID.
+   *  Useful for hosts that need to register the spawned process before it exits
+   *  (e.g. multi-session registries that track per-claude liveness). */
+  onSpawned?: (pid: number) => void
 }
 
 type Deps = {
@@ -96,7 +100,11 @@ export class FunnelClaude {
     })
 
     try {
-      return await this.process.attach(["claude", ...claudeArgs], { cwd, env })
+      return await this.process.attach(["claude", ...claudeArgs], {
+        cwd,
+        env,
+        onSpawned: options.onSpawned,
+      })
     } finally {
       if (options.profileName) this.removePidFile(options.profileName)
     }
