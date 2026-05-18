@@ -1,9 +1,13 @@
-.PHONY: help dev tui test bun-test typecheck check install link build build-lib build-bin clean
+.PHONY: help dev tui test bun-test typecheck check install link build build-lib build-bin schema clean
 
 components:
 	npx shadcn@latest add http://localhost:4445/all.json
 
-build: build-lib build-bin
+build: build-lib build-bin schema
+
+schema:
+	@mkdir -p schemas
+	@bun lib/bin.ts schema > schemas/funnel.schema.json
 
 build-lib:
 	@bunx vp pack

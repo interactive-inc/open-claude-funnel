@@ -75,6 +75,7 @@ import {
   setHelp as profilesSetHelp,
 } from "@/cli/routes/profiles.set.$profile"
 import { profilesGroupHandler } from "@/cli/routes/profiles"
+import { schemaHandler } from "@/cli/routes/schema"
 import { statusHandler } from "@/cli/routes/status"
 import { updateHandler } from "@/cli/routes/update"
 import { Funnel } from "@/funnel"
@@ -211,6 +212,7 @@ export const createCliApp = (funnel: Funnel) => {
   .get("/gateway/run", ...gatewayRunHandler)
   .get("/gateway/logs", ...gatewayLogsHandler)
   .get("/gateway/listeners", ...gatewayListenersHandler)
+  .get("/schema", ...schemaHandler)
   .get("/status", ...statusHandler)
   .get("/update", ...updateHandler)
 }

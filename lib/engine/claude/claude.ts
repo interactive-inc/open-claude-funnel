@@ -18,6 +18,8 @@ export type LaunchOptions = {
   profileName?: string
   /** Forward `--brief` to claude on launch (enables the SendUserMessage tool). */
   brief?: boolean
+  /** Extra env vars merged under process.env (process.env wins on collision). */
+  extraEnv?: Record<string, string>
 }
 
 type Deps = {
@@ -90,7 +92,7 @@ export class FunnelClaude {
     }
 
     const claudeArgs = this.buildArgs(options, cwd)
-    const env = this.buildEnv(channel.id)
+    const env = this.buildEnv(channel.id, options.extraEnv)
 
     this.logger.info(`claude launch`, {
       channel: options.channel,
@@ -191,8 +193,14 @@ export class FunnelClaude {
     return result
   }
 
-  private buildEnv(channelId: string): Record<string, string> {
+  private buildEnv(channelId: string, extraEnv: Record<string, string> | undefined): Record<string, string> {
     const env: Record<string, string> = {}
+
+    if (extraEnv) {
+      for (const [key, value] of Object.entries(extraEnv)) {
+        env[key] = value
+      }
+    }
 
     for (const [key, value] of Object.entries(globalThis.process.env)) {
       if (typeof value === "string") env[key] = value

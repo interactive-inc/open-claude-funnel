@@ -181,4 +181,22 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.exitCode).toEqual(0)
     expect(result.stdout).toContain("funnel claude")
   })
+
+  test("merges funnel.json env into the claude process env (process.env wins)", async () => {
+    const { funnel, process } = buildSetup({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channel: "ops",
+          env: { ANTHROPIC_MODEL: "claude-sonnet-4-6", FUNNEL_ONLY: "yes" },
+        }),
+      },
+    })
+
+    await dispatchClaude({ funnel, cwd: "/repo" }, [])
+
+    const attach = lastAttach(process)
+
+    expect(attach?.options.env?.ANTHROPIC_MODEL).toEqual("claude-sonnet-4-6")
+    expect(attach?.options.env?.FUNNEL_ONLY).toEqual("yes")
+  })
 })

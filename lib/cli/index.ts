@@ -23,6 +23,7 @@ commands:
   profiles              manage launch profiles
   gateway               manage the gateway daemon (HTTP + WS)
   status                show overall connection status
+  schema                print the JSON Schema for funnel.json
   update                update funnel to the latest version
   mcp                   run as an MCP server (invoked from .mcp.json)
 

@@ -68,9 +68,11 @@ export const connectorSpecSchema = z.discriminatedUnion("type", [
 export type ConnectorSpec = z.infer<typeof connectorSpecSchema>
 
 export const localConfigSchema = z.object({
+  $schema: z.string().optional(),
   channel: z.string(),
   subAgent: z.string().optional(),
   brief: z.boolean().optional(),
+  env: z.record(z.string(), z.string()).optional(),
   connectors: z.array(connectorSpecSchema).optional(),
 })
 

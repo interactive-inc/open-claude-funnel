@@ -157,6 +157,7 @@ export const dispatchClaude = async (
       subAgent: local.subAgent,
       userArgs: parsed.userArgs,
       brief: local.brief,
+      extraEnv: local.env,
     })
 
     return { stdout: null, stderr: null, exitCode }

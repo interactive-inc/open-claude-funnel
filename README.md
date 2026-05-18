@@ -85,8 +85,12 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 
 ```json
 {
+  "$schema": "./node_modules/@interactive-inc/claude-funnel/schemas/funnel.schema.json",
   "channel": "ops",
   "subAgent": "cto",
+  "env": {
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6"
+  },
   "connectors": [
     {
       "type": "slack",
@@ -100,7 +104,13 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 }
 ```
 
-Only `channel` is required. `connectors` is optional. When present, the spec is treated as the source of truth for that channel: missing connectors are created, an existing connector that the spec references by token (not by name) is renamed in place, and connectors not declared in the spec are removed on launch. An absent `connectors` field leaves `~/.funnel` alone.
+Only `channel` is required.
+
+The optional top-level `env` is a `Record<string, string>` of environment variables to layer under the claude process. `process.env` from the launching shell wins on collision, so funnel.json sets defaults that the user can still override one-off via the shell.
+
+The optional `connectors` array is treated as the source of truth for the declared channel: missing connectors are created, an existing connector that the spec references by token (not by name) is renamed in place, and connectors not declared in the spec are removed on launch. An absent `connectors` field leaves `~/.funnel` alone.
+
+The optional top-level `$schema` points at the bundled JSON Schema so editors can validate and autocomplete the file. Regenerate or inspect it any time with `fnl schema`.
 
 Each token field resolves in this order:
 
@@ -180,6 +190,7 @@ fnl gateway logs [-n <N>]                    tail diagnostic log
 fnl gateway listeners                        live registry (alive / dead)
 
 fnl status                                   overall status (channels / profiles / gateway / clients)
+fnl schema                                   print the JSON Schema for funnel.json (pipe to a file for editor support)
 fnl update                                   `bun i -g @interactive-inc/claude-funnel`
 fnl                                          (no args) launch the OpenTUI dashboard
 
