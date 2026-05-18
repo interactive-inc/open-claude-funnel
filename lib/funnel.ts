@@ -8,15 +8,19 @@ import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
+import { FunnelDotenvReader } from "@/engine/local-config/dotenv-reader"
 import { FunnelLocalConfig } from "@/engine/local-config/local-config"
+import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { FunnelMcp } from "@/engine/mcp/mcp"
-import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
+import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
+import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prompter"
+import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store"
@@ -46,6 +50,8 @@ type Props = {
   clock?: FunnelClock
   /** ID generator for channel and connector ids. Use MemoryFunnelIdGenerator for deterministic tests. */
   idGenerator?: FunnelIdGenerator
+  /** Prompter used by FunnelLocalConfigSync when funnel.json omits a token. Defaults to a TTY-only stdin prompter. */
+  tokenPrompter?: FunnelTokenPrompter
   /** Funnel home directory (settings.json + per-channel/per-connector dirs). Defaults to ~/.funnel. */
   dir?: string
   /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to /tmp/funnel. */
@@ -83,6 +89,9 @@ export class Funnel {
     channels?: FunnelChannels
     profiles?: FunnelProfiles
     localConfig?: FunnelLocalConfig
+    localConfigSync?: FunnelLocalConfigSync
+    dotenv?: FunnelDotenvReader
+    tokenPrompter?: FunnelTokenPrompter
     mcp?: FunnelMcp
     claude?: FunnelClaude
     gateway?: FunnelGateway
@@ -215,6 +224,35 @@ export class Funnel {
     }
 
     return this.memos.localConfig
+  }
+
+  /** Parses `.env.local` from a cwd (used by sync to back $VAR references). */
+  get dotenv(): FunnelDotenvReader {
+    if (!this.memos.dotenv) this.memos.dotenv = new FunnelDotenvReader({ fs: this.fs })
+
+    return this.memos.dotenv
+  }
+
+  /** Secret prompter. Defaults to a TTY-only stdin reader; tests inject MemoryFunnelTokenPrompter. */
+  get tokenPrompter(): FunnelTokenPrompter {
+    if (!this.memos.tokenPrompter) {
+      this.memos.tokenPrompter = this.props.tokenPrompter ?? new NodeFunnelTokenPrompter()
+    }
+
+    return this.memos.tokenPrompter
+  }
+
+  /** Reconciles funnel.json's channel + connectors with `~/.funnel/settings.json` on launch. */
+  get localConfigSync(): FunnelLocalConfigSync {
+    if (!this.memos.localConfigSync) {
+      this.memos.localConfigSync = new FunnelLocalConfigSync({
+        channels: this.channels,
+        dotenv: this.dotenv,
+        prompter: this.tokenPrompter,
+      })
+    }
+
+    return this.memos.localConfigSync
   }
 
   /** funnel MCP installer (writes/removes `.mcp.json` entries in target repos). */

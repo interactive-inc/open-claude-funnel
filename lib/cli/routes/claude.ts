@@ -73,6 +73,8 @@ export const claudeHandler = factory.createHandlers(
     const local = funnel.localConfig.read(cwd)
 
     if (local) {
+      await funnel.localConfigSync.ensure(local, cwd)
+
       const exitCode = await funnel.claude.launch({
         channel: local.channel,
         cwd,
