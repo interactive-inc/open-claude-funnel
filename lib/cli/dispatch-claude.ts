@@ -1,5 +1,6 @@
 import { claudeHelp } from "@/cli/routes/claude"
 import type { ChannelSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
+import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
 import type { Funnel } from "@/funnel"
 
 export type DispatchClaudeResult = {
@@ -93,6 +94,32 @@ const parse = (args: string[]): Parsed => {
   return { profile, channel, wantsHelp, userArgs }
 }
 
+/**
+ * Brings the gateway's listener supervisor in sync with what `ensure()` just
+ * wrote to settings.json. Without this, the supervisor keeps running the old
+ * snapshot it loaded at daemon startup, so a freshly synced connector never
+ * starts (and a stale one never stops) until `fnl gateway restart`. When the
+ * daemon is offline every call returns `{ state: "offline" }` and the gateway
+ * auto-start inside `claude.launch` will reload from scratch anyway.
+ */
+const reconcileListeners = async (
+  funnel: Funnel,
+  channelName: string,
+  synced: LocalConfigSyncResult,
+): Promise<void> => {
+  for (const outcome of synced.touched) {
+    if (outcome.changed) {
+      await funnel.listeners.restart(channelName, outcome.name)
+    } else {
+      await funnel.listeners.start(channelName, outcome.name)
+    }
+  }
+
+  for (const name of synced.removed) {
+    await funnel.listeners.stop(channelName, name)
+  }
+}
+
 const pickChannel = (local: LocalConfig, requestedName: string | null): ChannelSpec | string => {
   if (requestedName === null) {
     const first = local.channels[0]
@@ -171,7 +198,9 @@ export const dispatchClaude = async (
       return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
     }
 
-    await funnel.localConfigSync.ensure(picked, cwd)
+    const synced = await funnel.localConfigSync.ensure(picked, cwd)
+
+    await reconcileListeners(funnel, picked.name, synced)
 
     const exitCode = await funnel.claude.launch({
       channel: picked.name,

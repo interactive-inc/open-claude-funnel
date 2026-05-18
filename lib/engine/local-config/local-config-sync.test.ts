@@ -388,4 +388,100 @@ describe("FunnelLocalConfigSync", () => {
 
     expect(channels.getConnector("ops", "extra")).not.toBeNull()
   })
+
+  test("reports a freshly added connector as changed", async () => {
+    const { sync } = buildSync()
+
+    const result = await sync.ensure(
+      {
+        name: "ops",
+        connectors: [
+          { type: "slack", name: "my-slack", botToken: "xoxb-x", appToken: "xapp-x" },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(result.touched).toEqual([{ name: "my-slack", changed: true }])
+    expect(result.removed).toEqual([])
+  })
+
+  test("reports an unchanged connector as not changed", async () => {
+    const { sync, channels } = buildSync()
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", {
+      type: "slack",
+      name: "my-slack",
+      botToken: "xoxb-x",
+      appToken: "xapp-x",
+    })
+
+    const result = await sync.ensure(
+      {
+        name: "ops",
+        connectors: [
+          { type: "slack", name: "my-slack", botToken: "xoxb-x", appToken: "xapp-x" },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(result.touched).toEqual([{ name: "my-slack", changed: false }])
+  })
+
+  test("reports a token-updated connector as changed", async () => {
+    const { sync, channels } = buildSync({
+      env: { SLACK_BOT_TOKEN: "xoxb-new", SLACK_APP_TOKEN: "xapp-new" },
+    })
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", {
+      type: "slack",
+      name: "my-slack",
+      botToken: "xoxb-old",
+      appToken: "xapp-old",
+    })
+
+    const result = await sync.ensure(
+      {
+        name: "ops",
+        connectors: [
+          {
+            type: "slack",
+            name: "my-slack",
+            env: { botToken: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN" },
+          },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(result.touched).toEqual([{ name: "my-slack", changed: true }])
+  })
+
+  test("reports stale connectors in removed", async () => {
+    const { sync, channels } = buildSync()
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", {
+      type: "slack",
+      name: "kept",
+      botToken: "xoxb-k",
+      appToken: "xapp-k",
+    })
+    channels.addConnector("ops", { type: "schedule", name: "extra" })
+
+    const result = await sync.ensure(
+      {
+        name: "ops",
+        connectors: [
+          { type: "slack", name: "kept", botToken: "xoxb-k", appToken: "xapp-k" },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(result.removed).toEqual(["extra"])
+  })
 })

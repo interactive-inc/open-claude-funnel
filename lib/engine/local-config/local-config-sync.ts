@@ -12,6 +12,22 @@ type Deps = {
   env?: NodeJS.ProcessEnv
 }
 
+export type ConnectorSyncOutcome = {
+  name: string
+  changed: boolean
+}
+
+export type LocalConfigSyncResult = {
+  touched: ConnectorSyncOutcome[]
+  removed: string[]
+}
+
+type EnsureOutcome = {
+  id: string
+  name: string
+  changed: boolean
+}
+
 const arraysEqual = (a: readonly string[], b: readonly string[]): boolean => {
   if (a.length !== b.length) return false
 
@@ -52,6 +68,9 @@ const recordsEqual = (
  * absent field means "do not manage connectors from here" and leaves
  * everything in `~/.funnel` alone. Other channels in funnel.json (not
  * passed to this call) are untouched.
+ *
+ * Returns the per-connector change set so callers (e.g. the claude launcher)
+ * can drive listener hot-reload on the gateway after settings are written.
  */
 export class FunnelLocalConfigSync {
   private readonly channels: FunnelChannels
@@ -67,7 +86,7 @@ export class FunnelLocalConfigSync {
     Object.freeze(this)
   }
 
-  async ensure(channel: ChannelSpec, cwd: string): Promise<void> {
+  async ensure(channel: ChannelSpec, cwd: string): Promise<LocalConfigSyncResult> {
     const existing = this.channels.get(channel.name)
 
     if (!existing) {
@@ -89,24 +108,28 @@ export class FunnelLocalConfigSync {
       }
     }
 
-    if (channel.connectors === undefined) return
+    if (channel.connectors === undefined) return { touched: [], removed: [] }
 
     const dotenv = this.dotenv.read(cwd)
-    const touched = new Set<string>()
+    const touched: ConnectorSyncOutcome[] = []
+    const touchedIds = new Set<string>()
 
     for (const spec of channel.connectors) {
-      const id = await this.ensureConnector(channel.name, spec, dotenv)
-      touched.add(id)
+      const outcome = await this.ensureConnector(channel.name, spec, dotenv)
+      touched.push({ name: outcome.name, changed: outcome.changed })
+      touchedIds.add(outcome.id)
     }
 
-    this.removeExtras(channel.name, touched)
+    const removed = this.removeExtras(channel.name, touchedIds)
+
+    return { touched, removed }
   }
 
   private async ensureConnector(
     channelName: string,
     spec: ConnectorSpec,
     dotenv: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<EnsureOutcome> {
     if (spec.type === "slack") return await this.ensureSlack(channelName, spec, dotenv)
     if (spec.type === "discord") return await this.ensureDiscord(channelName, spec, dotenv)
     if (spec.type === "gh") return this.ensureGh(channelName, spec)
@@ -118,7 +141,7 @@ export class FunnelLocalConfigSync {
     channelName: string,
     spec: Extract<ConnectorSpec, { type: "slack" }>,
     dotenv: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<EnsureOutcome> {
     const byName = this.findExistingSlack(channelName, spec.name)
 
     const botToken = await this.resolveField({
@@ -139,9 +162,11 @@ export class FunnelLocalConfigSync {
     if (byName) {
       if (byName.botToken !== botToken || byName.appToken !== appToken) {
         this.channels.updateSlackConnector(channelName, spec.name, { botToken, appToken })
+
+        return { id: byName.id, name: spec.name, changed: true }
       }
 
-      return byName.id
+      return { id: byName.id, name: spec.name, changed: false }
     }
 
     const byToken = this.findSlackByToken(channelName, [botToken, appToken])
@@ -153,7 +178,7 @@ export class FunnelLocalConfigSync {
         this.channels.updateSlackConnector(channelName, spec.name, { botToken, appToken })
       }
 
-      return byToken.id
+      return { id: byToken.id, name: spec.name, changed: true }
     }
 
     const added = this.channels.addConnector(channelName, {
@@ -163,14 +188,14 @@ export class FunnelLocalConfigSync {
       appToken,
     })
 
-    return added.id
+    return { id: added.id, name: spec.name, changed: true }
   }
 
   private async ensureDiscord(
     channelName: string,
     spec: Extract<ConnectorSpec, { type: "discord" }>,
     dotenv: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<EnsureOutcome> {
     const byName = this.findExistingDiscord(channelName, spec.name)
 
     const botToken = await this.resolveField({
@@ -184,9 +209,11 @@ export class FunnelLocalConfigSync {
     if (byName) {
       if (byName.botToken !== botToken) {
         this.channels.updateDiscordConnector(channelName, spec.name, { botToken })
+
+        return { id: byName.id, name: spec.name, changed: true }
       }
 
-      return byName.id
+      return { id: byName.id, name: spec.name, changed: false }
     }
 
     const byToken = this.findDiscordByToken(channelName, botToken)
@@ -198,7 +225,7 @@ export class FunnelLocalConfigSync {
         this.channels.updateDiscordConnector(channelName, spec.name, { botToken })
       }
 
-      return byToken.id
+      return { id: byToken.id, name: spec.name, changed: true }
     }
 
     const added = this.channels.addConnector(channelName, {
@@ -207,13 +234,13 @@ export class FunnelLocalConfigSync {
       botToken,
     })
 
-    return added.id
+    return { id: added.id, name: spec.name, changed: true }
   }
 
   private ensureGh(
     channelName: string,
     spec: Extract<ConnectorSpec, { type: "gh" }>,
-  ): string {
+  ): EnsureOutcome {
     const existing = this.channels.getConnector(channelName, spec.name)
 
     if (existing && existing.type !== "gh") {
@@ -225,9 +252,11 @@ export class FunnelLocalConfigSync {
     if (existing && existing.type === "gh") {
       if (spec.pollInterval !== undefined && existing.pollInterval !== spec.pollInterval) {
         this.channels.updateGhConnector(channelName, spec.name, { pollInterval: spec.pollInterval })
+
+        return { id: existing.id, name: spec.name, changed: true }
       }
 
-      return existing.id
+      return { id: existing.id, name: spec.name, changed: false }
     }
 
     const added = this.channels.addConnector(channelName, {
@@ -236,13 +265,13 @@ export class FunnelLocalConfigSync {
       ...(spec.pollInterval !== undefined ? { pollInterval: spec.pollInterval } : {}),
     })
 
-    return added.id
+    return { id: added.id, name: spec.name, changed: true }
   }
 
   private ensureSchedule(
     channelName: string,
     spec: Extract<ConnectorSpec, { type: "schedule" }>,
-  ): string {
+  ): EnsureOutcome {
     const existing = this.channels.getConnector(channelName, spec.name)
 
     if (existing && existing.type !== "schedule") {
@@ -251,11 +280,13 @@ export class FunnelLocalConfigSync {
       )
     }
 
-    if (existing && existing.type === "schedule") return existing.id
+    if (existing && existing.type === "schedule") {
+      return { id: existing.id, name: spec.name, changed: false }
+    }
 
     const added = this.channels.addConnector(channelName, { type: "schedule", name: spec.name })
 
-    return added.id
+    return { id: added.id, name: spec.name, changed: true }
   }
 
   private findExistingSlack(
@@ -322,16 +353,18 @@ export class FunnelLocalConfigSync {
     return null
   }
 
-  private removeExtras(channelName: string, touched: Set<string>): void {
+  private removeExtras(channelName: string, touched: Set<string>): string[] {
     const channel = this.channels.get(channelName)
 
-    if (!channel) return
+    if (!channel) return []
 
     const stale = channel.connectors.filter((c) => !touched.has(c.id))
 
     for (const connector of stale) {
       this.channels.removeConnector(channelName, connector.name)
     }
+
+    return stale.map((c) => c.name)
   }
 
   private async resolveField(input: {

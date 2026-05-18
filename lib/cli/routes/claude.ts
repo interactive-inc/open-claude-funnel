@@ -90,7 +90,19 @@ export const claudeHandler = factory.createHandlers(
         })
       }
 
-      await funnel.localConfigSync.ensure(picked, cwd)
+      const synced = await funnel.localConfigSync.ensure(picked, cwd)
+
+      for (const outcome of synced.touched) {
+        if (outcome.changed) {
+          await funnel.listeners.restart(picked.name, outcome.name)
+        } else {
+          await funnel.listeners.start(picked.name, outcome.name)
+        }
+      }
+
+      for (const name of synced.removed) {
+        await funnel.listeners.stop(picked.name, name)
+      }
 
       const exitCode = await funnel.claude.launch({
         channel: picked.name,
