@@ -88,12 +88,14 @@ export class FunnelLocalConfigSync {
 
   async ensure(channel: ChannelSpec, cwd: string): Promise<LocalConfigSyncResult> {
     const existing = this.channels.get(channel.name)
+    const nextResume = channel.resume ?? true
 
     if (!existing) {
       this.channels.add({
         name: channel.name,
         options: channel.options ?? [],
         env: channel.env ?? {},
+        resume: nextResume,
       })
     } else {
       const nextOptions = channel.options ?? []
@@ -105,6 +107,10 @@ export class FunnelLocalConfigSync {
 
       if (!recordsEqual(existing.env, nextEnv)) {
         this.channels.setEnv(channel.name, nextEnv)
+      }
+
+      if (existing.resume !== nextResume) {
+        this.channels.setResume(channel.name, nextResume)
       }
     }
 

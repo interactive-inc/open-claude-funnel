@@ -7,6 +7,7 @@ import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
+import { FunnelSessions } from "@/engine/sessions/sessions"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 
@@ -35,17 +36,23 @@ const buildClaude = () => {
     isRunning: () => true,
     start: async () => true,
   }
+  const sessions = new FunnelSessions({
+    fs,
+    idGenerator: new MemoryFunnelIdGenerator({ prefix: "sess" }),
+    dir: "/funnel",
+  })
   const claude = new FunnelClaude({
     channels,
     mcp,
     gateway,
+    sessions,
     fs,
     process,
     logger: new NoopFunnelLogger(),
     dir: "/funnel",
   })
 
-  return { claude, channels, channel, fs, process }
+  return { claude, channels, channel, fs, process, sessions }
 }
 
 describe("FunnelClaude", () => {
@@ -109,5 +116,128 @@ describe("FunnelClaude", () => {
     await claude.launch({ channel: "ops", cwd: "/work", installMcp: false })
 
     expect(fs.existsSync("/work/.mcp.json")).toBe(false)
+  })
+
+  test("launch injects --session-id with the persisted id for (channel, cwd)", async () => {
+    const { claude, channel, sessions, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work" })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    const idx = attach.command.indexOf("--session-id")
+
+    expect(idx).toBeGreaterThan(0)
+    expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "/work"))
+  })
+
+  test("launch reuses the same session id across launches from the same cwd", async () => {
+    const { claude, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work" })
+    await claude.launch({ channel: "ops", cwd: "/work" })
+
+    const attaches = process.calls.filter((c) => c.kind === "attach")
+
+    if (attaches.length !== 2) throw new Error("expected two attach calls")
+    if (attaches[0]?.kind !== "attach" || attaches[1]?.kind !== "attach") {
+      throw new Error("unreachable")
+    }
+
+    const idA = attaches[0].command[attaches[0].command.indexOf("--session-id") + 1]
+    const idB = attaches[1].command[attaches[1].command.indexOf("--session-id") + 1]
+
+    expect(idA).toEqual(idB)
+  })
+
+  test("launch uses different session ids for different cwds", async () => {
+    const { claude, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work-a", { recursive: true })
+    fs.mkdirSync("/work-b", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work-a" })
+    await claude.launch({ channel: "ops", cwd: "/work-b" })
+
+    const attaches = process.calls.filter((c) => c.kind === "attach")
+
+    if (attaches[0]?.kind !== "attach" || attaches[1]?.kind !== "attach") {
+      throw new Error("expected two attach calls")
+    }
+
+    const idA = attaches[0].command[attaches[0].command.indexOf("--session-id") + 1]
+    const idB = attaches[1].command[attaches[1].command.indexOf("--session-id") + 1]
+
+    expect(idA).not.toEqual(idB)
+  })
+
+  test("launch omits --session-id when channel.resume is false", async () => {
+    const { claude, channels, fs, process } = buildClaude()
+
+    channels.setResume("ops", false)
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work" })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    expect(attach.command.includes("--session-id")).toBe(false)
+  })
+
+  test("launch omits --session-id when the user passes -c", async () => {
+    const { claude, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work", userArgs: ["-c"] })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    expect(attach.command.includes("--session-id")).toBe(false)
+    expect(attach.command.includes("-c")).toBe(true)
+  })
+
+  test("launch omits --session-id when the user passes --resume", async () => {
+    const { claude, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work", userArgs: ["--resume", "abc"] })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    expect(attach.command.includes("--session-id")).toBe(false)
+  })
+
+  test("launch omits --session-id when the user passes their own --session-id", async () => {
+    const { claude, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work", userArgs: ["--session-id", "fixed"] })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    const sessionIndexes: number[] = []
+    attach.command.forEach((arg, i) => {
+      if (arg === "--session-id") sessionIndexes.push(i)
+    })
+
+    expect(sessionIndexes).toHaveLength(1)
+    expect(attach.command[sessionIndexes[0]! + 1]).toEqual("fixed")
   })
 })

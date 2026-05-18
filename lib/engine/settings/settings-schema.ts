@@ -24,6 +24,12 @@ export const channelConfigSchema = z.object({
   options: z.array(z.string()).default([]),
   /** Env vars layered under the launched claude process. process.env wins on collision. */
   env: z.record(z.string(), z.string()).default({}),
+  /**
+   * When true (the default), funnel injects `--session-id <uuid>` so that
+   * relaunching from the same cwd resumes the previous claude session.
+   * Set to false for channels that should always start a fresh session.
+   */
+  resume: z.boolean().default(true),
   connectors: z.array(connectorConfigSchema).default([]),
 })
 

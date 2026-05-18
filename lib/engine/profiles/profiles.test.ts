@@ -8,6 +8,7 @@ const channel = (id: string, name: string) => ({
   delivery: "fanout" as const,
   options: [],
   env: {},
+  resume: true,
   connectors: [],
 })
 

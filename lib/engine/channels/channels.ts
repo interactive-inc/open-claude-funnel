@@ -81,6 +81,7 @@ export class FunnelChannels {
     delivery?: ChannelDeliveryMode
     options?: string[]
     env?: Record<string, string>
+    resume?: boolean
   }): ChannelConfig {
     const settings = this.store.read()
 
@@ -94,6 +95,7 @@ export class FunnelChannels {
       delivery: input.delivery ?? "fanout",
       options: input.options ?? [],
       env: input.env ?? {},
+      resume: input.resume ?? true,
       connectors: [],
     }
 
@@ -108,6 +110,15 @@ export class FunnelChannels {
     const channel = this.requireChannel(settings, name)
 
     channel.delivery = delivery
+
+    this.store.write(settings)
+  }
+
+  setResume(name: string, resume: boolean): void {
+    const settings = this.store.read()
+    const channel = this.requireChannel(settings, name)
+
+    channel.resume = resume
 
     this.store.write(settings)
   }

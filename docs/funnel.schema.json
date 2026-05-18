@@ -29,6 +29,9 @@
               "type": "string"
             }
           },
+          "resume": {
+            "type": "boolean"
+          },
           "connectors": {
             "type": "array",
             "items": {

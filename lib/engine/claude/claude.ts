@@ -8,6 +8,7 @@ import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
+import type { FunnelSessions } from "@/engine/sessions/sessions"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 
 export type LaunchOptions = {
@@ -29,6 +30,7 @@ type Deps = {
   channels: FunnelChannels
   mcp: FunnelMcp
   gateway: GatewayController
+  sessions: FunnelSessions
   process?: FunnelProcessRunner
   fs?: FunnelFileSystem
   logger?: FunnelLogger
@@ -49,6 +51,7 @@ export class FunnelClaude {
   private readonly channels: FunnelChannels
   private readonly mcp: FunnelMcp
   private readonly gateway: GatewayController
+  private readonly sessions: FunnelSessions
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
   private readonly logger: FunnelLogger
@@ -58,6 +61,7 @@ export class FunnelClaude {
     this.channels = deps.channels
     this.mcp = deps.mcp
     this.gateway = deps.gateway
+    this.sessions = deps.sessions
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
     this.logger = deps.logger ?? defaultLogger
@@ -95,7 +99,8 @@ export class FunnelClaude {
       this.installCleanup(options.profileName)
     }
 
-    const claudeArgs = this.buildArgs(channel.options, options.userArgs ?? [], cwd)
+    const sessionId = channel.resume ? this.resolveSessionId(channel.id, cwd, options.userArgs ?? []) : null
+    const claudeArgs = this.buildArgs(channel.options, options.userArgs ?? [], cwd, sessionId)
     const env = this.buildEnv(channel.id, channel.env)
 
     this.logger.info(`claude launch`, {
@@ -176,8 +181,17 @@ export class FunnelClaude {
     return !state.startsWith("Z")
   }
 
-  private buildArgs(channelOptions: string[], userArgs: string[], cwd: string): string[] {
+  private buildArgs(
+    channelOptions: string[],
+    userArgs: string[],
+    cwd: string,
+    sessionId: string | null,
+  ): string[] {
     const result = [...channelOptions, ...userArgs]
+
+    if (sessionId !== null) {
+      result.push("--session-id", sessionId)
+    }
 
     const mcpName = this.mcp.findInstalledName(cwd)
 
@@ -190,6 +204,21 @@ export class FunnelClaude {
     }
 
     return result
+  }
+
+  /**
+   * Decides whether funnel should inject `--session-id`. We back off when
+   * the user already passed a session-shaping flag, since combining them
+   * would either confuse claude or override the explicit user intent.
+   */
+  private resolveSessionId(channelId: string, cwd: string, userArgs: string[]): string | null {
+    for (const arg of userArgs) {
+      if (arg === "-c" || arg === "--continue") return null
+      if (arg === "--resume" || arg.startsWith("--resume=")) return null
+      if (arg === "--session-id" || arg.startsWith("--session-id=")) return null
+    }
+
+    return this.sessions.getOrCreate(channelId, cwd)
   }
 
   private buildEnv(channelId: string, channelEnv: Record<string, string>): Record<string, string> {

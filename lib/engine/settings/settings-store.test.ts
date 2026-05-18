@@ -29,6 +29,7 @@ describe("FunnelSettingsStore", () => {
           delivery: "fanout",
           options: [],
           env: {},
+          resume: true,
           connectors: [
             {
               id: "co-1",
