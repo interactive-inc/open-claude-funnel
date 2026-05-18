@@ -151,12 +151,12 @@ export const dispatchClaude = async (
   if (local) {
     await funnel.localConfigSync.ensure(local, cwd)
 
+    const userArgs = [...(local.options ?? []), ...parsed.userArgs]
+
     const exitCode = await funnel.claude.launch({
       channel: local.channel,
       cwd,
-      subAgent: local.subAgent,
-      userArgs: parsed.userArgs,
-      brief: local.brief,
+      userArgs,
       extraEnv: local.env,
     })
 

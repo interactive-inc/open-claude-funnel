@@ -70,8 +70,8 @@ export type ConnectorSpec = z.infer<typeof connectorSpecSchema>
 export const localConfigSchema = z.object({
   $schema: z.string().optional(),
   channel: z.string(),
-  subAgent: z.string().optional(),
-  brief: z.boolean().optional(),
+  /** Extra args forwarded to the claude CLI. Prepended before user-supplied CLI args so user args still win on collision (e.g. --model, --agent, --brief, --resume, positional session ids). */
+  options: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
   connectors: z.array(connectorSpecSchema).optional(),
 })

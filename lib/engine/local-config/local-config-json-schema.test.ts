@@ -13,8 +13,7 @@ describe("funnelJsonSchema", () => {
     const schema = funnelJsonSchema() as { properties: Record<string, unknown>; required: string[] }
 
     expect(schema.properties).toHaveProperty("channel")
-    expect(schema.properties).toHaveProperty("subAgent")
-    expect(schema.properties).toHaveProperty("brief")
+    expect(schema.properties).toHaveProperty("options")
     expect(schema.properties).toHaveProperty("env")
     expect(schema.properties).toHaveProperty("connectors")
     expect(schema.required).toContain("channel")

@@ -182,6 +182,28 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.stdout).toContain("funnel claude")
   })
 
+  test("prepends funnel.json options before user CLI args", async () => {
+    const { funnel, process } = buildSetup({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channel: "ops",
+          options: ["--brief", "--agent", "developer"],
+        }),
+      },
+    })
+
+    await dispatchClaude({ funnel, cwd: "/repo" }, ["--resume", "abc"])
+
+    const attach = lastAttach(process)
+    const command = attach?.command ?? []
+    const briefIdx = command.indexOf("--brief")
+    const resumeIdx = command.indexOf("--resume")
+
+    expect(briefIdx).toBeGreaterThanOrEqual(0)
+    expect(resumeIdx).toBeGreaterThan(briefIdx)
+    expect(command).toEqual(expect.arrayContaining(["--agent", "developer", "--resume", "abc"]))
+  })
+
   test("merges funnel.json env into the claude process env (process.env wins)", async () => {
     const { funnel, process } = buildSetup({
       files: {

@@ -8,11 +8,11 @@
     "channel": {
       "type": "string"
     },
-    "subAgent": {
-      "type": "string"
-    },
-    "brief": {
-      "type": "boolean"
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "env": {
       "type": "object",

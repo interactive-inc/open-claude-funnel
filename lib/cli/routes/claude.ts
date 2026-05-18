@@ -81,9 +81,8 @@ export const claudeHandler = factory.createHandlers(
       const exitCode = await funnel.claude.launch({
         channel: local.channel,
         cwd,
-        subAgent: local.subAgent,
-        userArgs,
-        brief: local.brief,
+        userArgs: [...(local.options ?? []), ...userArgs],
+        extraEnv: local.env,
       })
 
       process.exit(exitCode)

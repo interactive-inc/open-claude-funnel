@@ -87,7 +87,7 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 {
   "$schema": "https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json",
   "channel": "ops",
-  "subAgent": "cto",
+  "options": ["--brief", "--agent", "cto"],
   "env": {
     "ANTHROPIC_MODEL": "claude-sonnet-4-6"
   },
@@ -105,6 +105,8 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 ```
 
 Only `channel` is required.
+
+The optional `options` array is prepended to the claude argv on every launch, before any args the user types after `fnl claude`. Use it for repo-wide claude flags (e.g. `--brief`, `--agent <name>`, `--model <name>`). User-supplied CLI args appear later in the argv so they still win on collision.
 
 The optional top-level `env` is a `Record<string, string>` of environment variables to layer under the claude process. `process.env` from the launching shell wins on collision, so funnel.json sets defaults that the user can still override one-off via the shell.
 
@@ -238,11 +240,12 @@ Connector  =
 Profile    = { name, path, subAgent, channelId }
         named launch preset; the first profile in the list is the default
 
-LocalConfig = { channel, subAgent?, brief?, connectors? }
+LocalConfig = { channel, options?, env?, connectors? }
         per-repo file (funnel.json) checked by `fnl claude` when no --profile / --channel is given
-        connectors[] declares connectors to materialize on launch; each token field accepts
-        a literal, an env-var reference at `env.<field>` (resolved from process.env and
-        ./.env.local), or omission (TTY prompt, persisted to ~/.funnel)
+        options[] is prepended to claude argv (user CLI args override); env merges under process.env;
+        connectors[] declares connectors to materialize on launch (each token field accepts a literal,
+        an env-var reference at `env.<field>` resolved from process.env and ./.env.local, or omission
+        for a TTY prompt persisted to ~/.funnel)
 
 Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json
 ```

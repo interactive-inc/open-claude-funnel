@@ -19,13 +19,13 @@ describe("FunnelLocalConfig", () => {
     expect(config.read("/repo")).toEqual({ channel: "ops" })
   })
 
-  test("parses channel + subAgent + brief", () => {
+  test("parses channel + options + env", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {
         "/repo/funnel.json": JSON.stringify({
           channel: "ops",
-          subAgent: "cto",
-          brief: true,
+          options: ["--brief", "--agent", "developer"],
+          env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
         }),
       },
     })
@@ -33,8 +33,8 @@ describe("FunnelLocalConfig", () => {
 
     expect(config.read("/repo")).toEqual({
       channel: "ops",
-      subAgent: "cto",
-      brief: true,
+      options: ["--brief", "--agent", "developer"],
+      env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
     })
   })
 
@@ -49,7 +49,7 @@ describe("FunnelLocalConfig", () => {
 
   test("throws when channel is missing", () => {
     const fs = new MemoryFunnelFileSystem({
-      files: { "/repo/funnel.json": JSON.stringify({ subAgent: "cto" }) },
+      files: { "/repo/funnel.json": JSON.stringify({ options: ["--brief"] }) },
     })
     const config = new FunnelLocalConfig({ fs })
 
