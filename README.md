@@ -54,11 +54,21 @@ The MCP layer is a thin bridge into the agent. It subscribes to the bound channe
 
 ## Install
 
+Per-repo (recommended for getting started — no global install, version pinned by the repo's lock file):
+
 ```bash
-bun add -g @interactive-inc/claude-funnel
+bun add -D @interactive-inc/claude-funnel
+bunx funnel claude            # or `bunx funnel <any subcommand>`
 ```
 
-The published package ships the built `dist/`, so `bun add -g` makes `funnel` / `fnl` available immediately — no post-install step.
+Global (one CLI for every repo you touch):
+
+```bash
+bun add -g @interactive-inc/claude-funnel
+funnel claude                 # or the `fnl` shorthand
+```
+
+The published package ships the built `dist/`, so either install makes `funnel` / `fnl` available immediately — no post-install step. The rest of the README uses `fnl` for brevity; swap in `bunx funnel` if you went the per-repo route.
 
 ## Quick start
 
