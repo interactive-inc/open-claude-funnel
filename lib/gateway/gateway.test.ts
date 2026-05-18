@@ -23,6 +23,14 @@ describe("FunnelGateway", () => {
     expect(command).toContain("nohup")
   })
 
+  test("appends funnel-gateway[<dir>] tag so ps args can scope kill-competing", () => {
+    const command = new FunnelGateway({ dir: "/tmp/sandbox/.funnel" }).buildStartCommand("/x", {
+      caffeinate: false,
+    })
+
+    expect(command).toContain("funnel-gateway[/tmp/sandbox/.funnel]")
+  })
+
   test("isRunning is false when PID file is missing", () => {
     const gateway = new FunnelGateway({
       fs: new MemoryFunnelFileSystem(),

@@ -42,6 +42,7 @@ export class FunnelGateway {
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
   private readonly clock: FunnelClock
+  private readonly dir: string
   private readonly pidFile: string
   private readonly logDir: string
   private readonly gatewayLog: string
@@ -53,9 +54,9 @@ export class FunnelGateway {
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
     this.clock = deps.clock ?? defaultClock
-    const baseDir = deps.dir ?? FUNNEL_DIR
+    this.dir = deps.dir ?? FUNNEL_DIR
     this.tmpDir = deps.tmpDir ?? DEFAULT_TMP_DIR
-    this.pidFile = join(baseDir, "gateway.pid")
+    this.pidFile = join(this.dir, "gateway.pid")
     this.logDir = join(this.tmpDir, "events")
     this.gatewayLog = join(this.tmpDir, "gateway.log")
     this.port = deps.port ?? DEFAULT_PORT
@@ -101,8 +102,12 @@ export class FunnelGateway {
   buildStartCommand(gatewayScript: string, options: { caffeinate?: boolean } = {}): string {
     const useCaffeinate = options.caffeinate !== false && globalThis.process.platform === "darwin"
     const prefix = useCaffeinate ? "caffeinate -i " : ""
+    // The funnel-gateway[<dir>] suffix is a marker in argv that
+    // kill-competing-slack-gateways grep matches against. macOS's
+    // process.title is invisible to `ps -o args=`, so we tag argv directly.
+    const tag = `funnel-gateway[${this.dir}]`
 
-    return `nohup ${prefix}bun ${gatewayScript} >> ${this.gatewayLog} 2>&1 &`
+    return `nohup ${prefix}bun ${gatewayScript} ${tag} >> ${this.gatewayLog} 2>&1 &`
   }
 
   async stop(): Promise<boolean> {
