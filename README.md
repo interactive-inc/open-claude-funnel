@@ -197,9 +197,9 @@ fnl profiles <name> as-default               move to the front of the list
 fnl profiles rename <old> <new>
 fnl profiles remove <name>
 
-fnl claude                                   launch using ./funnel.json, or the default profile
-fnl claude --profile <name>                  launch a named profile
-fnl claude --channel <name>                  raw launch (no profile, cwd = current dir)
+fnl claude                                   launch the first channel from ./funnel.json, or the default profile
+fnl claude --channel <name>                  with funnel.json: pick that channel; without: raw launch
+fnl claude --profile <name>                  launch a named profile (ignores funnel.json)
 fnl claude [...]                             positionals and any flag other than -p / --profile / --channel
                                               (e.g. --agent, --resume, -c, --model) pass through to claude
 fnl mcp                                      run as an MCP server (invoked from .mcp.json)
