@@ -7,10 +7,10 @@ import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 const PID_FILE = `${process.env.HOME}/.funnel/gateway.pid`
 
 describe("FunnelGateway", () => {
-  test("macOS default wraps with caffeinate -i", () => {
+  test("macOS default wraps with caffeinate -is", () => {
     const command = new FunnelGateway().buildStartCommand("/path/to/daemon.ts")
 
-    if (process.platform === "darwin") expect(command).toContain("caffeinate -i")
+    if (process.platform === "darwin") expect(command).toContain("caffeinate -is")
 
     expect(command).toContain("nohup")
     expect(command).toContain("/path/to/daemon.ts")

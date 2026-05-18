@@ -8,7 +8,7 @@ export const runHelp = `funnel gateway run — run the gateway in foreground
 usage: funnel gateway run [--no-caffeine]
 
 For developers. The process is tied to the current terminal and exits on SIGINT / SIGTERM.
-On macOS wraps with caffeinate -i by default. Use --no-caffeine to disable.
+On macOS wraps with caffeinate -is by default. Use --no-caffeine to disable.
 
 For normal usage prefer funnel gateway start.
 
@@ -31,7 +31,7 @@ export const gatewayRunHandler = factory.createHandlers(
     const gatewayScript = resolveDaemonScript()
     const useCaffeinate = query["no-caffeine"] !== "true" && process.platform === "darwin"
     const command = useCaffeinate
-      ? ["caffeinate", "-i", "bun", gatewayScript]
+      ? ["caffeinate", "-is", "bun", gatewayScript]
       : ["bun", gatewayScript]
 
     const exitCode = await funnel.process.attach(command)

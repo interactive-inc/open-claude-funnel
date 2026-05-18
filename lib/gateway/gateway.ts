@@ -99,7 +99,7 @@ export class FunnelGateway {
 
   buildStartCommand(gatewayScript: string, options: { caffeinate?: boolean } = {}): string {
     const useCaffeinate = options.caffeinate !== false && globalThis.process.platform === "darwin"
-    const prefix = useCaffeinate ? "caffeinate -i " : ""
+    const prefix = useCaffeinate ? "caffeinate -is " : ""
     // The funnel-gateway[<dir>] suffix is a marker in argv that
     // kill-competing-slack-gateways grep matches against. macOS's
     // process.title is invisible to `ps -o args=`, so we tag argv directly.

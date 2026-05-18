@@ -8,7 +8,7 @@ export const startHelp = `funnel gateway start — start the gateway in backgrou
 usage: funnel gateway start [--no-caffeine]
 
 Daemonized with nohup, so it keeps running after the terminal is closed.
-On macOS wraps the process with caffeinate -i by default to prevent idle sleep.
+On macOS wraps the process with caffeinate -is by default to prevent idle and system sleep.
 Use --no-caffeine to disable caffeinate.
 
 port: 9742 (override via FUNNEL_PORT)
