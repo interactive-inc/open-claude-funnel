@@ -391,6 +391,7 @@ export class Funnel {
       process: this.process,
       clock: this.clock,
       logger: this.logger,
+      dir: this.paths.dir,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
       extraRoutes: options.extraRoutes,
