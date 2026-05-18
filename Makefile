@@ -6,8 +6,9 @@ components:
 build: build-lib build-bin schema
 
 schema:
-	@mkdir -p schemas
+	@mkdir -p schemas docs
 	@bun lib/bin.ts schema > schemas/funnel.schema.json
+	@cp schemas/funnel.schema.json docs/funnel.schema.json
 
 build-lib:
 	@bunx vp pack
