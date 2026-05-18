@@ -2,9 +2,18 @@ import { describe, expect, test } from "vitest"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 
+const channel = (id: string, name: string) => ({
+  id,
+  name,
+  delivery: "fanout" as const,
+  options: [],
+  env: {},
+  connectors: [],
+})
+
 const buildProfiles = (): { profiles: FunnelProfiles; store: MockFunnelSettingsReader } => {
   const store = new MockFunnelSettingsReader({
-    channels: [{ id: "ch-1", name: "ops", delivery: "fanout", connectors: [] }],
+    channels: [channel("ch-1", "ops")],
   })
 
   return { profiles: new FunnelProfiles({ store }), store }
@@ -13,7 +22,6 @@ const buildProfiles = (): { profiles: FunnelProfiles; store: MockFunnelSettingsR
 const sampleProfile = {
   name: "default",
   path: "/repo",
-  subAgent: "router",
   channelId: "ch-1",
 }
 
@@ -68,21 +76,17 @@ describe("FunnelProfiles", () => {
 
     store.write({
       version: 1,
-      channels: [
-        { id: "ch-1", name: "ops", delivery: "fanout", connectors: [] },
-        { id: "ch-2", name: "alt", delivery: "fanout", connectors: [] },
-      ],
+      channels: [channel("ch-1", "ops"), channel("ch-2", "alt")],
       profiles: [],
     })
 
     profiles.add({ ...sampleProfile })
-    profiles.update("default", { channelId: "ch-2", path: "/other", subAgent: "qa" })
+    profiles.update("default", { channelId: "ch-2", path: "/other" })
 
     const updated = profiles.get("default")
 
     expect(updated?.channelId).toBe("ch-2")
     expect(updated?.path).toBe("/other")
-    expect(updated?.subAgent).toBe("qa")
   })
 
   test("rename rejects collisions and renames otherwise", () => {

@@ -13,9 +13,22 @@ describe("funnelJsonSchema", () => {
     const schema = funnelJsonSchema() as { properties: Record<string, unknown>; required: string[] }
 
     expect(schema.properties).toHaveProperty("channels")
-    expect(schema.properties).toHaveProperty("options")
-    expect(schema.properties).toHaveProperty("env")
     expect(schema.required).toContain("channels")
+  })
+
+  test("each channel declares options / env / connectors", () => {
+    const schema = funnelJsonSchema() as {
+      properties: {
+        channels: { items: { properties: Record<string, unknown> } }
+      }
+    }
+
+    const channelProps = schema.properties.channels.items.properties
+
+    expect(channelProps).toHaveProperty("name")
+    expect(channelProps).toHaveProperty("options")
+    expect(channelProps).toHaveProperty("env")
+    expect(channelProps).toHaveProperty("connectors")
   })
 
   test("each channel item declares a discriminated connector union", () => {

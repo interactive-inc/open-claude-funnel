@@ -119,7 +119,6 @@ export class FunnelProfiles {
     }
 
     if (fields.path !== undefined) profile.path = fields.path
-    if (fields.subAgent !== undefined) profile.subAgent = fields.subAgent
 
     this.store.write(settings)
   }

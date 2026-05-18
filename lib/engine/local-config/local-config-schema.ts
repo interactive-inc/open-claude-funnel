@@ -65,7 +65,9 @@ export type ConnectorSpec = z.infer<typeof connectorSpecSchema>
 
 export const channelSpecSchema = z.object({
   name: z.string(),
+  /** Args prepended to the claude argv on every launch bound to this channel. */
   options: z.array(z.string()).optional(),
+  /** Env vars layered under the launched claude process. process.env wins on collision. */
   env: z.record(z.string(), z.string()).optional(),
   connectors: z.array(connectorSpecSchema).optional(),
 })
@@ -74,10 +76,6 @@ export type ChannelSpec = z.infer<typeof channelSpecSchema>
 
 export const localConfigSchema = z.object({
   $schema: z.string().optional(),
-  /** Extra args forwarded to every channel's launch before the channel's own options. User-supplied CLI args still come last. */
-  options: z.array(z.string()).optional(),
-  /** Environment variables shared by every channel. Each channel's env merges on top; process.env wins overall. */
-  env: z.record(z.string(), z.string()).optional(),
   /** Declared channels. First entry is the default; --channel <name> selects by name. */
   channels: z.array(channelSpecSchema).min(1),
 })

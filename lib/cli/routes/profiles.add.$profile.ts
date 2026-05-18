@@ -5,13 +5,15 @@ import { zValidator } from "@/cli/router/validator"
 
 export const addHelp = `funnel profiles add — add a profile
 
-usage: funnel profiles add <name> --path <path> --sub-agent <agent> --channel <channel-name> [--brief]
+usage: funnel profiles add <name> --path <path> --channel <channel-name>
 
 options:
-  --path        working directory passed to claude as cwd
-  --sub-agent   sub-agent name passed to claude --agent
-  --channel     channel name (resolved to channel id internally)
-  --brief       forward --brief to claude on launch (enables SendUserMessage tool)`
+  --path     working directory passed to claude as cwd
+  --channel  channel name (resolved to channel id internally)
+
+Per-launch flags like --agent or --brief now live on the channel itself
+(set with \`fnl channels <name> set options ...\`), so profiles are only
+\`{ name, path, channelId }\`.`
 
 export const profilesAddHandler = factory.createHandlers(
   zValidator("param", z.object({ profile: z.string() })),
@@ -19,9 +21,7 @@ export const profilesAddHandler = factory.createHandlers(
     "query",
     z.object({
       path: z.string(),
-      "sub-agent": z.string(),
       channel: z.string(),
-      brief: z.coerce.boolean().optional(),
     }),
     addHelp,
   ),
@@ -39,9 +39,7 @@ export const profilesAddHandler = factory.createHandlers(
     funnel.profiles.add({
       name: param.profile,
       path: query.path,
-      subAgent: query["sub-agent"],
       channelId: channel.id,
-      ...(query.brief !== undefined ? { brief: query.brief } : {}),
     })
 
     return c.text(`added profile "${param.profile}"`)

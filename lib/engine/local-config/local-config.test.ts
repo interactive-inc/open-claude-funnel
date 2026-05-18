@@ -19,14 +19,16 @@ describe("FunnelLocalConfig", () => {
     expect(config.read("/repo")).toEqual({ channels: [{ name: "ops" }] })
   })
 
-  test("parses shared options/env plus per-channel overrides", () => {
+  test("parses per-channel options/env", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          options: ["--brief"],
-          env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
           channels: [
-            { name: "ops", options: ["--agent", "pm"] },
+            {
+              name: "ops",
+              options: ["--brief", "--agent", "pm"],
+              env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
+            },
             { name: "review", env: { EXTRA: "1" } },
           ],
         }),
@@ -35,10 +37,12 @@ describe("FunnelLocalConfig", () => {
     const config = new FunnelLocalConfig({ fs })
 
     expect(config.read("/repo")).toEqual({
-      options: ["--brief"],
-      env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
       channels: [
-        { name: "ops", options: ["--agent", "pm"] },
+        {
+          name: "ops",
+          options: ["--brief", "--agent", "pm"],
+          env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
+        },
         { name: "review", env: { EXTRA: "1" } },
       ],
     })

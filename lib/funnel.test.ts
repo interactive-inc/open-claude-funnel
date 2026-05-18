@@ -35,7 +35,6 @@ describe("Funnel facade", () => {
     funnel.profiles.add({
       name: "default",
       path: "/repo",
-      subAgent: "router",
       channelId: channel.id,
     })
 
@@ -50,7 +49,6 @@ describe("Funnel facade", () => {
     funnel.profiles.add({
       name: "default",
       path: "/repo",
-      subAgent: "router",
       channelId: channel.id,
     })
 

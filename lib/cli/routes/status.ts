@@ -61,7 +61,7 @@ export const statusHandler = factory.createHandlers(
       const channelLabel = channel ? channel.name : `id:${profile.channelId}`
 
       lines.push(
-        `  - ${profile.name}${tag} [path=${profile.path}, sub-agent=${profile.subAgent}, channel=${channelLabel}]`,
+        `  - ${profile.name}${tag} [path=${profile.path}, channel=${channelLabel}]`,
       )
     }
     lines.push("")

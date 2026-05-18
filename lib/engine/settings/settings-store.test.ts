@@ -27,6 +27,8 @@ describe("FunnelSettingsStore", () => {
           id: "ch-1",
           name: "ops",
           delivery: "fanout",
+          options: [],
+          env: {},
           connectors: [
             {
               id: "co-1",

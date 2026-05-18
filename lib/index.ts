@@ -66,6 +66,8 @@ export * from "@/gateway/funnel-event-store"
 export * from "@/gateway/listener-supervisor"
 export * from "@/gateway/listeners-client"
 export * from "@/gateway/publish-schema"
+export { type Env as GatewayServerEnv } from "@/gateway/factory"
+export type { GatewayEmitInput, GatewayRouteDeps } from "@/gateway/routes/route-deps"
 
 // CLI — embeddable Hono app + argv translator
 export * from "@/cli/factory"

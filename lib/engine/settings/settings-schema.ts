@@ -20,6 +20,10 @@ export const channelConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   delivery: channelDeliveryModeSchema.default("fanout"),
+  /** Args prepended to the claude argv on every launch bound to this channel. */
+  options: z.array(z.string()).default([]),
+  /** Env vars layered under the launched claude process. process.env wins on collision. */
+  env: z.record(z.string(), z.string()).default({}),
   connectors: z.array(connectorConfigSchema).default([]),
 })
 
@@ -28,10 +32,7 @@ export type ChannelConfig = z.infer<typeof channelConfigSchema>
 export const profileConfigSchema = z.object({
   name: z.string(),
   path: z.string(),
-  subAgent: z.string(),
   channelId: z.string(),
-  /** Forwards `--brief` to claude on launch (enables the SendUserMessage tool). */
-  brief: z.boolean().optional(),
 })
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>

@@ -50,7 +50,7 @@ export function ProfileLauncher(props: Props) {
             <text key={profile.name} bg={selected ? theme.color.muted : undefined}>
               <span fg={theme.color.foreground}>{profile.name}</span>
               <span fg={funnel.faint}>
-                {`  → channel ${profile.channelId} · path ${profile.path} · sub-agent ${profile.subAgent}`}
+                {`  → channel ${profile.channelId} · path ${profile.path}`}
               </span>
             </text>
           )

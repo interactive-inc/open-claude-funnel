@@ -116,10 +116,9 @@ const pickChannel = (local: LocalConfig, requestedName: string | null): ChannelS
 /**
  * Entry point for `fnl claude <args>`. Pulls only funnel-specific flags
  * (--profile / -p, --channel, --help / -h) out of argv and forwards every
- * other token — including positionals and unknown short flags — verbatim
- * to the claude CLI. Routing through Hono cannot do this because positional
- * args would become URL segments and unknown short flags would be silently
- * dropped.
+ * other token verbatim to claude. Channel.options and channel.env (from
+ * ~/.funnel/settings.json) are applied by FunnelClaude.launch — this layer
+ * only decides which channel to bind.
  *
  * Resolution order:
  *   1. --help → print help
@@ -156,10 +155,8 @@ export const dispatchClaude = async (
     const exitCode = await funnel.claude.launch({
       channel: profile.channelId,
       cwd: profile.path,
-      subAgent: profile.subAgent,
       userArgs: parsed.userArgs,
       profileName: profile.name,
-      brief: profile.brief,
     })
 
     return { stdout: null, stderr: null, exitCode }
@@ -176,15 +173,10 @@ export const dispatchClaude = async (
 
     await funnel.localConfigSync.ensure(picked, cwd)
 
-    const mergedOptions = [...(local.options ?? []), ...(picked.options ?? [])]
-    const mergedEnv = { ...(local.env ?? {}), ...(picked.env ?? {}) }
-    const userArgs = [...mergedOptions, ...parsed.userArgs]
-
     const exitCode = await funnel.claude.launch({
       channel: picked.name,
       cwd,
-      userArgs,
-      extraEnv: mergedEnv,
+      userArgs: parsed.userArgs,
     })
 
     return { stdout: null, stderr: null, exitCode }
@@ -209,10 +201,8 @@ export const dispatchClaude = async (
   const exitCode = await funnel.claude.launch({
     channel: defaultProfile.channelId,
     cwd: defaultProfile.path,
-    subAgent: defaultProfile.subAgent,
     userArgs: parsed.userArgs,
     profileName: defaultProfile.name,
-    brief: defaultProfile.brief,
   })
 
   return { stdout: null, stderr: null, exitCode }

@@ -26,7 +26,6 @@ export const profilesLaunchHandler = factory.createHandlers(
     const exitCode = await funnel.claude.launch({
       channel: profile.channelId,
       cwd: profile.path,
-      subAgent: profile.subAgent,
       userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
       profileName: profile.name,
     })

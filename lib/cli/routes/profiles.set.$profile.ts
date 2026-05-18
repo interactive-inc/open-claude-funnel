@@ -5,7 +5,7 @@ import { zValidator } from "@/cli/router/validator"
 
 export const setHelp = `funnel profiles <name> set — update a profile
 
-usage: funnel profiles <name> set [--path <path>] [--sub-agent <agent>] [--channel <channel-name>] [--brief | --no-brief]`
+usage: funnel profiles <name> set [--path <path>] [--channel <channel-name>]`
 
 export const profilesSetHandler = factory.createHandlers(
   zValidator("param", z.object({ profile: z.string() })),
@@ -13,10 +13,7 @@ export const profilesSetHandler = factory.createHandlers(
     "query",
     z.object({
       path: z.string().optional(),
-      "sub-agent": z.string().optional(),
       channel: z.string().optional(),
-      brief: z.coerce.boolean().optional(),
-      "no-brief": z.coerce.boolean().optional(),
     }),
     setHelp,
   ),
@@ -31,13 +28,9 @@ export const profilesSetHandler = factory.createHandlers(
       throw new HTTPException(400, { message: `channel "${query.channel}" not found` })
     }
 
-    const brief = query["no-brief"] ? false : query.brief
-
     funnel.profiles.update(param.profile, {
       path: query.path,
-      subAgent: query["sub-agent"],
       channelId: channel?.id,
-      ...(brief !== undefined ? { brief } : {}),
     })
 
     return c.text(`updated profile "${param.profile}"`)

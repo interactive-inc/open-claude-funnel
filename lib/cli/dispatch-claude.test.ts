@@ -96,7 +96,6 @@ describe("dispatchClaude — argv parsing", () => {
     funnel.profiles.add({
       name: "cto",
       path: "/work",
-      subAgent: "developer",
       channelId: channel.id,
     })
 
@@ -115,7 +114,6 @@ describe("dispatchClaude — argv parsing", () => {
     funnel.profiles.add({
       name: "cto",
       path: "/work",
-      subAgent: "developer",
       channelId: channel.id,
     })
 
@@ -201,7 +199,6 @@ describe("dispatchClaude — argv parsing", () => {
     funnel.profiles.add({
       name: "default-profile",
       path: "/work",
-      subAgent: "developer",
       channelId: channel.id,
     })
 
@@ -219,12 +216,11 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.stdout).toContain("funnel claude")
   })
 
-  test("prepends funnel.json options before user CLI args (top-level then channel)", async () => {
+  test("prepends channel options before user CLI args", async () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          options: ["--brief"],
-          channels: [{ name: "ops", options: ["--agent", "developer"] }],
+          channels: [{ name: "ops", options: ["--brief", "--agent", "developer"] }],
         }),
       },
     })
@@ -241,12 +237,16 @@ describe("dispatchClaude — argv parsing", () => {
     expect(command).toEqual(expect.arrayContaining(["--agent", "developer", "--resume", "abc"]))
   })
 
-  test("merges funnel.json env into the claude process env (channel wins over top-level)", async () => {
+  test("merges channel env into the claude process env", async () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          env: { ANTHROPIC_MODEL: "claude-sonnet-4-6", FUNNEL_ONLY: "yes" },
-          channels: [{ name: "ops", env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" } }],
+          channels: [
+            {
+              name: "ops",
+              env: { ANTHROPIC_MODEL: "claude-sonnet-4-6", FUNNEL_ONLY: "yes" },
+            },
+          ],
         }),
       },
     })

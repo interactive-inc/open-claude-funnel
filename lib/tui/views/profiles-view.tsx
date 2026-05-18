@@ -50,10 +50,6 @@ export function ProfilesView(props: Props) {
         const next = raw.trim()
 
         if (next) props.funnel.profiles.update(profile.name, { path: next })
-      } else if (field === "sub-agent") {
-        const next = raw.trim()
-
-        if (next) props.funnel.profiles.update(profile.name, { subAgent: next })
       }
     } catch (error) {
       props.funnel.logger.error(error instanceof Error ? error.message : String(error))
@@ -82,7 +78,7 @@ export function ProfilesView(props: Props) {
     const channelId = channels[0]?.name ?? ""
 
     try {
-      props.funnel.profiles.add({ name, path: "", subAgent: "", channelId })
+      props.funnel.profiles.add({ name, path: "", channelId })
       props.setFocusedKey(fieldKey(name, "name"))
     } catch (error) {
       props.funnel.logger.error(error instanceof Error ? error.message : String(error))
@@ -119,14 +115,6 @@ export function ProfilesView(props: Props) {
               onFocus={() => props.setFocusedKey(fieldKey(profile.name, "path"))}
               onCommit={(raw) => commit(profile, "path", raw)}
               placeholder="repository path"
-            />
-            <EditableField
-              label="sub-agent"
-              initialValue={profile.subAgent}
-              focused={props.focusedKey === fieldKey(profile.name, "sub-agent")}
-              onFocus={() => props.setFocusedKey(fieldKey(profile.name, "sub-agent"))}
-              onCommit={(raw) => commit(profile, "sub-agent", raw)}
-              placeholder="claude --agent value"
             />
             <EditableField
               label="channel"

@@ -128,7 +128,6 @@ export function App(props: Props) {
       await props.funnel.claude.launch({
         channel: profile.channelId,
         cwd: profile.path,
-        subAgent: profile.subAgent,
         profileName: profile.name,
       })
     } catch (error) {

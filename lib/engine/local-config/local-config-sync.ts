@@ -12,6 +12,31 @@ type Deps = {
   env?: NodeJS.ProcessEnv
 }
 
+const arraysEqual = (a: readonly string[], b: readonly string[]): boolean => {
+  if (a.length !== b.length) return false
+
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+
+  return true
+}
+
+const recordsEqual = (
+  a: Record<string, string>,
+  b: Record<string, string>,
+): boolean => {
+  const keys = Object.keys(a)
+
+  if (keys.length !== Object.keys(b).length) return false
+
+  for (const key of keys) {
+    if (a[key] !== b[key]) return false
+  }
+
+  return true
+}
+
 /**
  * Reconciles a single funnel.json channel spec with `~/.funnel/settings.json`.
  * The spec is the source of truth for the channel it declares:
@@ -43,8 +68,25 @@ export class FunnelLocalConfigSync {
   }
 
   async ensure(channel: ChannelSpec, cwd: string): Promise<void> {
-    if (!this.channels.get(channel.name)) {
-      this.channels.add({ name: channel.name })
+    const existing = this.channels.get(channel.name)
+
+    if (!existing) {
+      this.channels.add({
+        name: channel.name,
+        options: channel.options ?? [],
+        env: channel.env ?? {},
+      })
+    } else {
+      const nextOptions = channel.options ?? []
+      const nextEnv = channel.env ?? {}
+
+      if (!arraysEqual(existing.options, nextOptions)) {
+        this.channels.setOptions(channel.name, nextOptions)
+      }
+
+      if (!recordsEqual(existing.env, nextEnv)) {
+        this.channels.setEnv(channel.name, nextEnv)
+      }
     }
 
     if (channel.connectors === undefined) return

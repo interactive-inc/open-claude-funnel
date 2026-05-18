@@ -66,10 +66,8 @@ export const claudeHandler = factory.createHandlers(
       const exitCode = await funnel.claude.launch({
         channel: profile.channelId,
         cwd: profile.path,
-        subAgent: profile.subAgent,
         userArgs,
         profileName: profile.name,
-        brief: profile.brief,
       })
 
       process.exit(exitCode)
@@ -97,8 +95,7 @@ export const claudeHandler = factory.createHandlers(
       const exitCode = await funnel.claude.launch({
         channel: picked.name,
         cwd,
-        userArgs: [...(local.options ?? []), ...(picked.options ?? []), ...userArgs],
-        extraEnv: { ...(local.env ?? {}), ...(picked.env ?? {}) },
+        userArgs,
       })
 
       process.exit(exitCode)
@@ -113,10 +110,8 @@ export const claudeHandler = factory.createHandlers(
     const exitCode = await funnel.claude.launch({
       channel: defaultProfile.channelId,
       cwd: defaultProfile.path,
-      subAgent: defaultProfile.subAgent,
       userArgs,
       profileName: defaultProfile.name,
-      brief: defaultProfile.brief,
     })
 
     process.exit(exitCode)

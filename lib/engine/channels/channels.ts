@@ -76,7 +76,12 @@ export class FunnelChannels {
     return this.list().find((c) => c.id === id) ?? null
   }
 
-  add(input: { name: string; delivery?: ChannelDeliveryMode }): ChannelConfig {
+  add(input: {
+    name: string
+    delivery?: ChannelDeliveryMode
+    options?: string[]
+    env?: Record<string, string>
+  }): ChannelConfig {
     const settings = this.store.read()
 
     if (settings.channels.some((c) => c.name === input.name)) {
@@ -87,6 +92,8 @@ export class FunnelChannels {
       id: this.idGenerator.generate(),
       name: input.name,
       delivery: input.delivery ?? "fanout",
+      options: input.options ?? [],
+      env: input.env ?? {},
       connectors: [],
     }
 
@@ -101,6 +108,24 @@ export class FunnelChannels {
     const channel = this.requireChannel(settings, name)
 
     channel.delivery = delivery
+
+    this.store.write(settings)
+  }
+
+  setOptions(name: string, options: string[]): void {
+    const settings = this.store.read()
+    const channel = this.requireChannel(settings, name)
+
+    channel.options = options
+
+    this.store.write(settings)
+  }
+
+  setEnv(name: string, env: Record<string, string>): void {
+    const settings = this.store.read()
+    const channel = this.requireChannel(settings, name)
+
+    channel.env = env
 
     this.store.write(settings)
   }

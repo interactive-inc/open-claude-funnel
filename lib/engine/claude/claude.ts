@@ -13,13 +13,8 @@ import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 export type LaunchOptions = {
   channel: string
   cwd?: string
-  subAgent?: string
   userArgs?: string[]
   profileName?: string
-  /** Forward `--brief` to claude on launch (enables the SendUserMessage tool). */
-  brief?: boolean
-  /** Extra env vars merged under process.env (process.env wins on collision). */
-  extraEnv?: Record<string, string>
 }
 
 type Deps = {
@@ -91,13 +86,12 @@ export class FunnelClaude {
       this.installCleanup(options.profileName)
     }
 
-    const claudeArgs = this.buildArgs(options, cwd)
-    const env = this.buildEnv(channel.id, options.extraEnv)
+    const claudeArgs = this.buildArgs(channel.options, options.userArgs ?? [], cwd)
+    const env = this.buildEnv(channel.id, channel.env)
 
     this.logger.info(`claude launch`, {
       channel: options.channel,
       channelId: channel.id,
-      subAgent: options.subAgent,
       cwd,
     })
 
@@ -169,8 +163,8 @@ export class FunnelClaude {
     return !state.startsWith("Z")
   }
 
-  private buildArgs(options: LaunchOptions, cwd: string): string[] {
-    const result = [...(options.userArgs ?? [])]
+  private buildArgs(channelOptions: string[], userArgs: string[], cwd: string): string[] {
+    const result = [...channelOptions, ...userArgs]
 
     const mcpName = this.mcp.findInstalledName(cwd)
 
@@ -182,24 +176,14 @@ export class FunnelClaude {
       result.push("--dangerously-load-development-channels", `server:${mcpName}`)
     }
 
-    if (!result.includes("--agent") && options.subAgent) {
-      result.push("--agent", options.subAgent)
-    }
-
-    if (options.brief && !result.includes("--brief")) {
-      result.push("--brief")
-    }
-
     return result
   }
 
-  private buildEnv(channelId: string, extraEnv: Record<string, string> | undefined): Record<string, string> {
+  private buildEnv(channelId: string, channelEnv: Record<string, string>): Record<string, string> {
     const env: Record<string, string> = {}
 
-    if (extraEnv) {
-      for (const [key, value] of Object.entries(extraEnv)) {
-        env[key] = value
-      }
+    for (const [key, value] of Object.entries(channelEnv)) {
+      env[key] = value
     }
 
     for (const [key, value] of Object.entries(globalThis.process.env)) {

@@ -5,21 +5,6 @@
     "$schema": {
       "type": "string"
     },
-    "options": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "env": {
-      "type": "object",
-      "propertyNames": {
-        "type": "string"
-      },
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
     "channels": {
       "minItems": 1,
       "type": "array",
