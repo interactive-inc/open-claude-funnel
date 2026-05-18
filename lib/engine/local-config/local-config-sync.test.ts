@@ -288,4 +288,104 @@ describe("FunnelLocalConfigSync", () => {
       entries: [],
     })
   })
+
+  test("renames an existing slack connector when its tokens match the spec under a different name", async () => {
+    const { sync, channels } = buildSync({
+      env: { SLACK_BOT_TOKEN: "xoxb-shared", SLACK_APP_TOKEN: "xapp-shared" },
+    })
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", {
+      type: "slack",
+      name: "old-name",
+      botToken: "xoxb-shared",
+      appToken: "xapp-shared",
+    })
+
+    await sync.ensure(
+      {
+        channel: "ops",
+        connectors: [
+          {
+            type: "slack",
+            name: "new-name",
+            env: { botToken: "SLACK_BOT_TOKEN", appToken: "SLACK_APP_TOKEN" },
+          },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(channels.getConnector("ops", "old-name")).toBeNull()
+    expect(channels.getConnector("ops", "new-name")).toMatchObject({
+      type: "slack",
+      botToken: "xoxb-shared",
+      appToken: "xapp-shared",
+    })
+  })
+
+  test("renames an existing discord connector when its token matches the spec under a different name", async () => {
+    const { sync, channels } = buildSync({ env: { DISCORD_TOKEN: "abcdefghij" } })
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", { type: "discord", name: "old-name", botToken: "abcdefghij" })
+
+    await sync.ensure(
+      {
+        channel: "ops",
+        connectors: [
+          { type: "discord", name: "new-name", env: { botToken: "DISCORD_TOKEN" } },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(channels.getConnector("ops", "old-name")).toBeNull()
+    expect(channels.getConnector("ops", "new-name")).toMatchObject({
+      type: "discord",
+      botToken: "abcdefghij",
+    })
+  })
+
+  test("removes connectors not declared in the spec when connectors[] is present", async () => {
+    const { sync, channels } = buildSync()
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", {
+      type: "slack",
+      name: "kept",
+      botToken: "xoxb-keep",
+      appToken: "xapp-keep",
+    })
+    channels.addConnector("ops", { type: "schedule", name: "extra" })
+
+    await sync.ensure(
+      {
+        channel: "ops",
+        connectors: [
+          {
+            type: "slack",
+            name: "kept",
+            botToken: "xoxb-keep",
+            appToken: "xapp-keep",
+          },
+        ],
+      },
+      "/repo",
+    )
+
+    expect(channels.getConnector("ops", "kept")).not.toBeNull()
+    expect(channels.getConnector("ops", "extra")).toBeNull()
+  })
+
+  test("leaves existing connectors alone when connectors[] is absent", async () => {
+    const { sync, channels } = buildSync()
+
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", { type: "schedule", name: "extra" })
+
+    await sync.ensure({ channel: "ops" }, "/repo")
+
+    expect(channels.getConnector("ops", "extra")).not.toBeNull()
+  })
 })

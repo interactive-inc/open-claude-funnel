@@ -100,7 +100,7 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 }
 ```
 
-Only `channel` is required. `connectors` is optional — when present, missing channels and connectors are created on launch.
+Only `channel` is required. `connectors` is optional. When present, the spec is treated as the source of truth for that channel: missing connectors are created, an existing connector that the spec references by token (not by name) is renamed in place, and connectors not declared in the spec are removed on launch. An absent `connectors` field leaves `~/.funnel` alone.
 
 Each token field resolves in this order:
 
