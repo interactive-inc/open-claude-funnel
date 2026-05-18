@@ -95,7 +95,7 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 
 ```json
 {
-  "$schema": "https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json",
+  "$schema": "./node_modules/@interactive-inc/claude-funnel/funnel.schema.json",
   "channel": "ops",
   "options": ["--brief", "--agent", "cto"],
   "env": {
@@ -122,7 +122,7 @@ The optional top-level `env` is a `Record<string, string>` of environment variab
 
 The optional `connectors` array is treated as the source of truth for the declared channel: missing connectors are created, an existing connector that the spec references by token (not by name) is renamed in place, and connectors not declared in the spec are removed on launch. An absent `connectors` field leaves `~/.funnel` alone.
 
-The optional top-level `$schema` points at the hosted JSON Schema (`https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json`) so editors can validate and autocomplete the file. Local alternatives: the file ships in the npm package at `node_modules/@interactive-inc/claude-funnel/schemas/funnel.schema.json`, or generate one in-repo with `fnl schema > funnel.schema.json` and reference it via `./funnel.schema.json`.
+The optional top-level `$schema` points at the JSON Schema so editors can validate and autocomplete the file. The recommended reference for repos with a local install is `./node_modules/@interactive-inc/claude-funnel/funnel.schema.json` — it works without a network round-trip and editors do not need to prompt for trust. The same file is also published at `https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json` (editors usually require explicit trust on first use), and `fnl schema > funnel.schema.json` regenerates a local copy on demand.
 
 Each token field resolves in this order:
 
