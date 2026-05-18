@@ -12,19 +12,24 @@ describe("funnelJsonSchema", () => {
   test("declares the funnel.json fields", () => {
     const schema = funnelJsonSchema() as { properties: Record<string, unknown>; required: string[] }
 
-    expect(schema.properties).toHaveProperty("channel")
+    expect(schema.properties).toHaveProperty("channels")
     expect(schema.properties).toHaveProperty("options")
     expect(schema.properties).toHaveProperty("env")
-    expect(schema.properties).toHaveProperty("connectors")
-    expect(schema.required).toContain("channel")
+    expect(schema.required).toContain("channels")
   })
 
-  test("includes a discriminated connector union", () => {
+  test("each channel item declares a discriminated connector union", () => {
     const schema = funnelJsonSchema() as {
-      properties: { connectors: { items: { anyOf?: unknown[]; oneOf?: unknown[] } } }
+      properties: {
+        channels: {
+          items: {
+            properties: { connectors: { items: { anyOf?: unknown[]; oneOf?: unknown[] } } }
+          }
+        }
+      }
     }
 
-    const items = schema.properties.connectors.items
+    const items = schema.properties.channels.items.properties.connectors.items
     const variants = items.anyOf ?? items.oneOf
 
     expect(Array.isArray(variants) && variants.length).toBeGreaterThanOrEqual(4)

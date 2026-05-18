@@ -49,7 +49,7 @@ describe("FunnelLocalConfigSync", () => {
   test("creates the channel when it does not exist", async () => {
     const { sync, channels } = buildSync()
 
-    await sync.ensure({ channel: "ops" }, "/repo")
+    await sync.ensure({ name: "ops" }, "/repo")
 
     expect(channels.get("ops")).toMatchObject({ name: "ops" })
   })
@@ -61,7 +61,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           {
             type: "slack",
@@ -89,7 +89,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           {
             type: "slack",
@@ -112,7 +112,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           {
             type: "slack",
@@ -137,7 +137,7 @@ describe("FunnelLocalConfigSync", () => {
     await expect(
       sync.ensure(
         {
-          channel: "ops",
+          name: "ops",
           connectors: [
             {
               type: "slack",
@@ -157,7 +157,7 @@ describe("FunnelLocalConfigSync", () => {
     await expect(
       sync.ensure(
         {
-          channel: "ops",
+          name: "ops",
           connectors: [
             {
               type: "slack",
@@ -182,7 +182,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [{ type: "slack", name: "my-slack" }],
       },
       "/repo",
@@ -210,7 +210,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [{ type: "slack", name: "my-slack" }],
       },
       "/repo",
@@ -238,7 +238,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           {
             type: "slack",
@@ -265,7 +265,7 @@ describe("FunnelLocalConfigSync", () => {
     await expect(
       sync.ensure(
         {
-          channel: "ops",
+          name: "ops",
           connectors: [
             { type: "slack", name: "shared", botToken: "xoxb-x", appToken: "xapp-x" },
           ],
@@ -279,7 +279,7 @@ describe("FunnelLocalConfigSync", () => {
     const { sync, channels } = buildSync()
 
     await sync.ensure(
-      { channel: "ops", connectors: [{ type: "schedule", name: "daily" }] },
+      { name: "ops", connectors: [{ type: "schedule", name: "daily" }] },
       "/repo",
     )
 
@@ -304,7 +304,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           {
             type: "slack",
@@ -332,7 +332,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           { type: "discord", name: "new-name", env: { botToken: "DISCORD_TOKEN" } },
         ],
@@ -361,7 +361,7 @@ describe("FunnelLocalConfigSync", () => {
 
     await sync.ensure(
       {
-        channel: "ops",
+        name: "ops",
         connectors: [
           {
             type: "slack",
@@ -384,7 +384,7 @@ describe("FunnelLocalConfigSync", () => {
     channels.add({ name: "ops" })
     channels.addConnector("ops", { type: "schedule", name: "extra" })
 
-    await sync.ensure({ channel: "ops" }, "/repo")
+    await sync.ensure({ name: "ops" }, "/repo")
 
     expect(channels.getConnector("ops", "extra")).not.toBeNull()
   })

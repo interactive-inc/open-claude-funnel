@@ -1,6 +1,6 @@
 import type { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelDotenvReader } from "@/engine/local-config/dotenv-reader"
-import type { ConnectorSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
+import type { ChannelSpec, ConnectorSpec } from "@/engine/local-config/local-config-schema"
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
@@ -13,8 +13,8 @@ type Deps = {
 }
 
 /**
- * Reconciles a `funnel.json` spec with `~/.funnel/settings.json`. The spec
- * is the source of truth for the channel it declares:
+ * Reconciles a single funnel.json channel spec with `~/.funnel/settings.json`.
+ * The spec is the source of truth for the channel it declares:
  *
  *   - missing channel → created
  *   - declared connector matched by name → tokens reconciled
@@ -23,9 +23,10 @@ type Deps = {
  *   - declared connector with no match → added
  *   - any connector left in the channel that the spec did not touch → removed
  *
- * Removal only fires when funnel.json has a `connectors` field. An absent
- * field means "do not manage connectors from here" and leaves everything in
- * `~/.funnel` alone.
+ * Removal only fires when the channel spec has a `connectors` field. An
+ * absent field means "do not manage connectors from here" and leaves
+ * everything in `~/.funnel` alone. Other channels in funnel.json (not
+ * passed to this call) are untouched.
  */
 export class FunnelLocalConfigSync {
   private readonly channels: FunnelChannels
@@ -41,22 +42,22 @@ export class FunnelLocalConfigSync {
     Object.freeze(this)
   }
 
-  async ensure(local: LocalConfig, cwd: string): Promise<void> {
-    if (!this.channels.get(local.channel)) {
-      this.channels.add({ name: local.channel })
+  async ensure(channel: ChannelSpec, cwd: string): Promise<void> {
+    if (!this.channels.get(channel.name)) {
+      this.channels.add({ name: channel.name })
     }
 
-    if (local.connectors === undefined) return
+    if (channel.connectors === undefined) return
 
     const dotenv = this.dotenv.read(cwd)
     const touched = new Set<string>()
 
-    for (const spec of local.connectors) {
-      const id = await this.ensureConnector(local.channel, spec, dotenv)
+    for (const spec of channel.connectors) {
+      const id = await this.ensureConnector(channel.name, spec, dotenv)
       touched.add(id)
     }
 
-    this.removeExtras(local.channel, touched)
+    this.removeExtras(channel.name, touched)
   }
 
   private async ensureConnector(

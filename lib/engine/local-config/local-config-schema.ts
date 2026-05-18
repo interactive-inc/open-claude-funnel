@@ -3,20 +3,16 @@ import { z } from "zod"
 /**
  * Per-repo launch config (`funnel.json`).
  *
- * `fnl claude` reads this when no --profile / --channel is given and uses it
- * to set the channel binding, sub-agent, and brief flag. When `connectors`
- * is declared, missing channels/connectors are materialized into the local
- * `~/.funnel/settings.json` on launch.
+ * `fnl claude` reads this when no --profile is given and picks one of the
+ * declared channels (`--channel <name>` selects by name; otherwise the first
+ * entry wins). The chosen channel is materialized into
+ * `~/.funnel/settings.json` on launch — token fields in connectors resolve
+ * via literal / `env.<field>` / TTY prompt.
  *
- * Token fields per connector resolve in this order:
- *
- *   1. Literal value at the field itself (e.g. `botToken: "xoxb-..."`)
- *   2. Env-var reference at `env.<field>` (e.g. `env: { botToken: "SLACK_BOT_TOKEN" }`);
- *      resolved from process.env first, then ./.env.local
- *   3. Field omitted everywhere → prompted for once on a TTY and persisted to
- *      `~/.funnel/settings.json`; non-TTY launches fail fast.
- *
- * `funnel.json` itself is never written to. Only `channel` is required.
+ * Top-level `options` and `env` are defaults shared by every channel: each
+ * channel's own `options` is appended after the shared ones (CLI semantics
+ * keep the later flag winning), and `env` is a shallow merge with the
+ * channel's keys overriding the shared ones.
  */
 
 const slackEnvSchema = z
@@ -67,13 +63,23 @@ export const connectorSpecSchema = z.discriminatedUnion("type", [
 
 export type ConnectorSpec = z.infer<typeof connectorSpecSchema>
 
-export const localConfigSchema = z.object({
-  $schema: z.string().optional(),
-  channel: z.string(),
-  /** Extra args forwarded to the claude CLI. Prepended before user-supplied CLI args so user args still win on collision (e.g. --model, --agent, --brief, --resume, positional session ids). */
+export const channelSpecSchema = z.object({
+  name: z.string(),
   options: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
   connectors: z.array(connectorSpecSchema).optional(),
+})
+
+export type ChannelSpec = z.infer<typeof channelSpecSchema>
+
+export const localConfigSchema = z.object({
+  $schema: z.string().optional(),
+  /** Extra args forwarded to every channel's launch before the channel's own options. User-supplied CLI args still come last. */
+  options: z.array(z.string()).optional(),
+  /** Environment variables shared by every channel. Each channel's env merges on top; process.env wins overall. */
+  env: z.record(z.string(), z.string()).optional(),
+  /** Declared channels. First entry is the default; --channel <name> selects by name. */
+  channels: z.array(channelSpecSchema).min(1),
 })
 
 export type LocalConfig = z.infer<typeof localConfigSchema>

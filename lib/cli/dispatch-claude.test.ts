@@ -142,9 +142,11 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.stderr).toContain("not found")
   })
 
-  test("reads funnel.json from cwd and launches with its channel", async () => {
+  test("reads funnel.json from cwd and launches the first declared channel", async () => {
     const { funnel, process } = buildSetup({
-      files: { "/repo/funnel.json": JSON.stringify({ channel: "ops" }) },
+      files: {
+        "/repo/funnel.json": JSON.stringify({ channels: [{ name: "ops" }] }),
+      },
     })
 
     await dispatchClaude({ funnel, cwd: "/repo" }, ["--agent", "developer"])
@@ -155,6 +157,41 @@ describe("dispatchClaude — argv parsing", () => {
 
     expect(attach?.options.cwd).toEqual("/repo")
     expect(attach?.command).toEqual(expect.arrayContaining(["--agent", "developer"]))
+  })
+
+  test("picks a non-default channel by --channel name", async () => {
+    const { funnel, process } = buildSetup({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [
+            { name: "ops", options: ["--agent", "pm"] },
+            { name: "review", options: ["--agent", "reviewer"] },
+          ],
+        }),
+      },
+    })
+
+    await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "review"])
+
+    const command = lastAttach(process)?.command ?? []
+
+    expect(command).toEqual(expect.arrayContaining(["--agent", "reviewer"]))
+    expect(command).not.toContain("pm")
+  })
+
+  test("errors when --channel names a channel not in funnel.json", async () => {
+    const { funnel } = buildSetup({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops" }],
+        }),
+      },
+    })
+
+    const result = await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "missing"])
+
+    expect(result.exitCode).toEqual(1)
+    expect(result.stderr).toContain("missing")
   })
 
   test("falls back to default profile when no funnel.json and no flags", async () => {
@@ -182,12 +219,12 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.stdout).toContain("funnel claude")
   })
 
-  test("prepends funnel.json options before user CLI args", async () => {
+  test("prepends funnel.json options before user CLI args (top-level then channel)", async () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channel: "ops",
-          options: ["--brief", "--agent", "developer"],
+          options: ["--brief"],
+          channels: [{ name: "ops", options: ["--agent", "developer"] }],
         }),
       },
     })
@@ -204,12 +241,12 @@ describe("dispatchClaude — argv parsing", () => {
     expect(command).toEqual(expect.arrayContaining(["--agent", "developer", "--resume", "abc"]))
   })
 
-  test("merges funnel.json env into the claude process env (process.env wins)", async () => {
+  test("merges funnel.json env into the claude process env (channel wins over top-level)", async () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channel: "ops",
           env: { ANTHROPIC_MODEL: "claude-sonnet-4-6", FUNNEL_ONLY: "yes" },
+          channels: [{ name: "ops", env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" } }],
         }),
       },
     })

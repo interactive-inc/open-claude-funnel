@@ -1,4 +1,5 @@
 import { claudeHelp } from "@/cli/routes/claude"
+import type { ChannelSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
 import type { Funnel } from "@/funnel"
 
 export type DispatchClaudeResult = {
@@ -92,6 +93,26 @@ const parse = (args: string[]): Parsed => {
   return { profile, channel, wantsHelp, userArgs }
 }
 
+const pickChannel = (local: LocalConfig, requestedName: string | null): ChannelSpec | string => {
+  if (requestedName === null) {
+    const first = local.channels[0]
+
+    if (!first) return `funnel.json declares no channels`
+
+    return first
+  }
+
+  const found = local.channels.find((c) => c.name === requestedName)
+
+  if (!found) {
+    const available = local.channels.map((c) => c.name).join(", ")
+
+    return `channel "${requestedName}" is not declared in funnel.json (available: ${available})`
+  }
+
+  return found
+}
+
 /**
  * Entry point for `fnl claude <args>`. Pulls only funnel-specific flags
  * (--profile / -p, --channel, --help / -h) out of argv and forwards every
@@ -99,6 +120,14 @@ const parse = (args: string[]): Parsed => {
  * to the claude CLI. Routing through Hono cannot do this because positional
  * args would become URL segments and unknown short flags would be silently
  * dropped.
+ *
+ * Resolution order:
+ *   1. --help → print help
+ *   2. --profile <name> → named profile (ignores funnel.json)
+ *   3. funnel.json in cwd → select channel (--channel <name> or first), sync, launch
+ *   4. --channel <name> with no funnel.json → raw launch against existing settings.json channel
+ *   5. default profile → launch
+ *   6. nothing matched → print help
  */
 export const dispatchClaude = async (
   deps: Deps,
@@ -112,16 +141,6 @@ export const dispatchClaude = async (
 
   const funnel = deps.funnel
   const cwd = deps.cwd ?? process.cwd()
-
-  if (parsed.channel !== null && parsed.profile === null) {
-    const exitCode = await funnel.claude.launch({
-      channel: parsed.channel,
-      cwd,
-      userArgs: parsed.userArgs,
-    })
-
-    return { stdout: null, stderr: null, exitCode }
-  }
 
   if (parsed.profile !== null) {
     const profile = funnel.profiles.get(parsed.profile)
@@ -149,15 +168,33 @@ export const dispatchClaude = async (
   const local = funnel.localConfig.read(cwd)
 
   if (local) {
-    await funnel.localConfigSync.ensure(local, cwd)
+    const picked = pickChannel(local, parsed.channel)
 
-    const userArgs = [...(local.options ?? []), ...parsed.userArgs]
+    if (typeof picked === "string") {
+      return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
+    }
+
+    await funnel.localConfigSync.ensure(picked, cwd)
+
+    const mergedOptions = [...(local.options ?? []), ...(picked.options ?? [])]
+    const mergedEnv = { ...(local.env ?? {}), ...(picked.env ?? {}) }
+    const userArgs = [...mergedOptions, ...parsed.userArgs]
 
     const exitCode = await funnel.claude.launch({
-      channel: local.channel,
+      channel: picked.name,
       cwd,
       userArgs,
-      extraEnv: local.env,
+      extraEnv: mergedEnv,
+    })
+
+    return { stdout: null, stderr: null, exitCode }
+  }
+
+  if (parsed.channel !== null) {
+    const exitCode = await funnel.claude.launch({
+      channel: parsed.channel,
+      cwd,
+      userArgs: parsed.userArgs,
     })
 
     return { stdout: null, stderr: null, exitCode }

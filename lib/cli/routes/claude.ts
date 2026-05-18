@@ -7,19 +7,22 @@ import { zValidator } from "@/cli/router/validator"
 export const claudeHelp = `funnel claude — launch Claude Code
 
 usage:
-  funnel claude                          launch using funnel.json in cwd, or the default profile
+  funnel claude                          launch the first channel from funnel.json, or the default profile
+  funnel claude --channel <name>         with funnel.json: select that channel; without: raw launch
   funnel claude -p <name>                launch a named profile
   funnel claude --profile <name>         (long form)
-  funnel claude --channel <name>         raw launch (no profile, cwd = current dir)
   funnel claude [...]                    any other argument is forwarded to the claude CLI
 
-resolution order when no --profile / --channel is given:
-  1. ./funnel.json in the current directory
-  2. the default profile (first entry in fnl profiles)
+resolution order:
+  1. --help                              print this help
+  2. --profile <name>                    named profile (ignores funnel.json)
+  3. ./funnel.json in the current directory + --channel selects (or first wins)
+  4. --channel <name> with no funnel.json → raw launch using an existing settings.json channel
+  5. the default profile (first entry in fnl profiles)
 
 funnel-specific options (everything else passes through to claude verbatim):
   -p, --profile      profile name to launch
-  --channel          channel name (raw launch, ignored when --profile is given)
+  --channel          channel name (selects from funnel.json, or raw-launches if no funnel.json)
   -h, --help         show this help
 
 Positional args, unknown short flags (e.g. -c, -r), and claude's own flags
@@ -76,13 +79,26 @@ export const claudeHandler = factory.createHandlers(
     const local = funnel.localConfig.read(cwd)
 
     if (local) {
-      await funnel.localConfigSync.ensure(local, cwd)
+      const picked =
+        query.channel !== undefined
+          ? local.channels.find((c) => c.name === query.channel)
+          : local.channels[0]
+
+      if (!picked) {
+        throw new HTTPException(404, {
+          message: query.channel
+            ? `channel "${query.channel}" is not declared in funnel.json`
+            : `funnel.json declares no channels`,
+        })
+      }
+
+      await funnel.localConfigSync.ensure(picked, cwd)
 
       const exitCode = await funnel.claude.launch({
-        channel: local.channel,
+        channel: picked.name,
         cwd,
-        userArgs: [...(local.options ?? []), ...userArgs],
-        extraEnv: local.env,
+        userArgs: [...(local.options ?? []), ...(picked.options ?? []), ...userArgs],
+        extraEnv: { ...(local.env ?? {}), ...(picked.env ?? {}) },
       })
 
       process.exit(exitCode)

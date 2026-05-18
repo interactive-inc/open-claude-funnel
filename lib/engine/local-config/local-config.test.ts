@@ -10,31 +10,37 @@ describe("FunnelLocalConfig", () => {
     expect(config.read("/repo")).toBeNull()
   })
 
-  test("parses channel-only config", () => {
+  test("parses a single-channel config", () => {
     const fs = new MemoryFunnelFileSystem({
-      files: { "/repo/funnel.json": JSON.stringify({ channel: "ops" }) },
+      files: { "/repo/funnel.json": JSON.stringify({ channels: [{ name: "ops" }] }) },
     })
     const config = new FunnelLocalConfig({ fs })
 
-    expect(config.read("/repo")).toEqual({ channel: "ops" })
+    expect(config.read("/repo")).toEqual({ channels: [{ name: "ops" }] })
   })
 
-  test("parses channel + options + env", () => {
+  test("parses shared options/env plus per-channel overrides", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channel: "ops",
-          options: ["--brief", "--agent", "developer"],
+          options: ["--brief"],
           env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
+          channels: [
+            { name: "ops", options: ["--agent", "pm"] },
+            { name: "review", env: { EXTRA: "1" } },
+          ],
         }),
       },
     })
     const config = new FunnelLocalConfig({ fs })
 
     expect(config.read("/repo")).toEqual({
-      channel: "ops",
-      options: ["--brief", "--agent", "developer"],
+      options: ["--brief"],
       env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
+      channels: [
+        { name: "ops", options: ["--agent", "pm"] },
+        { name: "review", env: { EXTRA: "1" } },
+      ],
     })
   })
 
@@ -47,9 +53,18 @@ describe("FunnelLocalConfig", () => {
     expect(() => config.read("/repo")).toThrow(/not valid JSON/)
   })
 
-  test("throws when channel is missing", () => {
+  test("throws when channels is missing", () => {
     const fs = new MemoryFunnelFileSystem({
       files: { "/repo/funnel.json": JSON.stringify({ options: ["--brief"] }) },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(() => config.read("/repo")).toThrow(/is invalid/)
+  })
+
+  test("throws when channels array is empty", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: { "/repo/funnel.json": JSON.stringify({ channels: [] }) },
     })
     const config = new FunnelLocalConfig({ fs })
 

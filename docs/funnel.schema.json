@@ -5,9 +5,6 @@
     "$schema": {
       "type": "string"
     },
-    "channel": {
-      "type": "string"
-    },
     "options": {
       "type": "array",
       "items": {
@@ -23,119 +20,150 @@
         "type": "string"
       }
     },
-    "connectors": {
+    "channels": {
+      "minItems": 1,
       "type": "array",
       "items": {
-        "oneOf": [
-          {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
             "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "slack"
-              },
-              "name": {
-                "type": "string"
-              },
-              "botToken": {
-                "type": "string"
-              },
-              "appToken": {
-                "type": "string"
-              },
-              "env": {
-                "type": "object",
-                "properties": {
-                  "botToken": {
-                    "type": "string"
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "connectors": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "slack"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "botToken": {
+                      "type": "string"
+                    },
+                    "appToken": {
+                      "type": "string"
+                    },
+                    "env": {
+                      "type": "object",
+                      "properties": {
+                        "botToken": {
+                          "type": "string"
+                        },
+                        "appToken": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
                   },
-                  "appToken": {
-                    "type": "string"
-                  }
+                  "required": [
+                    "type",
+                    "name"
+                  ],
+                  "additionalProperties": false
                 },
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "type",
-              "name"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "discord"
-              },
-              "name": {
-                "type": "string"
-              },
-              "botToken": {
-                "type": "string"
-              },
-              "env": {
-                "type": "object",
-                "properties": {
-                  "botToken": {
-                    "type": "string"
-                  }
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "discord"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "botToken": {
+                      "type": "string"
+                    },
+                    "env": {
+                      "type": "object",
+                      "properties": {
+                        "botToken": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "name"
+                  ],
+                  "additionalProperties": false
                 },
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "type",
-              "name"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "gh"
-              },
-              "name": {
-                "type": "string"
-              },
-              "pollInterval": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "type",
-              "name"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string",
-                "const": "schedule"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "type",
-              "name"
-            ],
-            "additionalProperties": false
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "gh"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "pollInterval": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "schedule"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
           }
-        ]
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
       }
     }
   },
   "required": [
-    "channel"
+    "channels"
   ],
   "additionalProperties": false,
   "title": "Funnel per-repo launch config",
