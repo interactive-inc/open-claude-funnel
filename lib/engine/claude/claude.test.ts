@@ -100,4 +100,14 @@ describe("FunnelClaude", () => {
     expect(spawnedPids).toHaveLength(1)
     expect(spawnedPids[0]).toBe(1)
   })
+
+  test("launch skips MCP install when installMcp is false", async () => {
+    const { claude, fs } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work", installMcp: false })
+
+    expect(fs.existsSync("/work/.mcp.json")).toBe(false)
+  })
 })

@@ -19,6 +19,10 @@ export type LaunchOptions = {
    *  Useful for hosts that need to register the spawned process before it exits
    *  (e.g. multi-session registries that track per-claude liveness). */
   onSpawned?: (pid: number) => void
+  /** Whether to install the funnel MCP entry into `.mcp.json` (default: true).
+   *  Set to false when the host already provides its own MCP server entry and
+   *  does not need the funnel binary as an MCP endpoint. */
+  installMcp?: boolean
 }
 
 type Deps = {
@@ -73,8 +77,9 @@ export class FunnelClaude {
     }
 
     const cwd = options.cwd ?? globalThis.process.cwd()
+    const installMcp = options.installMcp ?? true
 
-    if (!this.mcp.findInstalledName(cwd)) {
+    if (installMcp && !this.mcp.findInstalledName(cwd)) {
       this.mcp.install(cwd)
 
       this.logger.info(`added funnel MCP to .mcp.json`, { cwd })
