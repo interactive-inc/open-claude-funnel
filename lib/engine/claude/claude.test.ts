@@ -118,7 +118,7 @@ describe("FunnelClaude", () => {
     expect(fs.existsSync("/work/.mcp.json")).toBe(false)
   })
 
-  test("launch injects --session-id with the persisted id for (channel, cwd)", async () => {
+  test("first launch from a cwd injects --session-id with a freshly minted id", async () => {
     const { claude, channel, sessions, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
@@ -133,14 +133,20 @@ describe("FunnelClaude", () => {
 
     expect(idx).toBeGreaterThan(0)
     expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "/work"))
+    expect(attach.command.includes("--resume")).toBe(false)
   })
 
-  test("launch reuses the same session id across launches from the same cwd", async () => {
-    const { claude, fs, process } = buildClaude()
+  test("relaunching from the same cwd switches to --resume with the persisted id", async () => {
+    // Regression for #1: claude's `--session-id` rejects ids whose jsonl
+    // already exists, so the second launch has to use `--resume` instead.
+    const { claude, channel, sessions, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
     await claude.launch({ channel: "ops", cwd: "/work" })
+
+    const firstId = sessions.get(channel.id, "/work")
+
     await claude.launch({ channel: "ops", cwd: "/work" })
 
     const attaches = process.calls.filter((c) => c.kind === "attach")
@@ -150,13 +156,20 @@ describe("FunnelClaude", () => {
       throw new Error("unreachable")
     }
 
-    const idA = attaches[0].command[attaches[0].command.indexOf("--session-id") + 1]
-    const idB = attaches[1].command[attaches[1].command.indexOf("--session-id") + 1]
+    const firstSessionIdx = attaches[0].command.indexOf("--session-id")
+    expect(firstSessionIdx).toBeGreaterThan(0)
+    expect(attaches[0].command[firstSessionIdx + 1]).toEqual(firstId)
+    expect(attaches[0].command.includes("--resume")).toBe(false)
 
-    expect(idA).toEqual(idB)
+    expect(attaches[1].command.includes("--session-id")).toBe(false)
+
+    const resumeIdx = attaches[1].command.indexOf("--resume")
+    expect(resumeIdx).toBeGreaterThan(0)
+    expect(attaches[1].command[resumeIdx + 1]).toEqual(firstId)
+    expect(sessions.get(channel.id, "/work")).toEqual(firstId)
   })
 
-  test("launch uses different session ids for different cwds", async () => {
+  test("launch uses distinct fresh session ids for different cwds", async () => {
     const { claude, fs, process } = buildClaude()
 
     fs.mkdirSync("/work-a", { recursive: true })
@@ -177,7 +190,7 @@ describe("FunnelClaude", () => {
     expect(idA).not.toEqual(idB)
   })
 
-  test("launch omits --session-id when channel.resume is false", async () => {
+  test("launch omits session flags when channel.resume is false", async () => {
     const { claude, channels, fs, process } = buildClaude()
 
     channels.setResume("ops", false)
@@ -190,9 +203,10 @@ describe("FunnelClaude", () => {
     if (attach?.kind !== "attach") throw new Error("expected attach call")
 
     expect(attach.command.includes("--session-id")).toBe(false)
+    expect(attach.command.includes("--resume")).toBe(false)
   })
 
-  test("launch omits --session-id when the user passes -c", async () => {
+  test("launch omits session flags when the user passes -c", async () => {
     const { claude, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
@@ -204,10 +218,11 @@ describe("FunnelClaude", () => {
     if (attach?.kind !== "attach") throw new Error("expected attach call")
 
     expect(attach.command.includes("--session-id")).toBe(false)
+    expect(attach.command.indexOf("--resume")).toBe(-1)
     expect(attach.command.includes("-c")).toBe(true)
   })
 
-  test("launch omits --session-id when the user passes --resume", async () => {
+  test("launch omits its own --resume when the user passes --resume", async () => {
     const { claude, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
@@ -219,6 +234,14 @@ describe("FunnelClaude", () => {
     if (attach?.kind !== "attach") throw new Error("expected attach call")
 
     expect(attach.command.includes("--session-id")).toBe(false)
+
+    const resumeIndexes: number[] = []
+    attach.command.forEach((arg, i) => {
+      if (arg === "--resume") resumeIndexes.push(i)
+    })
+
+    expect(resumeIndexes).toHaveLength(1)
+    expect(attach.command[resumeIndexes[0]! + 1]).toEqual("abc")
   })
 
   test("launch omits --session-id when the user passes their own --session-id", async () => {
