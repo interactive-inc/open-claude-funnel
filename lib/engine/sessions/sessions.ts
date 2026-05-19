@@ -16,10 +16,15 @@ type SessionsMap = z.infer<typeof sessionsMapSchema>
 /**
  * Per-channel persistent Claude Code session IDs, keyed by the cwd the
  * channel was launched from. The whole point is to give each (channel, cwd)
- * its own stable conversation: relaunching from the same path picks up the
- * previous claude session via `--session-id <uuid>`, while a different cwd
- * (or a different channel) gets an independent one — so sessions never
- * silently bleed across workspaces the way claude's `-c` does.
+ * its own stable conversation: relaunching from the same path resumes the
+ * previous claude session via `--resume <uuid>`, while a different cwd (or
+ * a different channel) gets an independent one — so sessions never silently
+ * bleed across workspaces the way claude's `-c` does.
+ *
+ * `get` and `create` are intentionally separate: claude's `--session-id`
+ * only accepts a fresh UUID (it errors if the session jsonl already
+ * exists), so callers must check `get` first and fall back to `create`
+ * only when there is nothing to resume.
  *
  * Storage lives under `<dir>/channels/<channel-id>/sessions.json` (channel
  * id, not name, so renames don't lose history). The file is a flat
@@ -37,24 +42,20 @@ export class FunnelSessions {
     Object.freeze(this)
   }
 
-  /** Returns the existing session id for (channelId, cwd) or generates and persists a new one. */
-  getOrCreate(channelId: string, cwd: string): string {
+  /** Returns the existing session id for (channelId, cwd) or null. */
+  get(channelId: string, cwd: string): string | null {
+    return this.readMap(channelId)[cwd] ?? null
+  }
+
+  /** Generates a new session id for (channelId, cwd) and persists it, overwriting any prior entry. */
+  create(channelId: string, cwd: string): string {
     const map = this.readMap(channelId)
-    const existing = map[cwd]
-
-    if (existing) return existing
-
     const sessionId = this.idGenerator.generate()
 
     map[cwd] = sessionId
     this.writeMap(channelId, map)
 
     return sessionId
-  }
-
-  /** Returns the existing session id for (channelId, cwd) or null. */
-  get(channelId: string, cwd: string): string | null {
-    return this.readMap(channelId)[cwd] ?? null
   }
 
   /** Drops the recorded session id for (channelId, cwd). No-op if absent. */
