@@ -1,19 +1,21 @@
+import { join } from "node:path"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
 export const startHelp = `funnel gateway start — start the gateway in background
 
 usage: funnel gateway start [--no-caffeine]
 
-Daemonized with nohup, so it keeps running after the terminal is closed.
+Spawned as a detached background process so it keeps running after the terminal is closed.
 On macOS wraps the process with caffeinate -is by default to prevent idle and system sleep.
 Use --no-caffeine to disable caffeinate.
 
 port: 9742 (override via FUNNEL_PORT)
 pid:  ~/.funnel/gateway.pid
-log:  /tmp/funnel/gateway.log
+log:  ${join(funnelTmpDir(), "gateway.log")}
 
 examples:
   funnel gateway start

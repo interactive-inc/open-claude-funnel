@@ -21,39 +21,28 @@ const titleFor = (dir: string): string => `funnel-gateway[${dir}]`
  * which is the only situation that causes a real conflict (duplicate Slack
  * Socket Mode connections with the same tokens). Daemons rooted at a
  * different `~/.funnel/` are left alone — they hold different tokens and
- * speak to different Slack apps. The daemon advertises its dir via
- * `process.title = "funnel-gateway[<dir>]"`, which this routine matches.
+ * speak to different Slack apps. The daemon advertises its dir via the
+ * `funnel-gateway[<dir>]` marker appended to argv (also assigned to
+ * `process.title` on POSIX). `FunnelProcessRunner.listProcessesContaining`
+ * absorbs the POSIX/Windows enumeration difference behind the marker match.
  */
 export const killCompetingSlackGateways = async (props: Props): Promise<number[]> => {
   const runner = props.process ?? defaultProcess
   const logger = props.logger ?? defaultLogger
-  const result = await runner.run(["ps", "-e", "-o", "pid=,args="])
-
-  if (result.exitCode !== 0) return []
-
   const expectedTitle = titleFor(props.dir)
+  const snapshots = runner.listProcessesContaining(expectedTitle)
   const killed: number[] = []
 
-  for (const raw of result.stdout.split("\n")) {
-    const line = raw.trim()
+  for (const snapshot of snapshots) {
+    if (snapshot.pid === props.selfPid) continue
 
-    if (!line) continue
+    runner.kill(snapshot.pid, "SIGTERM")
+    killed.push(snapshot.pid)
 
-    const match = /^(\d+)\s+(.+)$/.exec(line)
-
-    if (!match) continue
-
-    const pid = Number(match[1])
-    const args = match[2]!
-
-    if (!Number.isInteger(pid) || pid <= 0) continue
-    if (pid === props.selfPid) continue
-    if (!args.includes(expectedTitle)) continue
-
-    runner.kill(pid, "SIGTERM")
-    killed.push(pid)
-
-    logger.info("killed competing Slack gateway process", { pid, args: args.slice(0, 160) })
+    logger.info("killed competing Slack gateway process", {
+      pid: snapshot.pid,
+      args: snapshot.command.slice(0, 160),
+    })
   }
 
   return killed

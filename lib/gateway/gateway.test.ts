@@ -10,20 +10,26 @@ describe("FunnelGateway", () => {
   test("macOS default wraps with caffeinate -is", () => {
     const command = new FunnelGateway().buildStartCommand("/path/to/daemon.ts")
 
-    if (process.platform === "darwin") expect(command).toContain("caffeinate -is")
-
-    expect(command).toContain("nohup")
-    expect(command).toContain("/path/to/daemon.ts")
+    if (process.platform === "darwin") {
+      expect(command[0]).toBe("caffeinate")
+      expect(command[1]).toBe("-is")
+      expect(command[2]).toBe("bun")
+      expect(command[3]).toBe("/path/to/daemon.ts")
+    } else {
+      expect(command[0]).toBe("bun")
+      expect(command[1]).toBe("/path/to/daemon.ts")
+    }
   })
 
   test("caffeinate=false (like --no-caffeine) omits caffeinate", () => {
     const command = new FunnelGateway().buildStartCommand("/x", { caffeinate: false })
 
     expect(command).not.toContain("caffeinate")
-    expect(command).toContain("nohup")
+    expect(command[0]).toBe("bun")
+    expect(command[1]).toBe("/x")
   })
 
-  test("appends funnel-gateway[<dir>] tag so ps args can scope kill-competing", () => {
+  test("appends funnel-gateway[<dir>] tag so process listings can scope kill-competing", () => {
     const command = new FunnelGateway({ dir: "/tmp/sandbox/.funnel" }).buildStartCommand("/x", {
       caffeinate: false,
     })
@@ -40,46 +46,23 @@ describe("FunnelGateway", () => {
     expect(gateway.isRunning()).toBe(false)
   })
 
-  test("PID exists but ps reports dead → false", () => {
+  test("PID exists but liveness check fails → false", () => {
     const fs = new MemoryFunnelFileSystem({ files: { [PID_FILE]: "12345" } })
-    const runner = new MemoryFunnelProcessRunner().onSync(() => ({
-      exitCode: 1,
-      stdout: "",
-      stderr: "",
-    }))
+    const runner = new MemoryFunnelProcessRunner().onIsAlive(() => false)
 
     expect(new FunnelGateway({ fs, process: runner }).isRunning()).toBe(false)
   })
 
   test("PID exists and process is alive → true", () => {
     const fs = new MemoryFunnelFileSystem({ files: { [PID_FILE]: "12345" } })
-    const runner = new MemoryFunnelProcessRunner().onSync(() => ({
-      exitCode: 0,
-      stdout: "R\n",
-      stderr: "",
-    }))
+    const runner = new MemoryFunnelProcessRunner().onIsAlive((pid) => pid === 12345)
 
     expect(new FunnelGateway({ fs, process: runner }).isRunning()).toBe(true)
   })
 
-  test("Zombie (Z) counts as dead", () => {
-    const fs = new MemoryFunnelFileSystem({ files: { [PID_FILE]: "12345" } })
-    const runner = new MemoryFunnelProcessRunner().onSync(() => ({
-      exitCode: 0,
-      stdout: "Z\n",
-      stderr: "",
-    }))
-
-    expect(new FunnelGateway({ fs, process: runner }).isRunning()).toBe(false)
-  })
-
-  test("start invokes bash -c via detach", async () => {
+  test("start spawns daemon directly via detach with log file redirection", async () => {
     const fs = new MemoryFunnelFileSystem()
-    const runner = new MemoryFunnelProcessRunner().onSync(() => ({
-      exitCode: 1,
-      stdout: "",
-      stderr: "",
-    }))
+    const runner = new MemoryFunnelProcessRunner().onIsAlive(() => false)
     const clock = new MemoryFunnelClock()
     const sleep = async (ms: number): Promise<void> => {
       clock.advance(ms)
@@ -89,9 +72,12 @@ describe("FunnelGateway", () => {
     await gateway.start({ caffeinate: false })
 
     const detach = runner.calls.find((c) => c.kind === "detach")
-    expect(detach?.command[0]).toBe("bash")
-    expect(detach?.command[1]).toBe("-c")
-    expect(detach?.command[2]).toContain("nohup")
-    expect(detach?.command[2]).not.toContain("caffeinate")
+    expect(detach).toBeDefined()
+    if (detach?.kind !== "detach") return
+    expect(detach.command[0]).toBe("bun")
+    expect(detach.command).not.toContain("caffeinate")
+    expect(detach.command).not.toContain("nohup")
+    expect(detach.options.stdoutFile).toBeTruthy()
+    expect(detach.options.stderrFile).toBeTruthy()
   })
 })

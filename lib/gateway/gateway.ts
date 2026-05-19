@@ -5,11 +5,11 @@ import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 
 const DEFAULT_PORT = 9742
-const DEFAULT_TMP_DIR = "/tmp/funnel"
 const STARTUP_TIMEOUT_MS = 5000
 const SIGTERM_TIMEOUT_MS = 2000
 const POLL_INTERVAL_MS = 100
@@ -54,7 +54,7 @@ export class FunnelGateway {
     this.fs = deps.fs ?? defaultFs
     this.clock = deps.clock ?? defaultClock
     this.dir = deps.dir ?? FUNNEL_DIR
-    this.tmpDir = deps.tmpDir ?? DEFAULT_TMP_DIR
+    this.tmpDir = deps.tmpDir ?? funnelTmpDir()
     this.pidFile = join(this.dir, "gateway.pid")
     this.gatewayLog = join(this.tmpDir, "gateway.log")
     this.port = deps.port ?? DEFAULT_PORT
@@ -85,7 +85,10 @@ export class FunnelGateway {
     const gatewayScript = resolveDaemonScript()
     const command = this.buildStartCommand(gatewayScript, options)
 
-    this.process.detach(["bash", "-c", command])
+    this.process.detach(command, {
+      stdoutFile: this.gatewayLog,
+      stderrFile: this.gatewayLog,
+    })
 
     const deadline = this.clock.millis() + STARTUP_TIMEOUT_MS
 
@@ -97,15 +100,18 @@ export class FunnelGateway {
     return this.isRunning()
   }
 
-  buildStartCommand(gatewayScript: string, options: { caffeinate?: boolean } = {}): string {
-    const useCaffeinate = options.caffeinate !== false && globalThis.process.platform === "darwin"
-    const prefix = useCaffeinate ? "caffeinate -is " : ""
+  buildStartCommand(gatewayScript: string, options: { caffeinate?: boolean } = {}): string[] {
     // The funnel-gateway[<dir>] suffix is a marker in argv that
-    // kill-competing-slack-gateways grep matches against. macOS's
-    // process.title is invisible to `ps -o args=`, so we tag argv directly.
+    // kill-competing-slack-gateways matches against. macOS's process.title
+    // is invisible to `ps -o args=`, so we tag argv directly. Windows
+    // tasklist/CIM also expose the full command line, so the same marker
+    // works for both platforms.
     const tag = `funnel-gateway[${this.dir}]`
+    const useCaffeinate = options.caffeinate !== false && globalThis.process.platform === "darwin"
 
-    return `nohup ${prefix}bun ${gatewayScript} ${tag} >> ${this.gatewayLog} 2>&1 &`
+    if (useCaffeinate) return ["caffeinate", "-is", "bun", gatewayScript, tag]
+
+    return ["bun", gatewayScript, tag]
   }
 
   async stop(): Promise<boolean> {
@@ -195,14 +201,6 @@ export class FunnelGateway {
   }
 
   private isProcessAlive(pid: number): boolean {
-    const result = this.process.runSync(["ps", "-p", String(pid), "-o", "state="])
-
-    if (result.exitCode !== 0) return false
-
-    const state = result.stdout.trim()
-
-    if (!state) return false
-
-    return !state.startsWith("Z")
+    return this.process.isAlive(pid)
   }
 }

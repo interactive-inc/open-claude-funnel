@@ -1,8 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
-const DEFAULT_LOG_FILE = join("/tmp/funnel", "funnel.log")
+const defaultLogFile = (): string => join(funnelTmpDir(), "funnel.log")
 
 type Level = "info" | "warn" | "error"
 
@@ -17,7 +18,7 @@ export class NodeFunnelLogger extends FunnelLogger {
 
   constructor(props: Props = {}) {
     super()
-    this.file = props.file ?? DEFAULT_LOG_FILE
+    this.file = props.file ?? defaultLogFile()
     this.now = props.now ?? (() => new Date())
     Object.freeze(this)
   }

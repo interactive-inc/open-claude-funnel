@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs"
-import { dirname } from "node:path"
+import { dirname, join } from "node:path"
 import type { Server, ServerWebSocket } from "bun"
 import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
@@ -15,16 +15,17 @@ import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import type { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import type { FunnelClock } from "@/engine/time/clock"
 
 const DEFAULT_PORT = 9742
-const DEFAULT_DB_PATH = "/tmp/funnel/events.db"
+const defaultDbPath = (): string => join(funnelTmpDir(), "events.db")
 
 type Deps = {
   channels: FunnelChannels
   settings: FunnelSettingsReader
   port?: number
-  /** SQLite event store file path. Parent directory is created on demand. Defaults to `/tmp/funnel/events.db`. */
+  /** SQLite event store file path. Parent directory is created on demand. Defaults to `<os.tmpdir()>/funnel/events.db`. */
   dbPath?: string
   process?: FunnelProcessRunner
   clock?: FunnelClock
@@ -93,7 +94,7 @@ export class FunnelGatewayServer {
     this.channels = deps.channels
     this.settings = deps.settings
     this.port = deps.port ?? DEFAULT_PORT
-    this.dbPath = deps.dbPath ?? DEFAULT_DB_PATH
+    this.dbPath = deps.dbPath ?? defaultDbPath()
     this.process = deps.process
     this.logger = deps.logger ?? defaultLogger
     this.selfPid = deps.selfPid ?? globalThis.process.pid

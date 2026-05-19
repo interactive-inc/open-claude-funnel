@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs"
+import { join } from "node:path"
 import { stringify } from "yaml"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { zValidator } from "@/cli/router/validator"
 
 export const logsHelp = `funnel gateway logs — tail diagnostic logs
@@ -12,12 +14,12 @@ usage: funnel gateway logs [-n <N>]
 options:
   -n <N>                number of trailing lines to show (default: 20)
 
-Tails /tmp/funnel/funnel.log (the daemon's diagnostic stream — gateway
+Tails ${join(funnelTmpDir(), "funnel.log")} (the daemon's diagnostic stream — gateway
 lifecycle, channel connect/disconnect, listener boot). Exit with SIGINT.
 Output is formatted as YAML.
 
 Domain events fanned out to WebSocket clients live in the SQLite event
-store (/tmp/funnel/events.db); they are not shown here. Subscribe via
+store (${join(funnelTmpDir(), "events.db")}); they are not shown here. Subscribe via
 the WS endpoint or query the store directly.
 
 examples:

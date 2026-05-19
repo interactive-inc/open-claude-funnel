@@ -30,6 +30,7 @@ import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
@@ -40,7 +41,6 @@ import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
 
-const DEFAULT_TMP_DIR = "/tmp/funnel"
 const SANDBOX_DIR = "/sandbox/.funnel"
 const SANDBOX_TMP_DIR = "/sandbox/tmp"
 
@@ -61,7 +61,7 @@ type Props = {
   tokenPrompter?: FunnelTokenPrompter
   /** Funnel home directory (settings.json + per-channel/per-connector dirs). Defaults to ~/.funnel. */
   dir?: string
-  /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to /tmp/funnel. */
+  /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to `<os.tmpdir()>/funnel`. */
   tmpDir?: string
   /**
    * Host integration hooks for Slack listeners — `onAppCreated` for attaching
@@ -144,7 +144,7 @@ export class Funnel {
   /** Resolved on-disk paths the facade will read/write when methods are called. Pure compute, not memoized. */
   get paths(): { dir: string; tmpDir: string; settings: string } {
     const dir = this.props.dir ?? FUNNEL_DIR
-    const tmpDir = this.props.tmpDir ?? DEFAULT_TMP_DIR
+    const tmpDir = this.props.tmpDir ?? funnelTmpDir()
 
     return { dir, tmpDir, settings: join(dir, "settings.json") }
   }

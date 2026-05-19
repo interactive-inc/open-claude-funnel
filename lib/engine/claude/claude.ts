@@ -170,15 +170,7 @@ export class FunnelClaude {
   }
 
   private isProcessAlive(pid: number): boolean {
-    const result = this.process.runSync(["ps", "-p", String(pid), "-o", "state="])
-
-    if (result.exitCode !== 0) return false
-
-    const state = result.stdout.trim()
-
-    if (!state) return false
-
-    return !state.startsWith("Z")
+    return this.process.isAlive(pid)
   }
 
   private buildArgs(

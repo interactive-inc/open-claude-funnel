@@ -2,6 +2,7 @@ import {
   type AttachOptions,
   type DetachOptions,
   FunnelProcessRunner,
+  type ProcessSnapshot,
   type RunOptions,
   type RunResult,
 } from "@/engine/process/process-runner"
@@ -27,11 +28,17 @@ export type MemoryProcessCall =
 
 const empty: MemoryProcessResponse = { exitCode: 0, stdout: "", stderr: "" }
 
+export type AliveStub = (pid: number) => boolean
+
+export type ProcessListStub = (marker: string) => ProcessSnapshot[]
+
 export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
   readonly calls: MemoryProcessCall[] = []
   readonly killed: { pid: number; signal: string }[] = []
   private handler: MemoryProcessHandler = () => empty
   private syncHandler: MemoryProcessSyncHandler = () => empty
+  private aliveStub: AliveStub | null = null
+  private listStub: ProcessListStub | null = null
 
   on(handler: MemoryProcessHandler): this {
     this.handler = handler
@@ -41,6 +48,18 @@ export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
 
   onSync(handler: MemoryProcessSyncHandler): this {
     this.syncHandler = handler
+
+    return this
+  }
+
+  onIsAlive(stub: AliveStub): this {
+    this.aliveStub = stub
+
+    return this
+  }
+
+  onListProcessesContaining(stub: ProcessListStub): this {
+    this.listStub = stub
 
     return this
   }
@@ -88,5 +107,25 @@ export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
   kill(pid: number, signal: string = "SIGTERM"): void {
     this.calls.push({ kind: "kill", command: [String(pid), signal] })
     this.killed.push({ pid, signal })
+  }
+
+  isAlive(pid: number): boolean {
+    if (this.aliveStub) return this.aliveStub(pid)
+
+    // Fallback: replay syncHandler against a "ps -p" probe so existing tests
+    // that stubbed onSync continue to work without rewiring.
+    const result = this.syncHandler(["ps", "-p", String(pid), "-o", "state="])
+    if ((result.exitCode ?? 0) !== 0) return false
+
+    const state = (result.stdout ?? "").trim()
+    if (!state) return false
+
+    return !state.startsWith("Z")
+  }
+
+  listProcessesContaining(marker: string): ProcessSnapshot[] {
+    if (this.listStub) return this.listStub(marker)
+
+    return []
   }
 }

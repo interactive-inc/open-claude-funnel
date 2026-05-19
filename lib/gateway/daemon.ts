@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 import { Funnel } from "@/funnel"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
@@ -8,25 +9,21 @@ import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 const PORT = Number(process.env.FUNNEL_PORT) || 9742
 const PID_FILE = join(FUNNEL_DIR, "gateway.pid")
 
+// process.title is honored on POSIX (visible in `ps -o args=`) and a no-op
+// on Windows; the argv-appended `funnel-gateway[<dir>]` marker covers both.
 process.title = `funnel-gateway[${FUNNEL_DIR}]`
 
 const logger = new NodeFunnelLogger()
+const processRunner = new NodeFunnelProcessRunner()
 
 mkdirSync(FUNNEL_DIR, { recursive: true })
 
 if (existsSync(PID_FILE)) {
   const existing = Number(readFileSync(PID_FILE, "utf-8").trim())
 
-  if (existing > 0) {
-    const check = Bun.spawnSync(["ps", "-p", String(existing), "-o", "state="], {
-      stdout: "pipe",
-      stderr: "pipe",
-    })
-
-    if (check.exitCode === 0 && check.stdout.toString().trim()) {
-      logger.error("funnel gateway already running", { pid: existing })
-      process.exit(1)
-    }
+  if (existing > 0 && processRunner.isAlive(existing)) {
+    logger.error("funnel gateway already running", { pid: existing })
+    process.exit(1)
   }
 }
 
