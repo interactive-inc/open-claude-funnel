@@ -26,6 +26,8 @@ export type LaunchOptions = {
   installMcp?: boolean
 }
 
+type SessionResolution = { id: string; mode: "resume" | "new" } | null
+
 type Deps = {
   channels: FunnelChannels
   mcp: FunnelMcp
@@ -99,8 +101,8 @@ export class FunnelClaude {
       this.installCleanup(options.profileName)
     }
 
-    const sessionId = channel.resume ? this.resolveSessionId(channel.id, cwd, options.userArgs ?? []) : null
-    const claudeArgs = this.buildArgs(channel.options, options.userArgs ?? [], cwd, sessionId)
+    const session = channel.resume ? this.resolveSession(channel.id, cwd, options.userArgs ?? []) : null
+    const claudeArgs = this.buildArgs(channel.options, options.userArgs ?? [], cwd, session)
     const env = this.buildEnv(channel.id, channel.env)
 
     this.logger.info(`claude launch`, {
@@ -185,12 +187,18 @@ export class FunnelClaude {
     channelOptions: string[],
     userArgs: string[],
     cwd: string,
-    sessionId: string | null,
+    session: SessionResolution,
   ): string[] {
     const result = [...channelOptions, ...userArgs]
 
-    if (sessionId !== null) {
-      result.push("--session-id", sessionId)
+    if (session !== null) {
+      // claude rejects `--session-id <uuid>` when the session jsonl already
+      // exists, so resuming an existing session has to go through `--resume`.
+      if (session.mode === "resume") {
+        result.push("--resume", session.id)
+      } else {
+        result.push("--session-id", session.id)
+      }
     }
 
     const mcpName = this.mcp.findInstalledName(cwd)
@@ -207,18 +215,23 @@ export class FunnelClaude {
   }
 
   /**
-   * Decides whether funnel should inject `--session-id`. We back off when
-   * the user already passed a session-shaping flag, since combining them
-   * would either confuse claude or override the explicit user intent.
+   * Decides whether funnel should resume an existing claude session or start
+   * a freshly minted one. Backs off when the user already passed a
+   * session-shaping flag, since combining them would either confuse claude
+   * or override the explicit user intent.
    */
-  private resolveSessionId(channelId: string, cwd: string, userArgs: string[]): string | null {
+  private resolveSession(channelId: string, cwd: string, userArgs: string[]): SessionResolution {
     for (const arg of userArgs) {
       if (arg === "-c" || arg === "--continue") return null
       if (arg === "--resume" || arg.startsWith("--resume=")) return null
       if (arg === "--session-id" || arg.startsWith("--session-id=")) return null
     }
 
-    return this.sessions.getOrCreate(channelId, cwd)
+    const existing = this.sessions.get(channelId, cwd)
+
+    if (existing !== null) return { id: existing, mode: "resume" }
+
+    return { id: this.sessions.create(channelId, cwd), mode: "new" }
   }
 
   private buildEnv(channelId: string, channelEnv: Record<string, string>): Record<string, string> {
