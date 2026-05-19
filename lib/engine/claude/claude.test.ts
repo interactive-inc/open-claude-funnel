@@ -190,11 +190,16 @@ describe("FunnelClaude", () => {
     expect(idA).not.toEqual(idB)
   })
 
-  test("launch omits session flags when channel.resume is false", async () => {
-    const { claude, channels, fs, process } = buildClaude()
+  test("launch omits session flags when channel.resume is false even if a session was previously persisted", async () => {
+    // Pre-seeding makes this test catch a regression where resume=false would
+    // still emit --resume for the persisted id. Without a pre-seeded session
+    // the assertion would pass trivially.
+    const { claude, channel, channels, sessions, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+    sessions.create(channel.id, "/work")
 
     channels.setResume("ops", false)
-    fs.mkdirSync("/work", { recursive: true })
 
     await claude.launch({ channel: "ops", cwd: "/work" })
 
@@ -206,20 +211,43 @@ describe("FunnelClaude", () => {
     expect(attach.command.includes("--resume")).toBe(false)
   })
 
-  test("launch omits session flags when the user passes -c", async () => {
-    const { claude, fs, process } = buildClaude()
+  test("launch omits session flags when the user passes -c or --continue", async () => {
+    for (const flag of ["-c", "--continue"]) {
+      const { claude, fs, process } = buildClaude()
 
-    fs.mkdirSync("/work", { recursive: true })
+      fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", userArgs: ["-c"] })
+      await claude.launch({ channel: "ops", cwd: "/work", userArgs: [flag] })
 
-    const attach = process.calls.find((c) => c.kind === "attach")
+      const attach = process.calls.find((c) => c.kind === "attach")
 
-    if (attach?.kind !== "attach") throw new Error("expected attach call")
+      if (attach?.kind !== "attach") throw new Error("expected attach call")
 
-    expect(attach.command.includes("--session-id")).toBe(false)
-    expect(attach.command.indexOf("--resume")).toBe(-1)
-    expect(attach.command.includes("-c")).toBe(true)
+      expect(attach.command.includes("--session-id")).toBe(false)
+      expect(attach.command.indexOf("--resume")).toBe(-1)
+      expect(attach.command.includes(flag)).toBe(true)
+    }
+  })
+
+  test("launch omits its own session flags when the user passes --resume=<id> or --session-id=<id>", async () => {
+    for (const userArg of ["--resume=abc", "--session-id=fixed"]) {
+      const { claude, fs, process } = buildClaude()
+
+      fs.mkdirSync("/work", { recursive: true })
+
+      await claude.launch({ channel: "ops", cwd: "/work", userArgs: [userArg] })
+
+      const attach = process.calls.find((c) => c.kind === "attach")
+
+      if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+      // funnel must not append a separate flag — the user's equals-form arg
+      // already carries the id, so emitting --session-id or --resume next to
+      // it would either duplicate or shadow the user's choice.
+      expect(attach.command.includes("--session-id")).toBe(false)
+      expect(attach.command.includes("--resume")).toBe(false)
+      expect(attach.command.includes(userArg)).toBe(true)
+    }
   })
 
   test("launch omits its own --resume when the user passes --resume", async () => {
