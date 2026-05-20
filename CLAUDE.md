@@ -76,7 +76,7 @@ bun install           # 依存インストール（自動ビルドはしない�
 make build            # ライブラリ + CLI + JSON Schema 一括ビルド
 make build-lib        # ライブラリのみ（vp pack）
 make build-bin        # CLI / daemon のみ（bun build --minify）
-make schema           # funnel.schema.json を root と docs/ に再生成
+make schema           # funnel.schema.json を root と public/schema.json に再生成
 make clean            # dist 削除
 bun link              # funnel / fnl をグローバル登録
 bunx tsc -b           # 型チェック
@@ -209,12 +209,5 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
   6. どれも当たらない → help を stdout
 - argv の組立順は `[channel.options（settings.json から）] [user CLI args] [MCP server flag]`。env は `channel.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
 - 同一 profile 名の二重起動は PID ファイルで拒否する
-- `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `docs/funnel.schema.json` を再生成
+- `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `public/schema.json` を再生成
 
-## コーディング規約
-
-- ランタイムは Bun（ESM）。パスエイリアスは `@/*` → `./lib/*`
-- コード、CLI 出力、コメントは英語。ドキュメント（.md）は日本語
-- `require()` 禁止。動的 import も禁止
-- `let` / `var` を避けて `const` を優先
-- 詳細ルールは `.claude/rules/` を参照（TypeScript / React は `ts.react.md`、Git は `git.md`、Markdown は `md.md`）

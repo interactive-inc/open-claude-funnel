@@ -1,4 +1,4 @@
-name: Deploy funnel.schema.json to Pages
+name: deploy-schema
 
 on:
   push:
@@ -23,11 +23,11 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun lib/bin.ts schema > docs/funnel.schema.json
+      - run: bun lib/bin.ts schema > public/schema.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs
+          path: ./public
 
   deploy:
     needs: build
