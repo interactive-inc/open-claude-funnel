@@ -302,6 +302,7 @@ export class FunnelGatewayServer {
         broadcaster: this.broadcaster,
         supervisor: this.supervisor,
         channels: this.channels,
+        eventStore: this.eventStore,
         uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
         emit: (input) => this.emit(input),
       })

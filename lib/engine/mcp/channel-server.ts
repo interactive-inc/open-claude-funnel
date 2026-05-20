@@ -6,6 +6,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js"
+import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
+import { FunnelChannelOffsetStore } from "@/engine/mcp/channel-offset-store"
 import { FunnelChannelSubscriber } from "@/engine/mcp/channel-subscriber"
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
 import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
@@ -14,6 +16,8 @@ import { usageHintForType } from "@/engine/mcp/usage-hint-for-type"
 
 const DEFAULT_FUNNEL_DIR = join(homedir(), ".funnel")
 const DEFAULT_GATEWAY_BASE_URL = "http://localhost:9742"
+const FUNNEL_EVENTS_TOOL = "funnel_events"
+const FUNNEL_EVENTS_DEFAULT_LIMIT = 20
 
 export type ChannelServerOptions = {
   /** Funnel home directory (settings.json + gateway.token). Defaults to ~/.funnel. */
@@ -24,6 +28,8 @@ export type ChannelServerOptions = {
   channelId?: string
   /** Auth token. Defaults to `$FUNNEL_GATEWAY_TOKEN` then `<dir>/gateway.token`. */
   token?: string
+  /** Working directory used as the persistence key for last-offset. Defaults to `process.cwd()`. */
+  cwd?: string
 }
 
 export const startChannelServer = async (
@@ -36,6 +42,7 @@ export const startChannelServer = async (
   const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
   const channel = channelId ? readChannelConnectors(dir, channelId) : null
   const token = options.token ?? readGatewayToken(dir)
+  const cwd = options.cwd ?? process.cwd()
 
   const server = new Server(
     { name: FUNNEL_MCP_NAME, version: "1.0.0" },
@@ -47,13 +54,21 @@ export const startChannelServer = async (
       instructions: [
         `Events arrive inside <channel source="${FUNNEL_MCP_NAME}"> tags. Use meta.event_type to discriminate.`,
         "",
-        "To reply or act, call the connector tool exposed by this MCP (one tool per connector configured on this channel). Each tool takes { method, path, body } matching the underlying adapter's CallInput.",
+        "Push notifications are best-effort: the host may drop them while you are mid-turn, between turns,",
+        `or across MCP restarts. Whenever you finish handling an event, call \`${FUNNEL_EVENTS_TOOL}\` once`,
+        "to confirm you have not missed anything newer on the same channel. Pass the highest event offset",
+        "you have already processed as `since`, look at the returned events, and respond to any unhandled",
+        "ones the same way you would a pushed event. Repeat until the response is empty (cap at 3 passes).",
+        "",
+        "To reply or act on external services, call the per-connector tool exposed by this MCP (one tool",
+        "per connector configured on this channel). Each tool takes { method, path, body } matching the",
+        "underlying adapter's CallInput.",
       ].join("\n"),
     },
   )
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const tools = (channel?.connectors ?? []).map((c) => ({
+    const connectorTools = (channel?.connectors ?? []).map((c) => ({
       name: c.name,
       description: `Call the "${c.name}" (${c.type}) connector. ${usageHintForType(c.type)}`,
       inputSchema: {
@@ -67,12 +82,69 @@ export const startChannelServer = async (
       },
     }))
 
-    return { tools }
+    if (!channel) return { tools: connectorTools }
+
+    const funnelEventsTool = {
+      name: FUNNEL_EVENTS_TOOL,
+      description: [
+        "Look up recent events on this channel from the funnel event store.",
+        "Use this at the end of any event-handling turn to confirm push notifications did not drop anything.",
+        "Pass the highest offset you have already processed as `since`; events are returned in ascending",
+        "offset order, oldest first.",
+      ].join(" "),
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          since: {
+            type: "number",
+            description:
+              "Broadcaster offset to start after (exclusive). Pass the highest offset you have already processed; 0 returns the newest events up to `limit`.",
+          },
+          limit: {
+            type: "number",
+            description: `Maximum number of events to return. Defaults to ${FUNNEL_EVENTS_DEFAULT_LIMIT}.`,
+          },
+          connector: {
+            type: "string",
+            description: "Optional connector name to filter by (e.g. a slack connector name).",
+          },
+        },
+      },
+    }
+
+    return { tools: [funnelEventsTool, ...connectorTools] }
   })
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!channel) {
       throw new Error("FUNNEL_CHANNEL_ID is not set or channel not found in settings.json")
+    }
+
+    if (request.params.name === FUNNEL_EVENTS_TOOL) {
+      const args = (request.params.arguments ?? {}) as Record<string, unknown>
+      const since = typeof args.since === "number" ? args.since : null
+      const limit = typeof args.limit === "number" ? args.limit : null
+      const connector = typeof args.connector === "string" ? args.connector : null
+      const query = new URLSearchParams()
+
+      if (since !== null) query.set("since", String(since))
+      if (limit !== null) query.set("limit", String(limit))
+      if (connector !== null) query.set("connector", connector)
+
+      const qs = query.toString()
+      const url = `${gatewayBaseUrl}/channels/${encodeURIComponent(channel.channelName)}/events${qs ? `?${qs}` : ""}`
+      const headers: Record<string, string> = { accept: "application/json" }
+
+      if (token) headers.authorization = `Bearer ${token}`
+
+      const res = await fetch(url, { headers })
+      const text = await res.text()
+
+      if (!res.ok) {
+        throw new Error(`gateway events lookup failed (${res.status}): ${text}`)
+      }
+
+      return { content: [{ type: "text", text }] }
     }
 
     const connectorName = request.params.name
@@ -113,10 +185,19 @@ export const startChannelServer = async (
 
   if (!channelId) return
 
+  const offsetStore = new FunnelChannelOffsetStore({
+    fs: new NodeFunnelFileSystem(),
+    dir,
+  })
+  const offsetPort = {
+    load: () => offsetStore.get(channelId, cwd),
+    save: (offset: number) => offsetStore.set(channelId, cwd, offset),
+  }
   const subscriber = new FunnelChannelSubscriber({
     server,
     baseUrl: `${gatewayWsUrl}?channel=${encodeURIComponent(channelId)}`,
     protocols: token ? [`funnel.token.${token}`] : undefined,
+    offsetPort,
   })
 
   subscriber.start()

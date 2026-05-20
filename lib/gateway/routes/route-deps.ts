@@ -1,5 +1,6 @@
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { FunnelBroadcaster } from "@/gateway/broadcaster"
+import type { FunnelEventStore } from "@/gateway/funnel-event-store"
 import type { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
 
 export type GatewayEmitInput = {
@@ -14,6 +15,7 @@ export type GatewayRouteDeps = {
   broadcaster: FunnelBroadcaster
   supervisor: FunnelListenerSupervisor
   channels: FunnelChannels
+  eventStore: FunnelEventStore
   uptimeMs: () => number
   emit: (input: GatewayEmitInput) => { offset: number }
 }

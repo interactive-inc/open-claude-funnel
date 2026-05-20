@@ -22,7 +22,7 @@ const startServer = async (token: string) => {
   })
 
   const httpServer = await server.start()
-  return { server, httpServer }
+  return { server, httpServer, funnel }
 }
 
 const startServerWithExtras = async (extras: Hono<Env>) => {
@@ -45,7 +45,11 @@ const startServerWithExtras = async (extras: Hono<Env>) => {
   return { server, httpServer }
 }
 
-let active: { server: { stop: () => Promise<void> }; httpServer: Server<unknown> } | null = null
+let active: {
+  server: { stop: () => Promise<void>; emit: (input: { channel: string; content: string; meta?: Record<string, string> }) => { offset: number } }
+  httpServer: Server<unknown>
+  funnel?: Funnel
+} | null = null
 
 afterEach(async () => {
   if (active) {
@@ -149,6 +153,69 @@ describe("FunnelGatewayServer auth integration", () => {
         "sec-websocket-protocol": "funnel.token.bad",
       },
     })
+
+    expect(res.status).toBe(401)
+  })
+})
+
+describe("FunnelGatewayServer /channels/:channel/events", () => {
+  test("returns events for a channel resolved by name, in offset order", async () => {
+    active = await startServer("")
+    const funnel = active.funnel
+
+    if (!funnel) throw new Error("funnel missing")
+
+    const channel = funnel.channels.add({ name: "inbox" })
+
+    active.server.emit({ channel: "inbox", content: "one", meta: { event_type: "test" } })
+    active.server.emit({ channel: "inbox", content: "two", meta: { event_type: "test" } })
+
+    const url = `http://localhost:${active.httpServer.port}/channels/inbox/events`
+    const res = await fetch(url)
+    const body = (await res.json()) as {
+      ok: boolean
+      channel: string
+      events: { offset: number; content: string; meta: Record<string, string> }[]
+    }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.channel).toBe("inbox")
+    expect(body.events.map((e) => e.content)).toEqual(["one", "two"])
+    expect(body.events[0]?.meta.channelId).toBe(channel.id)
+  })
+
+  test("?since=<offset> returns only events strictly after that offset", async () => {
+    active = await startServer("")
+    const funnel = active.funnel
+
+    if (!funnel) throw new Error("funnel missing")
+
+    funnel.channels.add({ name: "inbox" })
+
+    const first = active.server.emit({ channel: "inbox", content: "a" })
+
+    active.server.emit({ channel: "inbox", content: "b" })
+
+    const url = `http://localhost:${active.httpServer.port}/channels/inbox/events?since=${first.offset}`
+    const res = await fetch(url)
+    const body = (await res.json()) as { events: { content: string }[] }
+
+    expect(body.events.map((e) => e.content)).toEqual(["b"])
+  })
+
+  test("returns 404 when the channel does not exist", async () => {
+    active = await startServer("")
+    const url = `http://localhost:${active.httpServer.port}/channels/nope/events`
+    const res = await fetch(url)
+
+    expect(res.status).toBe(404)
+  })
+
+  test("requires bearer token when one is set", async () => {
+    active = await startServer("secret-events")
+    const url = `http://localhost:${active.httpServer.port}/channels/whatever/events`
+    const res = await fetch(url)
 
     expect(res.status).toBe(401)
   })
