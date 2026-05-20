@@ -119,6 +119,36 @@ describe("FunnelChannelSubscriber", () => {
     expect(sent).toHaveLength(1)
   })
 
+  test("forwarded notification meta carries the event offset as a string", async () => {
+    FakeWebSocket.reset()
+    const { server, sent } = buildServer()
+    const subscriber = new FunnelChannelSubscriber({
+      server,
+      baseUrl: "ws://gateway/ws?channel=ch1",
+      protocols: undefined,
+      webSocketFactory: (url, protocols) => new FakeWebSocket(url, protocols) as unknown as WebSocket,
+    })
+
+    subscriber.start()
+    const ws = FakeWebSocket.instances[0]
+
+    if (!ws) throw new Error("expected a WebSocket")
+
+    ws.emit("message", {
+      data: JSON.stringify({
+        content: "hi",
+        meta: { event_type: "slack", channel_id: "C1" },
+        offset: 11,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const last = sent[0] as { params: { meta: Record<string, string> } }
+
+    expect(last.params.meta.offset).toBe("11")
+    expect(last.params.meta.channel_id).toBe("C1")
+  })
+
   test("out-of-order or duplicate offsets do not move the persisted cursor backward", async () => {
     FakeWebSocket.reset()
     const { server } = buildServer()

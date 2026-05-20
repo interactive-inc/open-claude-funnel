@@ -96,19 +96,25 @@ export class FunnelChannelSubscriber {
     try {
       const payload = JSON.parse(String(event.data))
       const eventType = payload.meta?.event_type ?? "unknown"
+      const offset = typeof payload.offset === "number" ? payload.offset : null
 
-      if (typeof payload.offset === "number" && payload.offset > this.state.lastOffset) {
-        this.state.lastOffset = payload.offset
-        this.offsetPort?.save(payload.offset)
+      if (offset !== null && offset > this.state.lastOffset) {
+        this.state.lastOffset = offset
+        this.offsetPort?.save(offset)
       }
 
       process.stderr.write(`funnel: received event (${eventType})\n`)
+
+      const meta = {
+        ...(payload.meta ?? {}),
+        ...(offset !== null ? { offset: String(offset) } : {}),
+      }
 
       await this.props.server.notification({
         method: "notifications/claude/channel",
         params: {
           content: payload.content,
-          meta: payload.meta,
+          meta,
         },
       })
     } catch (error) {
