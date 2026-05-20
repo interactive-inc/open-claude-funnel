@@ -212,6 +212,34 @@ describe("FunnelGatewayServer /channels/:channel/events", () => {
     expect(res.status).toBe(404)
   })
 
+  test("returns 404 when the named connector does not exist on the channel", async () => {
+    active = await startServer("")
+    const funnel = active.funnel
+
+    if (!funnel) throw new Error("funnel missing")
+
+    funnel.channels.add({ name: "inbox" })
+
+    const url = `http://localhost:${active.httpServer.port}/channels/inbox/events?connector=ghost`
+    const res = await fetch(url)
+
+    expect(res.status).toBe(404)
+  })
+
+  test("rejects an out-of-range limit", async () => {
+    active = await startServer("")
+    const funnel = active.funnel
+
+    if (!funnel) throw new Error("funnel missing")
+
+    funnel.channels.add({ name: "inbox" })
+
+    const url = `http://localhost:${active.httpServer.port}/channels/inbox/events?limit=9999`
+    const res = await fetch(url)
+
+    expect(res.status).toBe(400)
+  })
+
   test("requires bearer token when one is set", async () => {
     active = await startServer("secret-events")
     const url = `http://localhost:${active.httpServer.port}/channels/whatever/events`

@@ -90,8 +90,8 @@ export const startChannelServer = async (
       description: [
         "Look up recent events on this channel from the funnel event store.",
         "Use this at the end of any event-handling turn to confirm push notifications did not drop anything.",
-        "Pass the highest offset you have already processed as `since`; events are returned in ascending",
-        "offset order, oldest first.",
+        "Events are returned in ascending offset order (oldest first). Loop until the response is empty;",
+        "the channel-server instructions cap polling at 3 passes per turn.",
       ].join(" "),
       inputSchema: {
         type: "object" as const,
@@ -99,7 +99,7 @@ export const startChannelServer = async (
           since: {
             type: "number",
             description:
-              "Broadcaster offset to start after (exclusive). Pass the highest offset you have already processed; 0 returns the newest events up to `limit`.",
+              "Broadcaster offset to start after (exclusive). Pass the highest offset you have already processed. Omit (or pass 0) to scan from the start of the retained window, oldest first.",
           },
           limit: {
             type: "number",
@@ -138,11 +138,20 @@ export const startChannelServer = async (
 
       if (token) headers.authorization = `Bearer ${token}`
 
-      const res = await fetch(url, { headers })
+      let res: Response
+
+      try {
+        res = await fetch(url, { headers })
+      } catch (error) {
+        throw new Error(
+          `funnel_events: gateway unreachable at ${url}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+
       const text = await res.text()
 
       if (!res.ok) {
-        throw new Error(`gateway events lookup failed (${res.status}): ${text}`)
+        throw new Error(`funnel_events: gateway responded ${res.status}: ${text}`)
       }
 
       return { content: [{ type: "text", text }] }
@@ -163,16 +172,24 @@ export const startChannelServer = async (
 
     if (token) headers.authorization = `Bearer ${token}`
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ method, path, body }),
-    })
+    let res: Response
+
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ method, path, body }),
+      })
+    } catch (error) {
+      throw new Error(
+        `connector call: gateway unreachable at ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
 
     const text = await res.text()
 
     if (!res.ok) {
-      throw new Error(`gateway call failed (${res.status}): ${text}`)
+      throw new Error(`connector call: gateway responded ${res.status}: ${text}`)
     }
 
     return {
@@ -197,7 +214,7 @@ export const startChannelServer = async (
   const subscriber = new FunnelChannelSubscriber({
     server,
     baseUrl: `${gatewayWsUrl}?channel=${encodeURIComponent(channelId)}`,
-    protocols: token ? [`funnel.token.${token}`] : undefined,
+    protocols: token ? [`funnel.token.${token}`] : null,
     offsetPort,
   })
 

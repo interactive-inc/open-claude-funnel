@@ -1,7 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/gateway/factory"
-import { zParam } from "@/gateway/routes/validator"
+import { zParam, zQuery } from "@/gateway/routes/validator"
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -33,25 +33,15 @@ export type ChannelEventListResponse = {
  * `:channel`, which accepts either id or name) and optionally by connector
  * name; `since` is a broadcaster offset and the response is sorted ascending.
  *
- * This is the gateway side of the `funnel_events` MCP tool: Claude calls the
- * tool at the end of an event-handling turn and the tool issues this request.
+ * Primarily called by the `funnel_events` MCP tool, but exposed as a regular
+ * HTTP endpoint so other clients can poll the same data.
  */
 export const channelsEventsListHandler = factory.createHandlers(
   zParam(z.object({ channel: z.string().min(1) })),
+  zQuery(querySchema),
   async (c) => {
     const param = c.req.valid("param")
-    const query = querySchema.safeParse({
-      since: c.req.query("since"),
-      limit: c.req.query("limit"),
-      connector: c.req.query("connector"),
-    })
-
-    if (!query.success) {
-      throw new HTTPException(400, {
-        message: query.error.issues[0]?.message ?? "invalid query",
-      })
-    }
-
+    const query = c.req.valid("query")
     const channels = c.var.deps.channels.list()
     const channel = channels.find((ch) => ch.id === param.channel || ch.name === param.channel)
 
@@ -59,12 +49,12 @@ export const channelsEventsListHandler = factory.createHandlers(
       throw new HTTPException(404, { message: `channel not found: ${param.channel}` })
     }
 
-    const connectorName = query.data.connector
+    const connectorName = query.connector ?? null
     const connectorId = connectorName
       ? (channel.connectors.find((conn) => conn.name === connectorName)?.id ?? null)
-      : undefined
+      : null
 
-    if (connectorName && connectorId === null) {
+    if (connectorName !== null && connectorId === null) {
       throw new HTTPException(404, {
         message: `connector not found in channel: ${connectorName}`,
       })
@@ -72,9 +62,9 @@ export const channelsEventsListHandler = factory.createHandlers(
 
     const events = c.var.deps.eventStore.loadForChannel({
       channelId: channel.id,
-      ...(connectorId ? { connectorId } : {}),
-      ...(query.data.since !== undefined ? { sinceSeq: query.data.since } : {}),
-      limit: query.data.limit ?? DEFAULT_LIMIT,
+      ...(connectorId !== null ? { connectorId } : {}),
+      ...(query.since !== undefined ? { sinceSeq: query.since } : {}),
+      limit: query.limit ?? DEFAULT_LIMIT,
     })
 
     const response: ChannelEventListResponse = {

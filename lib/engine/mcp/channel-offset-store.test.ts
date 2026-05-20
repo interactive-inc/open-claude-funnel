@@ -4,9 +4,14 @@ import { FunnelChannelOffsetStore } from "@/engine/mcp/channel-offset-store"
 
 const buildStore = () => {
   const fs = new MemoryFunnelFileSystem({ dirs: ["/funnel"] })
-  const store = new FunnelChannelOffsetStore({ fs, dir: "/funnel" })
+  const warnings: string[] = []
+  const store = new FunnelChannelOffsetStore({
+    fs,
+    dir: "/funnel",
+    warn: (msg) => warnings.push(msg),
+  })
 
-  return { store, fs }
+  return { store, fs, warnings }
 }
 
 describe("FunnelChannelOffsetStore", () => {
@@ -54,17 +59,28 @@ describe("FunnelChannelOffsetStore", () => {
     expect(store.get("ch2", "/repo")).toBe(99)
   })
 
-  test("survives a malformed offsets.json by treating it as empty", () => {
-    const { store, fs } = buildStore()
+  test("survives a malformed offsets.json by treating it as empty and warning", () => {
+    const { store, fs, warnings } = buildStore()
 
     fs.mkdirSync("/funnel/channels/ch1", { recursive: true })
     fs.writeFileSync("/funnel/channels/ch1/offsets.json", "not json")
 
     expect(store.get("ch1", "/repo")).toBe(0)
+    expect(warnings.some((w) => w.includes("corrupted offsets"))).toBe(true)
 
     store.set("ch1", "/repo", 5)
 
     expect(store.get("ch1", "/repo")).toBe(5)
+  })
+
+  test("warns when offsets.json parses but does not match the schema", () => {
+    const { store, fs, warnings } = buildStore()
+
+    fs.mkdirSync("/funnel/channels/ch1", { recursive: true })
+    fs.writeFileSync("/funnel/channels/ch1/offsets.json", JSON.stringify({ "/repo": "ten" }))
+
+    expect(store.get("ch1", "/repo")).toBe(0)
+    expect(warnings.some((w) => w.includes("did not match schema"))).toBe(true)
   })
 
   test("set with a non-positive offset is treated as a clear", () => {
