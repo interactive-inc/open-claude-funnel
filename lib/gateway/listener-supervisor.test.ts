@@ -107,4 +107,40 @@ describe("FunnelListenerSupervisor", () => {
     expect(result.ok).toBe(false)
     expect(result.reason).toMatch(/not found/)
   })
+
+  test("listener.start() throws are forwarded to onError with context", async () => {
+    class ThrowingStartListener extends FunnelConnectorListener {
+      async start(): Promise<void> {
+        throw new Error("listener boom")
+      }
+      async stop(): Promise<void> {}
+      override isAlive(): boolean {
+        return false
+      }
+    }
+
+    const listener = new ThrowingStartListener()
+    const captured: { error: Error; context?: Record<string, unknown> }[] = []
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      onError: (error, context) => captured.push({ error, context }),
+    })
+
+    const result = await supervisor.start("ops", "cron")
+
+    expect(result.ok).toBe(false)
+    expect(captured.length).toBe(1)
+    expect(captured[0]?.error.message).toBe("listener boom")
+    expect(captured[0]?.context).toMatchObject({
+      component: "listener-supervisor.start",
+      channel: "ops",
+      connector: "cron",
+      type: "schedule",
+    })
+  })
 })

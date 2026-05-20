@@ -72,6 +72,27 @@ describe("FunnelBroadcaster", () => {
     expect(logger.error).not.toBeUndefined()
   })
 
+  test("subscriber throw is forwarded to onError with the Error + context", () => {
+    const captured: { error: Error; context?: Record<string, unknown> }[] = []
+    const broadcaster = new FunnelBroadcaster({
+      onError: (error, context) => captured.push({ error, context }),
+    })
+
+    broadcaster.subscribe(() => {
+      throw new Error("kaboom")
+    })
+
+    broadcaster.broadcast("ping", { connector: "demo", channel: "inbox" })
+
+    expect(captured.length).toBe(1)
+    expect(captured[0]?.error.message).toBe("kaboom")
+    expect(captured[0]?.context).toMatchObject({
+      component: "broadcaster.subscriber",
+      connector: "demo",
+      channel: "inbox",
+    })
+  })
+
   test("WS receives only events for connectors it subscribes to", () => {
     const broadcaster = new FunnelBroadcaster()
     const a = new FakeWs()

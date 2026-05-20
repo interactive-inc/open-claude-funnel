@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from "bun"
+import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 
@@ -47,6 +48,8 @@ type ReplaySource = {
 
 type Deps = {
   logger?: FunnelLogger
+  /** Host hook for surfacing subscriber-throw exceptions. Defaults to no-op. */
+  onError?: OnFunnelError
   maxBufferedBytes?: number
   now?: () => number
   /** Number of recent events kept in the in-memory replay buffer. */
@@ -61,6 +64,7 @@ const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024
 const DEFAULT_REPLAY_BUFFER_SIZE = 200
 const DEFAULT_REPLAY_BUFFER_MAX_BYTES = 4 * 1024 * 1024
 const defaultLogger = new NoopFunnelLogger()
+const defaultOnError: OnFunnelError = () => {}
 
 type BroadcasterMetrics = {
   clients: number
@@ -96,6 +100,7 @@ export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
   private readonly subscribers: Set<BroadcastSubscriber> = new Set()
   private readonly logger: FunnelLogger
+  private readonly onError: OnFunnelError
   private readonly maxBufferedBytes: number
   private readonly now: () => number
   private readonly replayBufferSize: number
@@ -111,6 +116,7 @@ export class FunnelBroadcaster {
 
   constructor(deps: Deps = {}) {
     this.logger = deps.logger ?? defaultLogger
+    this.onError = deps.onError ?? defaultOnError
     this.maxBufferedBytes = deps.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
     this.now = deps.now ?? (() => Date.now())
     this.replayBufferSize = Math.max(0, deps.replayBufferSize ?? DEFAULT_REPLAY_BUFFER_SIZE)
@@ -303,8 +309,14 @@ export class FunnelBroadcaster {
       try {
         handler(event)
       } catch (error) {
-        this.logger.error("broadcast subscriber threw", {
-          error: error instanceof Error ? error.message : String(error),
+        const err = error instanceof Error ? error : new Error(String(error))
+
+        this.logger.error("broadcast subscriber threw", { error: err.message })
+        this.onError(err, {
+          component: "broadcaster.subscriber",
+          offset: event.offset,
+          connector: event.meta?.connector ?? null,
+          channel: event.meta?.channel ?? null,
         })
       }
     }

@@ -47,6 +47,8 @@ export * from "@/engine/token-prompter/token-prompter"
 export * from "@/engine/token-prompter/node-token-prompter"
 export * from "@/engine/token-prompter/memory-token-prompter"
 
+export * from "@/engine/error/on-funnel-error"
+
 // Connectors
 export * from "@/connectors/connector-factory"
 export * from "@/connectors/connector-config-schema"

@@ -7,6 +7,7 @@ import {
 } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
+import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
@@ -44,6 +45,8 @@ import { FunnelListenersClient } from "@/gateway/listeners-client"
 const SANDBOX_DIR = "/sandbox/.funnel"
 const SANDBOX_TMP_DIR = "/sandbox/tmp"
 
+const noopOnError: OnFunnelError = () => {}
+
 type Props = {
   /** Settings persistence (channels with nested connectors / profiles). Defaults to a FunnelSettingsStore rooted at `dir`. */
   store?: FunnelSettingsReader
@@ -74,6 +77,12 @@ type Props = {
    * each successful fire, useful for dropping one-shot entries.
    */
   scheduleListenerOptions?: ScheduleListenerOptions
+  /**
+   * Called when Funnel catches an exception that would otherwise be silently
+   * swallowed (subscriber throw, listener start/stop failure, etc.). Pass
+   * `Sentry.captureException` from the host to surface these. Defaults to no-op.
+   */
+  onError?: OnFunnelError
 }
 
 /**
@@ -175,6 +184,14 @@ export class Funnel {
     if (!this.memos.clock) this.memos.clock = this.props.clock ?? new NodeFunnelClock()
 
     return this.memos.clock
+  }
+
+  /**
+   * Error hook. Forwards Funnel-internal exceptions that would otherwise be
+   * swallowed. Defaults to a no-op when no host hook was passed.
+   */
+  get onError(): OnFunnelError {
+    return this.props.onError ?? noopOnError
   }
 
   /** ID generator boundary. Defaults to NodeFunnelIdGenerator. */
@@ -407,6 +424,7 @@ export class Funnel {
       process: this.process,
       clock: this.clock,
       logger: this.logger,
+      onError: this.onError,
       dir: this.paths.dir,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),

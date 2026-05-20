@@ -3,6 +3,7 @@ import { dirname, join } from "node:path"
 import type { Server, ServerWebSocket } from "bun"
 import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
+import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
 import { type Env, factory } from "@/gateway/factory"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
@@ -30,6 +31,8 @@ type Deps = {
   process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
+  /** Host hook for surfacing internal exceptions (broadcaster / supervisor). Defaults to no-op. */
+  onError?: OnFunnelError
   selfPid?: number
   /** Funnel home dir, used to scope kill-competing to daemons rooted at the same dir. Defaults to FUNNEL_DIR. */
   dir?: string
@@ -60,6 +63,7 @@ type WsData = {
 }
 
 const defaultLogger = new NodeFunnelLogger()
+const defaultOnError: OnFunnelError = () => {}
 
 /**
  * In-process gateway: runs `Bun.serve` (HTTP + WebSocket /ws), boots connector
@@ -78,6 +82,7 @@ export class FunnelGatewayServer {
   private readonly dbPath: string
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger
+  private readonly onError: OnFunnelError
   private readonly selfPid: number
   private readonly dir: string
   private readonly killCompetingSlack: boolean
@@ -97,6 +102,7 @@ export class FunnelGatewayServer {
     this.dbPath = deps.dbPath ?? defaultDbPath()
     this.process = deps.process
     this.logger = deps.logger ?? defaultLogger
+    this.onError = deps.onError ?? defaultOnError
     this.selfPid = deps.selfPid ?? globalThis.process.pid
     this.dir = deps.dir ?? FUNNEL_DIR
     this.killCompetingSlack = deps.killCompetingSlack ?? true
@@ -113,6 +119,7 @@ export class FunnelGatewayServer {
     })
     this.broadcaster = new FunnelBroadcaster({
       logger: this.logger,
+      onError: this.onError,
       now: this.nowMs,
       persistentReplay: this.eventStore,
     })
@@ -120,6 +127,7 @@ export class FunnelGatewayServer {
     this.supervisor = new FunnelListenerSupervisor({
       channels: this.channels,
       logger: this.logger,
+      onError: this.onError,
       notify: async (channelName, connectorName, content, meta) => {
         this.emit({ channel: channelName, connector: connectorName, content, meta })
       },
