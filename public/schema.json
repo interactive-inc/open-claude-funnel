@@ -52,6 +52,9 @@
                     "appToken": {
                       "type": "string"
                     },
+                    "minify": {
+                      "type": "boolean"
+                    },
                     "env": {
                       "type": "object",
                       "properties": {

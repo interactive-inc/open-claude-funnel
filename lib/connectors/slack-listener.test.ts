@@ -60,6 +60,7 @@ const buildConfig = (): SlackConnectorConfig => ({
   name: "test",
   botToken: "xoxb-test",
   appToken: "xapp-test",
+  minify: true,
 })
 
 beforeEach(() => {

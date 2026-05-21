@@ -27,6 +27,8 @@ const slackConnectorSpecSchema = z.object({
   name: z.string(),
   botToken: z.string().optional(),
   appToken: z.string().optional(),
+  /** Shrink raw Slack events before fanout. Defaults to true. */
+  minify: z.boolean().optional(),
   env: slackEnvSchema,
 })
 

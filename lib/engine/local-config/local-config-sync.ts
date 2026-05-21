@@ -192,6 +192,7 @@ export class FunnelLocalConfigSync {
       name: spec.name,
       botToken,
       appToken,
+      ...(spec.minify !== undefined ? { minify: spec.minify } : {}),
     })
 
     return { id: added.id, name: spec.name, changed: true }

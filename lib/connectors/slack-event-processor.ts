@@ -1,3 +1,5 @@
+import { minifySlackEvent } from "@/connectors/minify-slack-event"
+
 export type SlackRawEvent = Record<string, unknown>
 
 export type SlackProcessedSkip = { skip: true }
@@ -26,6 +28,7 @@ const DEDUP_WINDOW = 10_000
 type Props = {
   ownBotUserId: string
   ownBotId: string
+  minify?: boolean
   now?: () => number
 }
 
@@ -38,12 +41,14 @@ const getString = (event: SlackRawEvent, key: string): string | undefined => {
 export class FunnelSlackEventProcessor {
   private readonly ownBotUserId: string
   private readonly ownBotId: string
+  private readonly minify: boolean
   private readonly now: () => number
   private readonly dedup = new Map<string, number>()
 
   constructor(props: Props) {
     this.ownBotUserId = props.ownBotUserId
     this.ownBotId = props.ownBotId
+    this.minify = props.minify ?? true
     this.now = props.now ?? (() => Date.now())
   }
 
@@ -78,10 +83,11 @@ export class FunnelSlackEventProcessor {
     const text = getString(event, "text") ?? ""
     const mentioned = text.includes(`<@${this.ownBotUserId}>`)
     const threadTs = getString(event, "thread_ts") ?? getString(event, "ts") ?? ""
+    const emitted = this.minify ? minifySlackEvent(event) : event
 
     return {
       skip: false,
-      content: JSON.stringify(event),
+      content: JSON.stringify(emitted),
       meta: {
         event_type: "slack",
         channel_id: channelId,

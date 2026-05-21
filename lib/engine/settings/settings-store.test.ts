@@ -37,6 +37,7 @@ describe("FunnelSettingsStore", () => {
               name: "main",
               botToken: "xoxb-x",
               appToken: "xapp-x",
+              minify: true,
             },
           ],
         },

@@ -7,6 +7,7 @@ const config = {
   name: "test",
   botToken: "xoxb-test",
   appToken: "xapp-test",
+  minify: true,
 }
 
 describe("FunnelSlackAdapter", () => {

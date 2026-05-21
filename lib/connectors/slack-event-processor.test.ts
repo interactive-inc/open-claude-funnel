@@ -68,4 +68,50 @@ describe("FunnelSlackEventProcessor", () => {
     expect(p.process(event).skip).toBe(false)
     expect(p.process(event).skip).toBe(true)
   })
+
+  test("minifies content by default", () => {
+    const result = make().process({
+      type: "message",
+      user: "UOTHER",
+      channel: "C1",
+      ts: "1.0",
+      text: "hello",
+      client_msg_id: "abc-123",
+      team: "T1",
+    })
+
+    expect(result.skip).toBe(false)
+    if (result.skip) return
+
+    const parsed = JSON.parse(result.content)
+
+    expect(parsed.text).toBe("hello")
+    expect(parsed).not.toHaveProperty("client_msg_id")
+    expect(parsed).not.toHaveProperty("team")
+  })
+
+  test("keeps raw JSON when minify is disabled", () => {
+    const processor = new FunnelSlackEventProcessor({
+      ownBotUserId: "UBOT",
+      ownBotId: "BBOT",
+      minify: false,
+    })
+    const result = processor.process({
+      type: "message",
+      user: "UOTHER",
+      channel: "C1",
+      ts: "1.0",
+      text: "hello",
+      client_msg_id: "abc-123",
+      team: "T1",
+    })
+
+    expect(result.skip).toBe(false)
+    if (result.skip) return
+
+    const parsed = JSON.parse(result.content)
+
+    expect(parsed.client_msg_id).toBe("abc-123")
+    expect(parsed.team).toBe("T1")
+  })
 })

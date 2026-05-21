@@ -60,6 +60,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     const processor = new FunnelSlackEventProcessor({
       ownBotUserId: authResult.user_id ?? "",
       ownBotId: authResult.bot_id ?? "",
+      minify: this.config.minify,
     })
 
     const preprocess = this.preprocessEvent

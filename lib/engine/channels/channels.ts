@@ -32,7 +32,7 @@ export type ChannelConnectorView = ConnectorConfig & {
 }
 
 type AddConnectorInput =
-  | { type: "slack"; name: string; botToken: string; appToken: string }
+  | { type: "slack"; name: string; botToken: string; appToken: string; minify?: boolean }
   | { type: "gh"; name: string; pollInterval?: number }
   | { type: "discord"; name: string; botToken: string }
   | { type: "schedule"; name: string; entries?: ScheduleEntry[] }
@@ -226,6 +226,7 @@ export class FunnelChannels {
           name: input.name,
           botToken: input.botToken,
           appToken: input.appToken,
+          minify: input.minify ?? true,
           createdAt,
           updatedAt,
         }

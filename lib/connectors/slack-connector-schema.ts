@@ -6,6 +6,7 @@ export const slackConnectorSchema = z.object({
   type: z.literal("slack"),
   botToken: z.string().startsWith("xoxb-"),
   appToken: z.string().startsWith("xapp-"),
+  minify: z.boolean().default(true),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 })
