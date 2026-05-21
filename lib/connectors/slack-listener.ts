@@ -78,6 +78,10 @@ export class FunnelSlackListener extends FunnelConnectorListener {
 
       if (result.skip) return
 
+      // notify first: if delivery to the funnel throws, we deliberately skip
+      // the eyes reaction so an undelivered message is not marked as seen.
+      await notify(result.content, result.meta)
+
       if (result.shouldReact) {
         try {
           await app.client.reactions.add({
@@ -90,8 +94,6 @@ export class FunnelSlackListener extends FunnelConnectorListener {
           // ignore
         }
       }
-
-      await notify(result.content, result.meta)
     })
 
     app.error(async (error) => {

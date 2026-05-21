@@ -191,6 +191,58 @@ describe("FunnelSlackListener.preprocessEvent", () => {
 
     expect(notify).toHaveBeenCalledTimes(1)
   })
+
+  test("adds the eyes reaction only after notify resolves", async () => {
+    const order: string[] = []
+    const notify = vi.fn(async () => {
+      order.push("notify")
+    })
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(notify)
+    hoisted.mockApp?.client.reactions.add.mockImplementation(async () => {
+      order.push("reaction")
+      return { ok: true }
+    })
+
+    await hoisted.middlewareHandlers[0]?.({
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "<@U_BOT> hi",
+      },
+    })
+
+    expect(order).toEqual(["notify", "reaction"])
+  })
+
+  test("skips the eyes reaction when notify throws (undelivered is not marked seen)", async () => {
+    const notify = vi.fn(async () => {
+      throw new Error("delivery failed")
+    })
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(notify)
+
+    await expect(
+      hoisted.middlewareHandlers[0]?.({
+        event: {
+          type: "message",
+          channel: "C1",
+          ts: "1.0",
+          event_ts: "1.0",
+          user: "U_REAL",
+          text: "<@U_BOT> hi",
+        },
+      }),
+    ).rejects.toThrow("delivery failed")
+
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(hoisted.mockApp?.client.reactions.add).not.toHaveBeenCalled()
+  })
 })
 
 describe("FunnelSlackListener: backwards compatibility", () => {
