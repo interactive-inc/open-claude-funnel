@@ -68,7 +68,15 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     app.use(async (args) => {
       const parsed = middlewareArgsSchema.safeParse(args)
 
-      if (!parsed.success || !parsed.data.event) return
+      // Only events are funnel's concern. Payloads without an `event` key
+      // (block_actions, view_submission, slash commands, …) must fall through
+      // to the listeners registered via onAppCreated — call next() instead of
+      // swallowing them, or app.action handlers (e.g. approval buttons) never
+      // fire. This middleware consumes events and lets everything else pass.
+      if (!parsed.success || !parsed.data.event) {
+        await args.next()
+        return
+      }
 
       const rawEvent = parsed.data.event as SlackRawEvent
       const event = preprocess ? preprocess(rawEvent) : rawEvent

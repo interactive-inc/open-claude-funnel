@@ -246,6 +246,51 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 })
 
+describe("FunnelSlackListener: non-event payloads", () => {
+  test("passes block_actions through to next() instead of swallowing it", async () => {
+    // Regression: the global middleware used to `return` for payloads without
+    // an `event` key, halting the chain so app.action handlers (approval
+    // buttons) never fired. block_actions/view_submission/commands must pass
+    // through to the listeners registered via onAppCreated.
+    const notify = vi.fn(async () => {})
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(notify)
+
+    const next = vi.fn(async () => {})
+    await hoisted.middlewareHandlers[0]?.({
+      body: { type: "block_actions", actions: [{ action_id: "approve" }] },
+      next,
+    })
+
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  test("consumes events without calling next() (funnel is the sole event sink)", async () => {
+    const notify = vi.fn(async () => {})
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(notify)
+
+    const next = vi.fn(async () => {})
+    await hoisted.middlewareHandlers[0]?.({
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hi",
+      },
+      next,
+    })
+
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(next).not.toHaveBeenCalled()
+  })
+})
+
 describe("FunnelSlackListener: backwards compatibility", () => {
   test("constructor works without any hooks (no onAppCreated, no preprocessEvent)", async () => {
     const listener = new FunnelSlackListener({ config: buildConfig() })
