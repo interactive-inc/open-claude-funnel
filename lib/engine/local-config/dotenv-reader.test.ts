@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { FunnelDotenvReader } from "@/engine/local-config/dotenv-reader"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 

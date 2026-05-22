@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { FunnelLocalConfig } from "@/engine/local-config/local-config"
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 

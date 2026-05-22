@@ -12,8 +12,9 @@ import { fileURLToPath } from "node:url"
  *  3. bundled: when this helper is inlined into dist/bin.js, the helper's dir is dist/,
  *     and daemon.js lives at dist/gateway/daemon.js
  *
- * `import.meta.url` works in both Bun and Node test runners; `import.meta.dir`
- * is Bun-only and breaks vitest.
+ * Uses `fileURLToPath(import.meta.url)` rather than `import.meta.dir` so the
+ * same helper resolves correctly whether run from source, the built sibling,
+ * or inlined into the bundle.
  */
 export const resolveDaemonScript = (): string => {
   const here = dirname(fileURLToPath(import.meta.url))

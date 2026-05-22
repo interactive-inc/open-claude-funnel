@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "bun:test"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
 
 const originalFetch = globalThis.fetch

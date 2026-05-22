@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { FunnelGhAdapter } from "@/connectors/gh-adapter"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 

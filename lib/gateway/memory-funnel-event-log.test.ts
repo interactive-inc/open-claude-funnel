@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "bun:test"
 import { MemoryFunnelEventLog } from "@/gateway/memory-funnel-event-log"
 
 const record = (log: MemoryFunnelEventLog, offset: number, content: string) => {

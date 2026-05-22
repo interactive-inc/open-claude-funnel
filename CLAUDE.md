@@ -81,13 +81,13 @@ make schema           # funnel.schema.json を root と public/schema.json に�
 make clean            # dist 削除
 bun link              # funnel / fnl をグローバル登録
 bunx tsc -b           # 型チェック
-make test             # テスト全実行（vitest + bun test）
+make test             # テスト全実行（bun test）
 bun lib/bin.ts <args> # 開発用直接実行（build 不要、起動 ~2s）
 ```
 
 `fnl` / `funnel` は `dist/bin.js` を指す bundle。コード変更を `fnl` で確かめるなら `make build` を再実行。日常の試行は `bun lib/bin.ts ...` が速い。
 
-テストファイルは全て `.test.ts` で統一する。ほとんどは vite-plus（vitest）で走る Node ランナーのユニットテスト。`Bun.serve` や `bun:sqlite` を import チェーンに含む統合テストだけは Bun ランタイムを必要とするので、`vite.config.ts` の `test.exclude` で列挙して `bun test` 側に回す（Makefile の `bun-test` ターゲットに同じリストを並べる）。`make test` が両方を続けて走らせる。新規テストを書くときは、まず vitest で動くかを確かめて、`bun:` 系 import を chain に持ち込む場合だけ exclude リストに追加すること。
+テストファイルは全て `.test.ts`（TUI は `.test.tsx`）で統一し、`bun test` 一本で走らせる（`make test` = `bun test`）。テストランナーは Bun ネイティブの `bun:test`（`import { describe, expect, test, mock } from "bun:test"`）。production と同じ Bun ランタイムで実行するので、`Bun.serve` / `bun:sqlite` を import チェーンに含む統合テストも普通に動く（vitest の Node ワーカー時代に必要だった exclude リストの二重管理は廃止）。mock は `mock(fn)`（旧 `vi.fn`）、module mock は `mock.module(specifier, factory)`（旧 `vi.mock`、bun では hoist されて static import を intercept する）。新規テストは `bun:test` から import するだけでよい。`@/` alias は tsconfig の `paths` から解決される。
 
 ## レイヤ地図
 

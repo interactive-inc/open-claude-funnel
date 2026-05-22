@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { FunnelGateway } from "@/gateway/gateway"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"

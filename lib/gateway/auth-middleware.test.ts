@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
 

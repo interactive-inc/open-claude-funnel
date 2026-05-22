@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { queryToCliArgs } from "@/cli/router/query-to-cli-args"
 
 describe("queryToCliArgs", () => {

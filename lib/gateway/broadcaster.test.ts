@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import type { ServerWebSocket } from "bun"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"

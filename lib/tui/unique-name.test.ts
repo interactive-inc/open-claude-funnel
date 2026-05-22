@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { uniqueName } from "@/tui/unique-name"
 
 describe("uniqueName", () => {

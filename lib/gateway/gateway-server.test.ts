@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "bun:test"
 import type { Server } from "bun"
 import { Hono } from "hono"
 import { Funnel } from "@/funnel"

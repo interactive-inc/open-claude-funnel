@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { parseCommaList } from "@/tui/parse-comma-list"
 
 describe("parseCommaList", () => {

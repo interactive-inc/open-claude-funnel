@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 

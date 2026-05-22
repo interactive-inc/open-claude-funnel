@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import type { ConnectorConfig } from "@/connectors/connector-config-schema"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"

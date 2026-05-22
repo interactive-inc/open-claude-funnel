@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
@@ -132,7 +132,7 @@ describe("FunnelClaude", () => {
     const idx = attach.command.indexOf("--session-id")
 
     expect(idx).toBeGreaterThan(0)
-    expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "/work"))
+    expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "/work") ?? undefined)
     expect(attach.command.includes("--resume")).toBe(false)
   })
 
@@ -163,14 +163,14 @@ describe("FunnelClaude", () => {
 
     const firstSessionIdx = attaches[0].command.indexOf("--session-id")
     expect(firstSessionIdx).toBeGreaterThan(0)
-    expect(attaches[0].command[firstSessionIdx + 1]).toEqual(firstId)
+    expect(attaches[0].command[firstSessionIdx + 1]).toEqual(firstId ?? undefined)
     expect(attaches[0].command.includes("--resume")).toBe(false)
 
     expect(attaches[1].command.includes("--session-id")).toBe(false)
 
     const resumeIdx = attaches[1].command.indexOf("--resume")
     expect(resumeIdx).toBeGreaterThan(0)
-    expect(attaches[1].command[resumeIdx + 1]).toEqual(firstId)
+    expect(attaches[1].command[resumeIdx + 1]).toEqual(firstId ?? undefined)
     expect(sessions.get(channel.id, "/work")).toEqual(firstId)
   })
 
@@ -197,7 +197,7 @@ describe("FunnelClaude", () => {
 
     const freshId = attach.command[sessionIdx + 1]
     expect(freshId).not.toEqual(staleId)
-    expect(sessions.get(channel.id, "/work")).toEqual(freshId)
+    expect(sessions.get(channel.id, "/work") ?? undefined).toEqual(freshId)
   })
 
   test("launch uses distinct fresh session ids for different cwds", async () => {

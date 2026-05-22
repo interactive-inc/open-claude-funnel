@@ -1,4 +1,4 @@
-.PHONY: help dev tui test bun-test typecheck check install link build build-lib build-bin schema clean
+.PHONY: help dev tui test typecheck check install link build build-lib build-bin schema clean
 
 components:
 	npx shadcn@latest add http://localhost:4445/all.json
@@ -28,19 +28,7 @@ tui:
 	@bun lib/index.ts
 
 test:
-	@bunx vp test run
-	@$(MAKE) bun-test
-
-# Tests that need Bun-runtime APIs (Bun.serve, bun:sqlite) at runtime.
-# Vitest's Node workers cannot run them; bun test executes them natively.
-# Keep this list in sync with vite.config.ts `test.exclude`.
-bun-test:
-	@bun test \
-		./lib/cli/dispatch-claude.test.ts \
-		./lib/funnel.test.ts \
-		./lib/gateway/gateway-server.test.ts \
-		./lib/gateway/sqlite-funnel-event-log.test.ts \
-		./lib/logger/leuco-logger-sqlite-sink.test.ts
+	@bun test
 
 typecheck:
 	@bunx tsc -b
