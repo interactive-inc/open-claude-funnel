@@ -5,6 +5,7 @@ import { Funnel } from "@/funnel"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import type { Env } from "@/gateway/factory"
+import { MemoryFunnelEventLog } from "@/gateway/memory-funnel-event-log"
 
 const startServer = async (token: string) => {
   const fs = new MemoryFunnelFileSystem()
@@ -191,5 +192,30 @@ describe("FunnelGatewayServer extraRoutes", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ clients: 0 })
+  })
+})
+
+describe("FunnelGatewayServer event log", () => {
+  test("onEvent observes emitted events and an injected log records them", () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    funnel.channels.add({ name: "ops" })
+    const eventLog = new MemoryFunnelEventLog()
+    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+
+    const observed: string[] = []
+    server.onEvent((event) => observed.push(event.content))
+
+    server.emit({ channel: "ops", content: "hello" })
+    server.emit({ channel: "ops", content: "world" })
+
+    expect(observed).toEqual(["hello", "world"])
+    expect(eventLog.loadSince(0).map((event) => event.content)).toEqual(["hello", "world"])
+    expect(server.getEventLog()).toBe(eventLog)
   })
 })

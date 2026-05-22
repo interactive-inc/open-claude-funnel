@@ -14,7 +14,7 @@ export default defineConfig({
       "lib/cli/dispatch-claude.test.ts",
       "lib/funnel.test.ts",
       "lib/gateway/gateway-server.test.ts",
-      "lib/gateway/funnel-event-store.test.ts",
+      "lib/gateway/sqlite-funnel-event-log.test.ts",
       "lib/logger/leuco-logger-sqlite-sink.test.ts",
     ],
   },

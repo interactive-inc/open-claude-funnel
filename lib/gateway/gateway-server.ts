@@ -6,8 +6,9 @@ import type { FunnelChannels } from "@/engine/channels/channels"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
 import { type Env, factory } from "@/gateway/factory"
-import { FunnelBroadcaster } from "@/gateway/broadcaster"
-import { FunnelEventStore } from "@/gateway/funnel-event-store"
+import { type BroadcastSubscriber, FunnelBroadcaster } from "@/gateway/broadcaster"
+import { FunnelEventLog } from "@/gateway/funnel-event-log"
+import { SqliteFunnelEventLog } from "@/gateway/sqlite-funnel-event-log"
 import { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
 import { gatewayRoutes } from "@/gateway/routes"
@@ -26,8 +27,10 @@ type Deps = {
   channels: FunnelChannels
   settings: FunnelSettingsReader
   port?: number
-  /** SQLite event store file path. Parent directory is created on demand. Defaults to `<os.tmpdir()>/funnel/events.db`. */
+  /** SQLite event store file path. Parent directory is created on demand. Defaults to `<os.tmpdir()>/funnel/events.db`. Ignored when `eventLog` is supplied. */
   dbPath?: string
+  /** Durable replay log. Defaults to a `SqliteFunnelEventLog` at `dbPath`. Inject a `MemoryFunnelEventLog` (or any `FunnelEventLog`) to swap or disable persistence. */
+  eventLog?: FunnelEventLog
   process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
@@ -68,7 +71,7 @@ const defaultOnError: OnFunnelError = () => {}
 /**
  * In-process gateway: runs `Bun.serve` (HTTP + WebSocket /ws), boots connector
  * listeners through `FunnelListenerSupervisor`, fans events out via
- * `FunnelBroadcaster`, and persists them via `FunnelEventStore` (SQLite).
+ * `FunnelBroadcaster`, and persists them via a `FunnelEventLog` (SQLite by default).
  * System events (gateway lifecycle, connect/disconnect) flow to `FunnelLogger`
  * instead — keeping the SQLite seq space exclusive to broadcaster traffic so
  * the broadcaster's offset counter and `getMaxSeq()` stay aligned without
@@ -88,7 +91,7 @@ export class FunnelGatewayServer {
   private readonly killCompetingSlack: boolean
   private readonly token: string
   private readonly broadcaster: FunnelBroadcaster
-  private readonly eventStore: FunnelEventStore
+  private readonly eventLog: FunnelEventLog
   private readonly supervisor: FunnelListenerSupervisor
   private readonly nowMs: () => number
   private readonly extraRoutes: Hono<Env> | null
@@ -110,20 +113,23 @@ export class FunnelGatewayServer {
     this.extraRoutes = deps.extraRoutes ?? null
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
-    const dbDir = dirname(this.dbPath)
+    if (deps.eventLog) {
+      this.eventLog = deps.eventLog
+    } else {
+      const dbDir = dirname(this.dbPath)
 
-    if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
-    this.eventStore = new FunnelEventStore({
-      path: this.dbPath,
-      now: this.nowMs,
-    })
+      if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
+
+      this.eventLog = new SqliteFunnelEventLog({ path: this.dbPath, now: this.nowMs })
+    }
+
     this.broadcaster = new FunnelBroadcaster({
       logger: this.logger,
       onError: this.onError,
       now: this.nowMs,
-      persistentReplay: this.eventStore,
+      persistentReplay: this.eventLog,
     })
-    this.broadcaster.seedLatestOffset(this.eventStore.findMaxOffset())
+    this.broadcaster.seedLatestOffset(this.eventLog.findMaxOffset())
     this.supervisor = new FunnelListenerSupervisor({
       channels: this.channels,
       logger: this.logger,
@@ -184,8 +190,19 @@ export class FunnelGatewayServer {
     return this.supervisor
   }
 
-  getEventStore(): FunnelEventStore {
-    return this.eventStore
+  getEventLog(): FunnelEventLog {
+    return this.eventLog
+  }
+
+  /**
+   * Register an in-process observer for every broadcast event. Fires after
+   * the event is fanned out to WS clients and recorded in the event log.
+   * Returns an unsubscribe function. Only meaningful in-process (embedded
+   * hosts / `new Funnel(...)` running their own gateway-server); a separate
+   * daemon process cannot be observed this way — use a WS client for that.
+   */
+  onEvent(handler: BroadcastSubscriber): () => void {
+    return this.broadcaster.subscribe(handler)
   }
 
   private handleFetch(
@@ -426,7 +443,7 @@ export class FunnelGatewayServer {
 
     const event = this.broadcaster.broadcast(input.content, enriched)
 
-    this.eventStore.record({
+    this.eventLog.record({
       content: input.content,
       channelId: channelId ?? null,
       connectorId: connectorId ?? null,

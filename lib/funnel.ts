@@ -37,6 +37,7 @@ import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
 import type { Env } from "@/gateway/factory"
+import type { FunnelEventLog } from "@/gateway/funnel-event-log"
 import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
@@ -407,6 +408,8 @@ export class Funnel {
       killCompetingSlack?: boolean
       /** Override the auth token. Defaults to the persisted gateway.token. Pass "" to disable auth (tests). */
       token?: string
+      /** Durable replay log. Defaults to a SqliteFunnelEventLog at dbPath; inject a MemoryFunnelEventLog (or any FunnelEventLog) to swap or disable persistence. */
+      eventLog?: FunnelEventLog
       /**
        * Additional hono app mounted before the built-in gateway routes.
        * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
@@ -421,6 +424,7 @@ export class Funnel {
       settings: this.store,
       port: options.port,
       dbPath: options.dbPath,
+      eventLog: options.eventLog,
       process: this.process,
       clock: this.clock,
       logger: this.logger,

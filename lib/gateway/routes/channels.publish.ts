@@ -9,7 +9,7 @@ import { zParam } from "@/gateway/routes/validator"
  * POST /channels/:channel/publish
  *
  * Inject arbitrary content into a channel. Mirrors the connector-driven `notify`
- * path: events go through `broadcaster.broadcast` + `eventStore.record`, so
+ * path: events go through `broadcaster.broadcast` + `eventLog.record`, so
  * subscribers see them exactly as if a listener had produced them.
  *
  * Body validation is Zod-shared with the client (`publishRequestSchema`); the

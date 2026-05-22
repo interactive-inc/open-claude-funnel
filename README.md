@@ -287,7 +287,7 @@ Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.j
 
 ## File layout
 
-Persistent state lives under `~/.funnel/`. Volatile logs and the event store live under `/tmp/funnel/`.
+Persistent state lives under `~/.funnel/`. Volatile logs and the event log live under `/tmp/funnel/`.
 
 ```
 ~/.funnel/
@@ -303,7 +303,7 @@ Persistent state lives under `~/.funnel/`. Volatile logs and the event store liv
                 └── state.json                          per-connector durable state (e.g. schedule lastFiredAt)
 
 /tmp/funnel/
-├── events.db                                           SQLite event store with replay-by-seq
+├── events.db                                           SQLite event log with replay-by-offset
 ├── funnel.log                                          diagnostic log (daemon lifecycle, listener boot, connects)
 └── gateway.log                                         daemon stdout/stderr
 ```
@@ -371,11 +371,19 @@ Run the gateway in-process (no daemon spawn — useful for tests or embedding):
 ```ts
 const server = funnel.gatewayServer({ port: 9742 })
 await server.start()                       // Bun.serve (HTTP + WS) + listener supervisor
-const unsubscribe = server.getBroadcaster().subscribe(({ content, meta }) => {
-  console.log(meta?.connector, content)
+const unsubscribe = server.onEvent(({ content, meta }) => {
+  console.log(meta?.connector, content)    // in-process observer for every broadcast event
 })
 await server.stop()
 unsubscribe()
+```
+
+Persistence and replay live behind the `FunnelEventLog` port. The default is a `SqliteFunnelEventLog` (durable across daemon restarts: it seeds the broadcaster's offset and serves reconnect replay). Inject `MemoryFunnelEventLog` — or any `FunnelEventLog` — to swap or disable durable replay; `onEvent` is a separate, write-only observation hook and does not replace it:
+
+```ts
+import { MemoryFunnelEventLog } from "@interactive-inc/claude-funnel"
+
+const server = funnel.gatewayServer({ port: 9742, eventLog: new MemoryFunnelEventLog() })
 ```
 
 The daemon exposes `/health`, `/status`, `/listeners*`, `/channels/:channel/connectors/:connector/call`, plus the `/ws?channel=<name>` WebSocket.

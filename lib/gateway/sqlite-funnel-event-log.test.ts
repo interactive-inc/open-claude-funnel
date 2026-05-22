@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest"
-import { FunnelEventStore } from "@/gateway/funnel-event-store"
+import { SqliteFunnelEventLog } from "@/gateway/sqlite-funnel-event-log"
 
-describe("FunnelEventStore", () => {
+describe("SqliteFunnelEventLog", () => {
   it("returns 0 from findMaxOffset on a fresh database", () => {
-    const store = new FunnelEventStore({ path: ":memory:" })
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
     expect(store.findMaxOffset()).toBe(0)
     store.close()
   })
 
   it("record persists with the caller-provided offset and findMaxOffset reflects it", () => {
-    const store = new FunnelEventStore({ path: ":memory:" })
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
 
     store.record({
       content: "hello",
@@ -31,7 +31,7 @@ describe("FunnelEventStore", () => {
   })
 
   it("loadSince returns events with offset > since", () => {
-    const store = new FunnelEventStore({ path: ":memory:" })
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
 
     for (const offset of [1, 2, 3]) {
       store.record({
@@ -51,7 +51,7 @@ describe("FunnelEventStore", () => {
   })
 
   it("loadForChannel filters by channel and optionally connector", () => {
-    const store = new FunnelEventStore({ path: ":memory:" })
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
 
     store.record({
       content: "a",
@@ -85,7 +85,7 @@ describe("FunnelEventStore", () => {
   })
 
   it("truncates content at 2000 chars", () => {
-    const store = new FunnelEventStore({ path: ":memory:" })
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
     const long = "a".repeat(2500)
     store.record({
       content: long,
@@ -103,7 +103,7 @@ describe("FunnelEventStore", () => {
   })
 
   it("preserves meta when present and stores null when absent", () => {
-    const store = new FunnelEventStore({ path: ":memory:" })
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
 
     store.record({
       content: "with-meta",

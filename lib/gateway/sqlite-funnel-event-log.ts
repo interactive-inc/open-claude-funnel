@@ -1,25 +1,12 @@
-import { z } from "zod"
 import type { ReplayableEvent } from "@/gateway/broadcaster"
+import {
+  type FunnelEvent,
+  FunnelEventLog,
+  type FunnelEventRecord,
+} from "@/gateway/funnel-event-log"
 import { LeucoLoggerSqliteSink } from "@/logger/leuco-logger-sqlite-sink"
 
 const MAX_CONTENT_CHARS = 2000
-
-/**
- * Replayable event payload persisted by the gateway. Domain events the
- * broadcaster emits to WS clients land here so reconnects across daemon
- * restarts can be served from disk. System events (gateway start, channel
- * connected, etc.) are routed to `FunnelLogger` instead — they never go
- * through this store, which keeps the seq space clean for replay.
- */
-export const funnelEventSchema = z.object({
-  type: z.string(),
-  content: z.string(),
-  channel_id: z.string().nullable(),
-  connector_id: z.string().nullable(),
-  meta: z.record(z.string(), z.string()).nullable(),
-})
-
-export type FunnelEvent = z.infer<typeof funnelEventSchema>
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */
@@ -33,7 +20,7 @@ type Props = {
 }
 
 /**
- * SQLite-backed event store. One indexed table holds every broadcaster
+ * SQLite-backed `FunnelEventLog`. One indexed table holds every broadcaster
  * event with `channel_id` and `connector_id` as dedicated columns, so
  * per-channel and per-connector replay is an indexed range scan.
  *
@@ -49,11 +36,12 @@ type Props = {
  * broadcaster traffic. This is what makes the broadcaster's seq seeding
  * (`getMaxSeq()` at startup) correct without per-event coordination.
  */
-export class FunnelEventStore {
+export class SqliteFunnelEventLog extends FunnelEventLog {
   private readonly sink: LeucoLoggerSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>
   private readonly now: () => number
 
   constructor(props: Props) {
+    super()
     this.now = props.now ?? (() => Date.now())
     this.sink = new LeucoLoggerSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>({
       path: props.path,
@@ -73,21 +61,15 @@ export class FunnelEventStore {
    * (the gateway-server) supplies the offset from `broadcaster.broadcast()`
    * so this store and the broadcaster's in-memory ring stay aligned.
    */
-  record(props: {
-    content: string
-    channelId: string | null
-    connectorId: string | null
-    meta: Record<string, string> | null
-    offset: number
-  }): void {
+  record(record: FunnelEventRecord): void {
     const event: FunnelEvent = {
-      type: props.meta?.event_type ?? "unknown",
-      content: truncate(props.content),
-      channel_id: props.channelId,
-      connector_id: props.connectorId,
-      meta: props.meta,
+      type: record.meta?.event_type ?? "unknown",
+      content: truncate(record.content),
+      channel_id: record.channelId,
+      connector_id: record.connectorId,
+      meta: record.meta,
     }
-    this.sink.write({ seq: props.offset, ts: this.now(), event })
+    this.sink.write({ seq: record.offset, ts: this.now(), event })
   }
 
   /**

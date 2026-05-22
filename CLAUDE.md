@@ -51,7 +51,7 @@ ProfileSpec = { channel, options?, env?, resume? }
 
 ### Listener Supervisor と Broadcaster
 
-gateway 内に常駐する 2 つの裏方。Supervisor は Listener の起動 / 停止 / 自動再起動を管理する registry。Broadcaster は notify を受け取って WS クライアントに fanout し、event store に seq を打って永続化する。
+gateway 内に常駐する 2 つの裏方。Supervisor は Listener の起動 / 停止 / 自動再起動を管理する registry。Broadcaster は notify を受け取って WS クライアントに fanout し、`FunnelEventLog`（永続 replay log の port）に offset を打って永続化する。EventLog は差し替え可能な port で、default は `SqliteFunnelEventLog`、test / 軽量 embedder 向けに `MemoryFunnelEventLog` がある（CLAUDE.md 末尾の Gateway 節参照）。
 
 ### イベントの旅
 
@@ -108,7 +108,7 @@ Slack / GitHub / Discord / Schedule の Connector 実装。型ごとに Listener
 
 ### lib/gateway
 
-`Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener supervisor、broadcaster、event store、フラットなルート群を抱える。CLI から listener 操作のために `http://localhost:9742` を叩くのは gateway 経由のみ。
+`Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener supervisor、broadcaster、event log、フラットなルート群を抱える。CLI から listener 操作のために `http://localhost:9742` を叩くのは gateway 経由のみ。
 
 ### lib/cli
 
@@ -124,7 +124,7 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 
 ### lib/logger
 
-汎用 LeucoLogger 系。gateway の event store が SQLite sink として利用。
+汎用 LeucoLogger 系。gateway の `SqliteFunnelEventLog` が SQLite sink として利用。
 
 ## Storage 規約
 
@@ -182,6 +182,8 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
 - connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` の rename-by-token 経路は engine を直接叩くため reload が走らない（`fnl gateway restart` 必要）
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる
+- 永続 replay は `FunnelEventLog` 抽象 port（`record` / `loadSince` / `findMaxOffset` / `close`）に閉じる。default 実装は `SqliteFunnelEventLog`（再起動跨ぎの replay と offset 永続を担う）、`MemoryFunnelEventLog` は in-process double。`gatewayServer({ eventLog })` で注入でき、無指定なら dbPath の SQLite。Broadcaster が依存するのは `loadSince` だけ（narrow な `ReplaySource`）なので EventLog は interface segregation で繋がる
+- in-process で全 event を観測したい host は `FunnelGatewayServer.onEvent(handler)`（= broadcaster.subscribe の薄い委譲）を使う。別プロセスの daemon は観測できない（WS クライアントを使う）。`onEvent` は書き出し専用で、replay（読み戻し）は EventLog の責務 — 2 つを混ぜない
 - daemon 起動コマンドは `bun .../dist/gateway/daemon.js funnel-gateway[<FUNNEL_DIR>]` の形で argv 末尾に dir tag を付ける。Slack Socket Mode 起動時の競合 kill は `ps -o args=` でこの tag を grep して同 dir の daemon だけを kill する（別 `~/.funnel/` を指す他 install には触らない）
 
 ### Schedule Connector
