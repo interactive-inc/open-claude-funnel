@@ -136,18 +136,23 @@ describe("FunnelClaude", () => {
     expect(attach.command.includes("--resume")).toBe(false)
   })
 
-  test("relaunching from the same cwd switches to --resume with the persisted id", async () => {
+  test("relaunching from the same cwd switches to --resume once the jsonl exists", async () => {
     // Regression for #1: claude's `--session-id` rejects ids whose jsonl
     // already exists, so the second launch has to use `--resume` instead.
     const { claude, channel, sessions, fs, process } = buildClaude()
+    const env = { CLAUDE_CONFIG_DIR: "/cfg" }
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work" })
+    await claude.launch({ channel: "ops", cwd: "/work", env })
 
     const firstId = sessions.get(channel.id, "/work")
 
-    await claude.launch({ channel: "ops", cwd: "/work" })
+    // Simulate claude writing the session jsonl after the first launch.
+    fs.mkdirSync("/cfg/projects/-work", { recursive: true })
+    fs.writeFileSync(`/cfg/projects/-work/${firstId}.jsonl`, "{}")
+
+    await claude.launch({ channel: "ops", cwd: "/work", env })
 
     const attaches = process.calls.filter((c) => c.kind === "attach")
 
@@ -167,6 +172,32 @@ describe("FunnelClaude", () => {
     expect(resumeIdx).toBeGreaterThan(0)
     expect(attaches[1].command[resumeIdx + 1]).toEqual(firstId)
     expect(sessions.get(channel.id, "/work")).toEqual(firstId)
+  })
+
+  test("mints a fresh session when the persisted id has no jsonl on disk", async () => {
+    // Self-heal: a recorded id can outlive its jsonl (claude pruned it, or the
+    // first launch was aborted before the file appeared). Resuming it would
+    // crash claude, so funnel must drop the dangling id and start fresh.
+    const { claude, channel, sessions, fs, process } = buildClaude()
+    const env = { CLAUDE_CONFIG_DIR: "/cfg" }
+
+    fs.mkdirSync("/work", { recursive: true })
+    const staleId = sessions.create(channel.id, "/work")
+
+    await claude.launch({ channel: "ops", cwd: "/work", env })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    expect(attach.command.includes("--resume")).toBe(false)
+
+    const sessionIdx = attach.command.indexOf("--session-id")
+    expect(sessionIdx).toBeGreaterThan(0)
+
+    const freshId = attach.command[sessionIdx + 1]
+    expect(freshId).not.toEqual(staleId)
+    expect(sessions.get(channel.id, "/work")).toEqual(freshId)
   })
 
   test("launch uses distinct fresh session ids for different cwds", async () => {

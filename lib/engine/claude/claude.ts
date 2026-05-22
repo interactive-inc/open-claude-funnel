@@ -1,3 +1,4 @@
+import { homedir } from "node:os"
 import { join } from "node:path"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { GatewayController } from "@/engine/claude/gateway-controller"
@@ -108,7 +109,9 @@ export class FunnelClaude {
     }
 
     const resume = options.resume ?? true
-    const session = resume ? this.resolveSession(channel.id, cwd, options.userArgs ?? []) : null
+    const session = resume
+      ? this.resolveSession(channel.id, cwd, options.userArgs ?? [], options.env ?? {})
+      : null
     const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
     const env = this.buildEnv(channel.id, options.env ?? {})
 
@@ -218,8 +221,20 @@ export class FunnelClaude {
    * a freshly minted one. Backs off when the user already passed a
    * session-shaping flag, since combining them would either confuse claude
    * or override the explicit user intent.
+   *
+   * A persisted id is only resumed when its session jsonl still exists on
+   * disk. claude errors out on `--resume <id>` for a missing conversation, and
+   * a persisted id can outlive its jsonl (claude pruned it, or the very first
+   * launch was aborted after `create` wrote the id but before the jsonl
+   * appeared). When the file is gone we mint a fresh session instead, which
+   * overwrites the dangling entry — so the store self-heals.
    */
-  private resolveSession(channelId: string, cwd: string, userArgs: string[]): SessionResolution {
+  private resolveSession(
+    channelId: string,
+    cwd: string,
+    userArgs: string[],
+    recipeEnv: Record<string, string>,
+  ): SessionResolution {
     for (const arg of userArgs) {
       if (arg === "-c" || arg === "--continue") return null
       if (arg === "--resume" || arg.startsWith("--resume=")) return null
@@ -228,9 +243,32 @@ export class FunnelClaude {
 
     const existing = this.sessions.get(channelId, cwd)
 
-    if (existing !== null) return { id: existing, mode: "resume" }
+    if (existing !== null && this.sessionFileExists(cwd, existing, recipeEnv)) {
+      return { id: existing, mode: "resume" }
+    }
 
     return { id: this.sessions.create(channelId, cwd), mode: "new" }
+  }
+
+  /**
+   * Mirrors claude's session storage path
+   * (`<config-dir>/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`) to check
+   * whether a recorded session still exists. Reads the same `CLAUDE_CONFIG_DIR`
+   * the child will run under so the check matches reality; a wrong guess can
+   * only ever produce a false negative (start fresh), never a bad resume.
+   */
+  private sessionFileExists(
+    cwd: string,
+    sessionId: string,
+    recipeEnv: Record<string, string>,
+  ): boolean {
+    const configDir =
+      recipeEnv.CLAUDE_CONFIG_DIR ??
+      globalThis.process.env.CLAUDE_CONFIG_DIR ??
+      join(homedir(), ".claude")
+    const projectSlug = cwd.replace(/\//g, "-")
+
+    return this.fs.existsSync(join(configDir, "projects", projectSlug, `${sessionId}.jsonl`))
   }
 
   private buildEnv(channelId: string, recipeEnv: Record<string, string>): Record<string, string> {
