@@ -203,11 +203,12 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - `fnl`（引数なし）で OpenTUI ダッシュボード。キーは `r` リフレッシュ、`q` / `esc` / `Ctrl-C` 終了
 - `fnl claude` の解決順（`dispatchClaude`）:
   1. `--help` / `-h` → help を stdout
-  2. `--profile <name>` / `-p <name>` → 名前付き global profile（funnel.json は無視）
-  3. cwd の `funnel.json` がある → `--channel <name>` で channels[] から選択（無指定なら先頭）、sync し、その channel に bound な funnel.json profiles[] 先頭の recipe を適用して launch
-  4. funnel.json が無く `--channel <name>` のみ → raw launch（recipe 無し、既存 `~/.funnel/settings.json` のチャネルを使う）
-  5. default global profile → launch
-  6. どれも当たらない → help を stdout
+  2. `--profile` と `--channel` の同時指定 → error（profile が既に channel を bind しているため併用不可）
+  3. `--profile <name>` / `-p <name>` → 名前付き global profile（funnel.json は無視）
+  4. cwd の `funnel.json` がある → `--channel <name>` で channels[] から選択（無指定なら先頭）、sync し、その channel に bound な funnel.json profiles[] 先頭の recipe を適用して launch
+  5. funnel.json が無く `--channel <name>` のみ → raw launch（recipe 無し、既存 `~/.funnel/settings.json` のチャネルを使う）
+  6. default global profile → launch
+  7. どれも当たらない → help を stdout
 - recipe（options/env/resume）は解決された profile から `LaunchOptions` 経由で渡す。argv の組立順は `[profile.options] [user CLI args] [MCP server flag]`。env は `profile.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
 - 同一 profile 名の二重起動は PID ファイルで拒否する
 - `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `public/schema.json` を再生成

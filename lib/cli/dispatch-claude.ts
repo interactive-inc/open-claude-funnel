@@ -159,12 +159,13 @@ const pickProfile = (local: LocalConfig, channelName: string): ProfileSpec | nul
  *
  * Resolution order:
  *   1. --help → print help
- *   2. --profile <name> → named global profile (ignores funnel.json)
- *   3. funnel.json in cwd → select channel (--channel <name> or first), sync,
+ *   2. --profile + --channel together → error (a profile already binds a channel)
+ *   3. --profile <name> → named global profile (ignores funnel.json)
+ *   4. funnel.json in cwd → select channel (--channel <name> or first), sync,
  *      apply the first funnel.json profile bound to that channel, launch
- *   4. --channel <name> with no funnel.json → raw launch (no recipe)
- *   5. default global profile → launch
- *   6. nothing matched → print help
+ *   5. --channel <name> with no funnel.json → raw launch (no recipe)
+ *   6. default global profile → launch
+ *   7. nothing matched → print help
  */
 export const dispatchClaude = async (
   deps: Deps,
@@ -174,6 +175,14 @@ export const dispatchClaude = async (
 
   if (parsed.wantsHelp) {
     return { stdout: claudeHelp, stderr: null, exitCode: 0 }
+  }
+
+  if (parsed.profile !== null && parsed.channel !== null) {
+    return {
+      stdout: null,
+      stderr: `error: --channel cannot be combined with --profile (profile "${parsed.profile}" already binds a channel)`,
+      exitCode: 1,
+    }
   }
 
   const funnel = deps.funnel

@@ -140,6 +140,27 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.stderr).toContain("not found")
   })
 
+  test("errors when --profile and --channel are combined", async () => {
+    const { funnel } = buildSetup()
+    const channel = funnel.channels.add({ name: "ops" })
+
+    funnel.profiles.add({
+      name: "cto",
+      path: "/work",
+      channelId: channel.id,
+    })
+
+    const result = await dispatchClaude({ funnel, cwd: "/repo" }, [
+      "--profile",
+      "cto",
+      "--channel",
+      "ops",
+    ])
+
+    expect(result.exitCode).toEqual(1)
+    expect(result.stderr).toContain("cannot be combined")
+  })
+
   test("reads funnel.json from cwd and launches the first declared channel", async () => {
     const { funnel, process } = buildSetup({
       files: {
