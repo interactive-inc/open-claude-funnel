@@ -91,4 +91,52 @@ describe("FunnelLocalConfig", () => {
 
     expect(() => config.read("/repo")).toThrow(/is invalid/)
   })
+
+  test("throws when a profile binds an undeclared channel", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops" }],
+          profiles: [{ name: "typo", channel: "opss", options: ["--agent", "pm"] }],
+        }),
+      },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(() => config.read("/repo")).toThrow(/not declared in channels/)
+  })
+
+  test("throws when more than one profile binds the same channel", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops" }],
+          profiles: [
+            { name: "a", channel: "ops" },
+            { name: "b", channel: "ops" },
+          ],
+        }),
+      },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(() => config.read("/repo")).toThrow(/more than one profile/)
+  })
+
+  test("accepts one profile per declared channel", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops" }, { name: "review" }],
+          profiles: [
+            { name: "ops-pm", channel: "ops", options: ["--agent", "pm"] },
+            { name: "review-reviewer", channel: "review", options: ["--agent", "reviewer"] },
+          ],
+        }),
+      },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(config.read("/repo")?.profiles).toHaveLength(2)
+  })
 })

@@ -46,6 +46,37 @@ export class FunnelLocalConfig {
       throw new Error(`${LOCAL_CONFIG_FILENAME} is invalid: ${result.error.message}`)
     }
 
+    this.assertProfilesValid(result.data)
+
     return result.data
+  }
+
+  // Cross-field checks the schema can't express: a profile must bind a declared
+  // channel, and only the first profile per channel is ever applied. Both
+  // failure modes are otherwise silent (the recipe just never reaches claude),
+  // so reject them loudly at load time.
+  private assertProfilesValid(config: LocalConfig): void {
+    const profiles = config.profiles ?? []
+
+    if (profiles.length === 0) return
+
+    const channelNames = new Set(config.channels.map((channel) => channel.name))
+    const boundChannels = new Set<string>()
+
+    for (const profile of profiles) {
+      if (!channelNames.has(profile.channel)) {
+        throw new Error(
+          `${LOCAL_CONFIG_FILENAME} is invalid: profile "${profile.name}" binds channel "${profile.channel}", which is not declared in channels[]`,
+        )
+      }
+
+      if (boundChannels.has(profile.channel)) {
+        throw new Error(
+          `${LOCAL_CONFIG_FILENAME} is invalid: channel "${profile.channel}" has more than one profile; only the first is applied — remove the extras`,
+        )
+      }
+
+      boundChannels.add(profile.channel)
+    }
   }
 }
