@@ -34,13 +34,13 @@ external sources                          outbound replies
                      agent  (subscribes to one channel)
 ```
 
-Three concepts make up the model:
+Two concepts make up the transport model:
 
 Channel — a named subscription box (transport only). Holds one or more connectors and a delivery mode; it does not carry launch flags. An agent session subscribes to exactly one channel. Delivery is `fanout` (every subscriber sees every event, the default) or `exclusive` (one event per subscriber, round-robin — for worker pools).
 
 Connector — a single attachment from a channel to an external source. Four types ship today: `slack`, `gh`, `discord`, `schedule`. The first three are bidirectional (events in, replies out); `schedule` is one-way (cron ticks in).
 
-Profile — a saved launch preset. Bundles `{ path, channelId, options, env, resume }` so `fnl claude --profile cto` reproduces a known setup: which directory to launch from, which channel to bind, and the launch recipe (args prepended to the claude argv, env layered under the process, session reuse). The first profile in the list is the default.
+Profile sits on top of that model as a launch convenience, not part of it — you never need one to run an agent (`fnl claude --channel <name>` is enough). It is a saved launch preset bundling `{ path, channelId, options, env, resume }` so `fnl claude --profile cto` reproduces a known setup: which directory to launch from, which channel to bind, and the launch recipe (args prepended to the claude argv, env layered under the process, session reuse). The first profile in the list is the default. Because a profile already binds a channel, `--profile` and `--channel` cannot be combined.
 
 The daemon is where all external connections live. It runs on port 9742, supervises connectors with auto-restart, broadcasts events to subscribed agent sessions over WebSocket, and serves the reply API that MCP calls. Starting or stopping an agent never starts or stops external connections.
 
@@ -208,7 +208,7 @@ fnl profiles remove <name>
 
 fnl claude                                   launch the first channel from ./funnel.json, or the default profile
 fnl claude --channel <name>                  with funnel.json: pick that channel; without: raw launch
-fnl claude --profile <name>                  launch a named profile (ignores funnel.json)
+fnl claude --profile <name>                  launch a named profile (ignores funnel.json; cannot combine with --channel)
 fnl claude [...]                             positionals and any flag other than -p / --profile / --channel
                                               (e.g. --agent, --resume, -c, --model) pass through to claude
 fnl mcp                                      run as an MCP server (invoked from .mcp.json)

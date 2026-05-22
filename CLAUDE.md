@@ -35,7 +35,7 @@ CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core �
 
 ### Profile
 
-machine-global な Claude 起動 preset。`{ name, path, channelId, options[], env, resume }` で `~/.funnel/settings.json` に nested。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。Profile 自身は Connector を持たない（Channel が持つ）。
+transport model（Channel + Connector）の外側にある launch 便宜レイヤ。起動に必須ではなく（`fnl claude --channel <name>` だけで起動できる）、preset を保存しておきたいときだけ使う。machine-global な Claude 起動 preset で、`{ name, path, channelId, options[], env, resume }` で `~/.funnel/settings.json` に nested。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。Profile 自身は Connector を持たない（Channel が持つ）。Profile は channel を内包するので `--profile` と `--channel` は併用不可（同時指定は error）。
 
 ### LocalConfig（funnel.json）
 
