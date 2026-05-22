@@ -116,13 +116,11 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
   ],
   "profiles": [
     {
-      "name": "ops-pm",
       "channel": "ops",
       "options": ["--brief", "--agent", "pm"],
       "env": { "ANTHROPIC_MODEL": "claude-sonnet-4-6" }
     },
     {
-      "name": "review-reviewer",
       "channel": "review",
       "options": ["--agent", "reviewer"]
     }
@@ -279,9 +277,10 @@ ChannelSpec = { name, connectors? }
         literal, an env-var reference at `env.<field>` resolved from process.env and ./.env.local, or
         omission for a TTY prompt persisted to ~/.funnel.
 
-ProfileSpec = { name, channel, options?, env?, resume? }
+ProfileSpec = { channel, options?, env?, resume? }
         launch recipe bound to a channel by name. applied inline on launch (the first spec bound to the
-        chosen channel); not persisted into the global profiles[] list.
+        chosen channel — selected by its channel binding, not by name); not persisted into the global
+        profiles[] list.
 
 Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json
 ```

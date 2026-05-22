@@ -40,7 +40,7 @@ describe("funnelJsonSchema", () => {
 
     const profileProps = schema.properties.profiles.items.properties
 
-    expect(profileProps).toHaveProperty("name")
+    expect(profileProps).not.toHaveProperty("name")
     expect(profileProps).toHaveProperty("channel")
     expect(profileProps).toHaveProperty("options")
     expect(profileProps).toHaveProperty("env")

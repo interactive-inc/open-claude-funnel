@@ -44,7 +44,7 @@ transport model（Channel + Connector）の外側にある launch 便宜レイ�
 ```
 LocalConfig = { channels: ChannelSpec[], profiles?: ProfileSpec[] }
 ChannelSpec = { name, connectors? }
-ProfileSpec = { name, channel, options?, env?, resume? }
+ProfileSpec = { channel, options?, env?, resume? }
 ```
 
 `fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。選択 channel の `connectors` は launch 時に `~/.funnel/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。token フィールドは literal / `env.<field>` 経由の env-var 参照 / TTY プロンプトで解決される。詳細は `lib/engine/local-config/` を参照。

@@ -11,9 +11,9 @@ import { z } from "zod"
  *
  * The launch recipe (`options` / `env` / `resume`) lives on `profiles[]`, not on
  * the channel: a channel only describes where events come from. `fnl claude`
- * applies the first profile bound to the chosen channel (or `--profile <name>`
- * to pick another); the recipe is passed straight to the launcher and is not
- * persisted into the global profile list.
+ * applies the first profile bound to the chosen channel; the recipe is passed
+ * straight to the launcher and is not persisted into the global profile list.
+ * These profiles are selected by their `channel` binding, not by name.
  */
 
 const slackEnvSchema = z
@@ -74,7 +74,6 @@ export const channelSpecSchema = z.object({
 export type ChannelSpec = z.infer<typeof channelSpecSchema>
 
 export const profileSpecSchema = z.object({
-  name: z.string(),
   /** Name of the channel (declared in `channels[]`) this profile subscribes to. */
   channel: z.string(),
   /** Args prepended to the claude argv on every launch through this profile. */

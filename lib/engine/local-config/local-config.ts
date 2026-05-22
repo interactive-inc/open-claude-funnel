@@ -66,7 +66,7 @@ export class FunnelLocalConfig {
     for (const profile of profiles) {
       if (!channelNames.has(profile.channel)) {
         throw new Error(
-          `${LOCAL_CONFIG_FILENAME} is invalid: profile "${profile.name}" binds channel "${profile.channel}", which is not declared in channels[]`,
+          `${LOCAL_CONFIG_FILENAME} is invalid: a profile binds channel "${profile.channel}", which is not declared in channels[]`,
         )
       }
 

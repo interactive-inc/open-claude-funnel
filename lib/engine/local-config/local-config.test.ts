@@ -26,12 +26,11 @@ describe("FunnelLocalConfig", () => {
           channels: [{ name: "ops" }, { name: "review" }],
           profiles: [
             {
-              name: "ops-pm",
               channel: "ops",
               options: ["--brief", "--agent", "pm"],
               env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
             },
-            { name: "review-extra", channel: "review", env: { EXTRA: "1" }, resume: false },
+            { channel: "review", env: { EXTRA: "1" }, resume: false },
           ],
         }),
       },
@@ -42,12 +41,11 @@ describe("FunnelLocalConfig", () => {
       channels: [{ name: "ops" }, { name: "review" }],
       profiles: [
         {
-          name: "ops-pm",
           channel: "ops",
           options: ["--brief", "--agent", "pm"],
           env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
         },
-        { name: "review-extra", channel: "review", env: { EXTRA: "1" }, resume: false },
+        { channel: "review", env: { EXTRA: "1" }, resume: false },
       ],
     })
   })
@@ -97,7 +95,7 @@ describe("FunnelLocalConfig", () => {
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
-          profiles: [{ name: "typo", channel: "opss", options: ["--agent", "pm"] }],
+          profiles: [{ channel: "opss", options: ["--agent", "pm"] }],
         }),
       },
     })
@@ -111,10 +109,7 @@ describe("FunnelLocalConfig", () => {
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
-          profiles: [
-            { name: "a", channel: "ops" },
-            { name: "b", channel: "ops" },
-          ],
+          profiles: [{ channel: "ops" }, { channel: "ops" }],
         }),
       },
     })
@@ -129,8 +124,8 @@ describe("FunnelLocalConfig", () => {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }, { name: "review" }],
           profiles: [
-            { name: "ops-pm", channel: "ops", options: ["--agent", "pm"] },
-            { name: "review-reviewer", channel: "review", options: ["--agent", "reviewer"] },
+            { channel: "ops", options: ["--agent", "pm"] },
+            { channel: "review", options: ["--agent", "reviewer"] },
           ],
         }),
       },

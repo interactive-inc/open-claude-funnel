@@ -184,8 +184,8 @@ describe("dispatchClaude — argv parsing", () => {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }, { name: "review" }],
           profiles: [
-            { name: "ops-pm", channel: "ops", options: ["--agent", "pm"] },
-            { name: "review-reviewer", channel: "review", options: ["--agent", "reviewer"] },
+            { channel: "ops", options: ["--agent", "pm"] },
+            { channel: "review", options: ["--agent", "reviewer"] },
           ],
         }),
       },
@@ -243,7 +243,7 @@ describe("dispatchClaude — argv parsing", () => {
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
-          profiles: [{ name: "ops-dev", channel: "ops", options: ["--brief", "--agent", "developer"] }],
+          profiles: [{ channel: "ops", options: ["--brief", "--agent", "developer"] }],
         }),
       },
     })
@@ -267,7 +267,6 @@ describe("dispatchClaude — argv parsing", () => {
           channels: [{ name: "ops" }],
           profiles: [
             {
-              name: "ops-model",
               channel: "ops",
               env: { ANTHROPIC_MODEL: "claude-sonnet-4-6", FUNNEL_ONLY: "yes" },
             },
