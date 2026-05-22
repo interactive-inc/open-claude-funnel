@@ -2,7 +2,6 @@ import { Client, GatewayIntentBits, Partials } from "discord.js"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
 
 type Deps = {
@@ -10,17 +9,16 @@ type Deps = {
   logger?: FunnelLogger
 }
 
-const defaultLogger = new NodeFunnelLogger()
 
 export class FunnelDiscordListener extends FunnelConnectorListener {
   private readonly config: DiscordConnectorConfig
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private client: Client | null = null
 
   constructor(deps: Deps) {
     super()
     this.config = deps.config
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -38,7 +36,7 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       const ownUserId = client.user?.id ?? ""
       const mentionedUserIds = [...message.mentions.users.keys()]
 
-      this.logger.info("discord messageCreate", {
+      this.logger?.info("discord messageCreate", {
         author: message.author.id,
         authorIsBot: String(message.author.bot),
         channelId: message.channelId,
@@ -60,21 +58,21 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       })
 
       if (result.skip) {
-        this.logger.info("discord skip", { reason: "bot author" })
+        this.logger?.info("discord skip", { reason: "bot author" })
         return
       }
 
       try {
         await notify(result.content, result.meta)
       } catch (error) {
-        this.logger.error("discord notify error", {
+        this.logger?.error("discord notify error", {
           error: error instanceof Error ? error.message : String(error),
         })
       }
     })
 
     client.on("ready", (readyClient) => {
-      this.logger.info("discord ready", {
+      this.logger?.info("discord ready", {
         userId: readyClient.user.id,
         tag: readyClient.user.tag,
         guilds: String(readyClient.guilds.cache.size),
@@ -82,7 +80,7 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
     })
 
     client.on("error", (error) => {
-      this.logger.error("discord client error", {
+      this.logger?.error("discord client error", {
         error: error instanceof Error ? error.message : String(error),
       })
     })
@@ -97,7 +95,7 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
     try {
       await this.client.destroy()
     } catch (error) {
-      this.logger.error("discord stop error", {
+      this.logger?.error("discord stop error", {
         error: error instanceof Error ? error.message : String(error),
       })
     } finally {

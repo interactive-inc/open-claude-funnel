@@ -6,7 +6,6 @@ import {
   type SlackRawEvent,
 } from "@/connectors/slack-event-processor"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 
 const middlewareArgsSchema = z.object({
@@ -31,11 +30,10 @@ type Deps = {
   preprocessEvent?: SlackPreprocessEvent
 }
 
-const defaultLogger = new NodeFunnelLogger()
 
 export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly config: SlackConnectorConfig
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly onAppCreated: SlackOnAppCreated | null
   private readonly preprocessEvent: SlackPreprocessEvent | null
   private app: App | null = null
@@ -43,7 +41,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
   constructor(deps: Deps) {
     super()
     this.config = deps.config
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.onAppCreated = deps.onAppCreated ?? null
     this.preprocessEvent = deps.preprocessEvent ?? null
   }
@@ -106,7 +104,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     })
 
     app.error(async (error) => {
-      this.logger.error("Slack error", {
+      this.logger?.error("Slack error", {
         error: error instanceof Error ? error.message : String(error),
       })
     })
@@ -123,7 +121,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     try {
       await this.app.stop()
     } catch (error) {
-      this.logger.error("Slack stop error", {
+      this.logger?.error("Slack stop error", {
         error: error instanceof Error ? error.message : String(error),
       })
     } finally {

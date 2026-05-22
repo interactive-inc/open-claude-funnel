@@ -3,7 +3,6 @@ import type { FunnelConnectorListener } from "@/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 
 type ConnectorRegistry = {
   listAllConnectors(): ChannelConnectorView[]
@@ -46,7 +45,6 @@ type Deps = {
   now?: () => number
 }
 
-const defaultLogger = new NodeFunnelLogger()
 const defaultOnError: OnFunnelError = () => {}
 const DEFAULT_HEALTH_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BACKOFF_MS = 60_000
@@ -83,7 +81,7 @@ type ListenerEntryStatus = {
 export class FunnelListenerSupervisor {
   private readonly channels: ConnectorRegistry
   private readonly notify: SupervisorNotify
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
   private readonly running = new Map<string, RunningEntry>()
   private readonly failureCounts = new Map<string, number>()
@@ -98,7 +96,7 @@ export class FunnelListenerSupervisor {
   constructor(deps: Deps) {
     this.channels = deps.channels
     this.notify = deps.notify
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.onError = deps.onError ?? defaultOnError
     this.healthCheckIntervalMs = deps.healthCheckIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
     this.maxBackoffMs = deps.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
@@ -170,7 +168,7 @@ export class FunnelListenerSupervisor {
         listener: created.listener,
       })
       this.ensureStats(key)
-      this.logger.info(`${created.config.type} listener started`, {
+      this.logger?.info(`${created.config.type} listener started`, {
         channel: channelName,
         connector: connectorName,
       })
@@ -179,7 +177,7 @@ export class FunnelListenerSupervisor {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
 
-      this.logger.error(`${created.config.type} listener failed to start`, {
+      this.logger?.error(`${created.config.type} listener failed to start`, {
         channel: channelName,
         connector: connectorName,
         error: err.message,
@@ -208,7 +206,7 @@ export class FunnelListenerSupervisor {
       await entry.listener.stop()
       this.running.delete(key)
       this.failureCounts.delete(key)
-      this.logger.info(`${entry.config.type} listener stopped`, {
+      this.logger?.info(`${entry.config.type} listener stopped`, {
         channel: channelName,
         connector: connectorName,
       })
@@ -217,7 +215,7 @@ export class FunnelListenerSupervisor {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
 
-      this.logger.error(`${entry.config.type} listener failed to stop`, {
+      this.logger?.error(`${entry.config.type} listener failed to stop`, {
         channel: channelName,
         connector: connectorName,
         error: err.message,
@@ -330,7 +328,7 @@ export class FunnelListenerSupervisor {
     const failureCount = this.failureCounts.get(key) ?? 0
     const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
 
-    this.logger.warn(`${type} listener unhealthy, restarting`, {
+    this.logger?.warn(`${type} listener unhealthy, restarting`, {
       channel: channelName,
       connector: connectorName,
       attempt: failureCount + 1,
@@ -344,7 +342,7 @@ export class FunnelListenerSupervisor {
 
     if (result.ok) {
       this.failureCounts.delete(key)
-      this.logger.info(`${type} listener recovered`, {
+      this.logger?.info(`${type} listener recovered`, {
         channel: channelName,
         connector: connectorName,
       })

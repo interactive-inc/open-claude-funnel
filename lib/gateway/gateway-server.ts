@@ -13,7 +13,6 @@ import { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
 import { gatewayRoutes } from "@/gateway/routes"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import type { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
@@ -65,7 +64,6 @@ type WsData = {
   since?: number
 }
 
-const defaultLogger = new NodeFunnelLogger()
 const defaultOnError: OnFunnelError = () => {}
 
 /**
@@ -84,7 +82,7 @@ export class FunnelGatewayServer {
   private readonly port: number
   private readonly dbPath: string
   private readonly process?: FunnelProcessRunner
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
   private readonly selfPid: number
   private readonly dir: string
@@ -104,7 +102,7 @@ export class FunnelGatewayServer {
     this.port = deps.port ?? DEFAULT_PORT
     this.dbPath = deps.dbPath ?? defaultDbPath()
     this.process = deps.process
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.onError = deps.onError ?? defaultOnError
     this.selfPid = deps.selfPid ?? globalThis.process.pid
     this.dir = deps.dir ?? FUNNEL_DIR
@@ -265,9 +263,9 @@ export class FunnelGatewayServer {
         total: String(this.broadcaster.getClientCount()),
       }
 
-      this.logger.info("channel connected", meta)
+      this.logger?.info("channel connected", meta)
     } else {
-      this.logger.info("tap-all client connected", {
+      this.logger?.info("tap-all client connected", {
         event_type: "system",
         action: "tap_connect",
         total: String(this.broadcaster.getClientCount()),
@@ -279,7 +277,7 @@ export class FunnelGatewayServer {
     this.broadcaster.removeClient(ws)
 
     if (ws.data.channelName) {
-      this.logger.info("channel disconnected", {
+      this.logger?.info("channel disconnected", {
         event_type: "system",
         action: "channel_disconnect",
         channel: ws.data.channelName,
@@ -287,7 +285,7 @@ export class FunnelGatewayServer {
         total: String(this.broadcaster.getClientCount()),
       })
     } else {
-      this.logger.info("tap-all client disconnected", {
+      this.logger?.info("tap-all client disconnected", {
         event_type: "system",
         action: "tap_disconnect",
         total: String(this.broadcaster.getClientCount()),
@@ -296,14 +294,14 @@ export class FunnelGatewayServer {
   }
 
   private logServerStarted(): void {
-    this.logger.info("gateway started", {
+    this.logger?.info("gateway started", {
       event_type: "system",
       action: "gateway_start",
       port: String(this.port),
       pid: String(this.selfPid),
     })
 
-    this.logger.info("funnel gateway listening", {
+    this.logger?.info("funnel gateway listening", {
       url: `http://localhost:${this.port}`,
       websocket: `ws://localhost:${this.port}/ws`,
       health: `http://localhost:${this.port}/health`,
@@ -393,7 +391,7 @@ export class FunnelGatewayServer {
       })
 
       if (killed.length > 0) {
-        this.logger.info("killed competing Slack gateway processes", {
+        this.logger?.info("killed competing Slack gateway processes", {
           event_type: "system",
           action: "kill_competing",
           pids: killed.join(","),
@@ -404,7 +402,7 @@ export class FunnelGatewayServer {
     await this.supervisor.startAll()
 
     for (const entry of this.supervisor.list()) {
-      this.logger.info(`${entry.type} listener started: ${entry.name}`, {
+      this.logger?.info(`${entry.type} listener started: ${entry.name}`, {
         event_type: "system",
         action: `${entry.type}_connect`,
         channel: entry.channelName,
@@ -412,8 +410,8 @@ export class FunnelGatewayServer {
       })
     }
 
-    this.logger.info(`event store: ${this.dbPath}`)
-    this.logger.info("funnel gateway running")
+    this.logger?.info(`event store: ${this.dbPath}`)
+    this.logger?.info("funnel gateway running")
   }
 
   /**

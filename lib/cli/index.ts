@@ -4,11 +4,12 @@ import { startChannelServer } from "@/engine/mcp/channel-server"
 import { toRequest } from "@/cli/router/to-request"
 import { launchTui } from "@/tui/tui"
 import { createCliApp } from "@/cli/routes"
+import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { Funnel } from "@/funnel"
 
 process.title = "funnel"
 
-const funnel = new Funnel()
+const funnel = new Funnel({ logger: new NodeFunnelLogger() })
 
 const app = createCliApp(funnel)
 

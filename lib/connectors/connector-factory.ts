@@ -16,7 +16,6 @@ import {
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
@@ -44,7 +43,6 @@ type Deps = {
 
 const defaultFs = new NodeFunnelFileSystem()
 const defaultProcess = new NodeFunnelProcessRunner()
-const defaultLogger = new NodeFunnelLogger()
 
 /**
  * Pure factory for per-type listeners and adapters. The factory has no CRUD
@@ -61,7 +59,7 @@ const defaultLogger = new NodeFunnelLogger()
 export class FunnelConnectorFactory {
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly dir: string
   private readonly slackListenerOptions: SlackListenerOptions
   private readonly scheduleListenerOptions: ScheduleListenerOptions
@@ -69,7 +67,7 @@ export class FunnelConnectorFactory {
   constructor(deps: Deps = {}) {
     this.fs = deps.fs ?? defaultFs
     this.process = deps.process ?? defaultProcess
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.dir = deps.dir ?? FUNNEL_DIR
     this.slackListenerOptions = deps.slackListenerOptions ?? {}
     this.scheduleListenerOptions = deps.scheduleListenerOptions ?? {}

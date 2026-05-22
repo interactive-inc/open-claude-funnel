@@ -52,7 +52,7 @@ export function ConnectorsView(props: Props) {
   const targetChannel = channels[0] ?? null
 
   const logError = (error: unknown): void => {
-    props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+    props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
   }
 
   const removeConnector = (connector: Connector): void => {

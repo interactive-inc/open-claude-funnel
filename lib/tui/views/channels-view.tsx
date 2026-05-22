@@ -38,7 +38,7 @@ export function ChannelsView(props: Props) {
         if (next && next !== channel.name) props.funnel.channels.rename(channel.name, next)
       }
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+      props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
     }
 
     props.setFocusedKey(null)
@@ -49,7 +49,7 @@ export function ChannelsView(props: Props) {
     try {
       props.funnel.channels.remove(name)
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+      props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
     }
 
     props.setFocusedKey(null)
@@ -66,7 +66,7 @@ export function ChannelsView(props: Props) {
       const created = props.funnel.channels.add({ name })
       props.setFocusedKey(fieldKey(created.name, "name"))
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+      props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
     }
 
     props.refresh()

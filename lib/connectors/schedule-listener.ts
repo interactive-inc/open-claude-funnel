@@ -2,7 +2,6 @@ import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-l
 import { matchCron } from "@/connectors/match-cron"
 import { ScheduleStateStore } from "@/connectors/schedule-state-store"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedule-connector-schema"
 
 export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Promise<void>
@@ -20,14 +19,13 @@ type Deps = {
   onFired?: ScheduleOnFired
 }
 
-const defaultLogger = new NodeFunnelLogger()
 
 const MAX_CATCHUP_MINUTES = 60 * 24
 
 export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly config: ScheduleConnectorConfig
   private readonly lastFiredStore: ScheduleStateStore
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly now: () => Date
   private readonly onFired: ScheduleOnFired | null
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -37,7 +35,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     super()
     this.config = deps.config
     this.lastFiredStore = deps.lastFiredStore
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.now = deps.now ?? (() => new Date())
     this.onFired = deps.onFired ?? null
   }
@@ -160,7 +158,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       try {
         await this.onFired(entry, firedAt)
       } catch (error) {
-        this.logger.error("schedule onFired callback failed", {
+        this.logger?.error("schedule onFired callback failed", {
           connector: this.config.name,
           id: entry.id,
           error: error instanceof Error ? error.message : String(error),
@@ -213,7 +211,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private logInvalidCron(entry: Pick<ScheduleEntry, "id" | "cron">, error: unknown): void {
-    this.logger.error("invalid cron expression in schedule", {
+    this.logger?.error("invalid cron expression in schedule", {
       connector: this.config.name,
       id: entry.id,
       cron: entry.cron,

@@ -1,7 +1,6 @@
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import type { GhConnectorConfig } from "@/connectors/gh-connector-schema"
@@ -30,7 +29,6 @@ type Deps = {
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
-const defaultLogger = new NodeFunnelLogger()
 
 const MAX_SEEN = 10000
 const KEEP_SEEN = 5000
@@ -38,7 +36,7 @@ const KEEP_SEEN = 5000
 export class FunnelGhListener extends FunnelConnectorListener {
   private readonly config: GhConnectorConfig
   private readonly process: FunnelProcessRunner
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly now: () => Date
   private readonly seen = new Map<string, string>()
   private bootstrapped = false
@@ -49,7 +47,7 @@ export class FunnelGhListener extends FunnelConnectorListener {
     super()
     this.config = deps.config
     this.process = deps.process ?? defaultProcess
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.now = deps.now ?? (() => new Date())
     this.since = this.now().toISOString()
   }
@@ -82,14 +80,14 @@ export class FunnelGhListener extends FunnelConnectorListener {
       const result = await this.process.run(["gh", "api", `/notifications?${params}`])
 
       if (result.exitCode !== 0) {
-        this.logger.error("gh poll failed", { stderr: result.stderr })
+        this.logger?.error("gh poll failed", { stderr: result.stderr })
         return
       }
 
       const parsed = ghNotificationsSchema.safeParse(JSON.parse(result.stdout))
 
       if (!parsed.success) {
-        this.logger.warn("gh response did not match schema", { error: parsed.error.message })
+        this.logger?.warn("gh response did not match schema", { error: parsed.error.message })
         return
       }
 
@@ -129,7 +127,7 @@ export class FunnelGhListener extends FunnelConnectorListener {
       this.since = nextSince
       this.bootstrapped = true
     } catch (error) {
-      this.logger.error("gh poll error", {
+      this.logger?.error("gh poll error", {
         error: error instanceof Error ? error.message : String(error),
       })
     }

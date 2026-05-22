@@ -52,7 +52,7 @@ export function ProfilesView(props: Props) {
         if (next) props.funnel.profiles.update(profile.name, { path: next })
       }
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+      props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
     }
 
     props.setFocusedKey(null)
@@ -63,7 +63,7 @@ export function ProfilesView(props: Props) {
     try {
       props.funnel.profiles.remove(name)
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+      props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
     }
 
     props.setFocusedKey(null)
@@ -81,7 +81,7 @@ export function ProfilesView(props: Props) {
       props.funnel.profiles.add({ name, path: "", channelId })
       props.setFocusedKey(fieldKey(name, "name"))
     } catch (error) {
-      props.funnel.logger.error(error instanceof Error ? error.message : String(error))
+      props.funnel.logger?.error(error instanceof Error ? error.message : String(error))
     }
 
     props.refresh()

@@ -5,7 +5,6 @@ import type { GatewayController } from "@/engine/claude/gateway-controller"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import type { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
@@ -48,7 +47,6 @@ type Deps = {
 
 const defaultProcess = new NodeFunnelProcessRunner()
 const defaultFs = new NodeFunnelFileSystem()
-const defaultLogger = new NodeFunnelLogger()
 
 /**
  * Launches Claude Code with funnel pre-wired: ensures the gateway is running,
@@ -63,7 +61,7 @@ export class FunnelClaude {
   private readonly sessions: FunnelSessions
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly pidDir: string
 
   constructor(deps: Deps) {
@@ -73,7 +71,7 @@ export class FunnelClaude {
     this.sessions = deps.sessions
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.pidDir = join(deps.dir ?? FUNNEL_DIR, "claude")
     Object.freeze(this)
   }
@@ -95,11 +93,11 @@ export class FunnelClaude {
     if (installMcp && !this.mcp.findInstalledName(cwd)) {
       this.mcp.install(cwd)
 
-      this.logger.info(`added funnel MCP to .mcp.json`, { cwd })
+      this.logger?.info(`added funnel MCP to .mcp.json`, { cwd })
     }
 
     if (!this.gateway.isRunning()) {
-      this.logger.info(`starting gateway automatically`)
+      this.logger?.info(`starting gateway automatically`)
       await this.gateway.start()
     }
 
@@ -115,7 +113,7 @@ export class FunnelClaude {
     const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
     const env = this.buildEnv(channel.id, options.env ?? {})
 
-    this.logger.info(`claude launch`, {
+    this.logger?.info(`claude launch`, {
       channel: options.channel,
       channelId: channel.id,
       cwd,

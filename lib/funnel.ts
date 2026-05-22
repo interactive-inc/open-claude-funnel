@@ -19,7 +19,6 @@ import { FunnelLocalConfig } from "@/engine/local-config/local-config"
 import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
-import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
@@ -109,7 +108,6 @@ export class Funnel {
   private readonly memos: {
     fs?: FunnelFileSystem
     process?: FunnelProcessRunner
-    logger?: FunnelLogger
     clock?: FunnelClock
     idGenerator?: FunnelIdGenerator
     store?: FunnelSettingsReader
@@ -173,11 +171,9 @@ export class Funnel {
     return this.memos.process
   }
 
-  /** Logger boundary. Defaults to NodeFunnelLogger. */
-  get logger(): FunnelLogger {
-    if (!this.memos.logger) this.memos.logger = this.props.logger ?? new NodeFunnelLogger()
-
-    return this.memos.logger
+  /** Logger boundary. Optional — when no logger is injected, every facet's `this.logger?.x` call is a silent no-op. Production entry points (cli, daemon) inject a NodeFunnelLogger. */
+  get logger(): FunnelLogger | undefined {
+    return this.props.logger
   }
 
   /** Clock boundary. Defaults to NodeFunnelClock. */

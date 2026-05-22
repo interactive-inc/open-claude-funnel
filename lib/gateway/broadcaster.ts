@@ -1,7 +1,6 @@
 import type { ServerWebSocket } from "bun"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
-import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 
 const byteLengthOf = (event: { content: string; meta?: Record<string, string> }): number => {
   let bytes = Buffer.byteLength(event.content, "utf-8")
@@ -63,7 +62,6 @@ type Deps = {
 const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024
 const DEFAULT_REPLAY_BUFFER_SIZE = 200
 const DEFAULT_REPLAY_BUFFER_MAX_BYTES = 4 * 1024 * 1024
-const defaultLogger = new NoopFunnelLogger()
 const defaultOnError: OnFunnelError = () => {}
 
 type BroadcasterMetrics = {
@@ -98,7 +96,7 @@ type BroadcasterMetrics = {
 export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
   private readonly subscribers: Set<BroadcastSubscriber> = new Set()
-  private readonly logger: FunnelLogger
+  private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
   private readonly maxBufferedBytes: number
   private readonly now: () => number
@@ -114,7 +112,7 @@ export class FunnelBroadcaster {
   private latestOffset = 0
 
   constructor(deps: Deps = {}) {
-    this.logger = deps.logger ?? defaultLogger
+    this.logger = deps.logger
     this.onError = deps.onError ?? defaultOnError
     this.maxBufferedBytes = deps.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
     this.now = deps.now ?? (() => Date.now())
@@ -284,7 +282,7 @@ export class FunnelBroadcaster {
       if (buffered > this.maxBufferedBytes) {
         const data = this.clients.get(ws)
 
-        this.logger.warn("dropping slow WS client (backpressure)", {
+        this.logger?.warn("dropping slow WS client (backpressure)", {
           channel: data?.channel,
           buffered,
           max: this.maxBufferedBytes,
@@ -310,7 +308,7 @@ export class FunnelBroadcaster {
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
 
-        this.logger.error("broadcast subscriber threw", { error: err.message })
+        this.logger?.error("broadcast subscriber threw", { error: err.message })
         this.onError(err, {
           component: "broadcaster.subscriber",
           offset: event.offset,
