@@ -6,9 +6,6 @@ const channel = (id: string, name: string) => ({
   id,
   name,
   delivery: "fanout" as const,
-  options: [],
-  env: {},
-  resume: true,
   connectors: [],
 })
 
@@ -88,6 +85,47 @@ describe("FunnelProfiles", () => {
 
     expect(updated?.channelId).toBe("ch-2")
     expect(updated?.path).toBe("/other")
+  })
+
+  test("add defaults the launch recipe and update overrides it", () => {
+    const { profiles } = buildProfiles()
+
+    profiles.add({ ...sampleProfile })
+
+    const added = profiles.get("default")
+
+    expect(added?.options).toEqual([])
+    expect(added?.env).toEqual({})
+    expect(added?.resume).toBe(true)
+
+    profiles.update("default", {
+      options: ["--agent", "pm"],
+      env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
+      resume: false,
+    })
+
+    const updated = profiles.get("default")
+
+    expect(updated?.options).toEqual(["--agent", "pm"])
+    expect(updated?.env).toEqual({ ANTHROPIC_MODEL: "claude-sonnet-4-6" })
+    expect(updated?.resume).toBe(false)
+  })
+
+  test("add persists an explicit launch recipe", () => {
+    const { profiles } = buildProfiles()
+
+    profiles.add({
+      ...sampleProfile,
+      options: ["--brief"],
+      env: { FOO: "bar" },
+      resume: false,
+    })
+
+    const added = profiles.get("default")
+
+    expect(added?.options).toEqual(["--brief"])
+    expect(added?.env).toEqual({ FOO: "bar" })
+    expect(added?.resume).toBe(false)
   })
 
   test("rename rejects collisions and renames otherwise", () => {

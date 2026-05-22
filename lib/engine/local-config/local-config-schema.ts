@@ -3,16 +3,17 @@ import { z } from "zod"
 /**
  * Per-repo launch config (`funnel.json`).
  *
- * `fnl claude` reads this when no --profile is given and picks one of the
- * declared channels (`--channel <name>` selects by name; otherwise the first
- * entry wins). The chosen channel is materialized into
- * `~/.funnel/settings.json` on launch — token fields in connectors resolve
- * via literal / `env.<field>` / TTY prompt.
+ * `fnl claude` reads this when no global --profile preset is used. It picks one
+ * of the declared channels (`--channel <name>` selects by name; otherwise the
+ * first entry wins) and materializes its transport (connectors / delivery) into
+ * `~/.funnel/settings.json` on launch — token fields in connectors resolve via
+ * literal / `env.<field>` / TTY prompt.
  *
- * Top-level `options` and `env` are defaults shared by every channel: each
- * channel's own `options` is appended after the shared ones (CLI semantics
- * keep the later flag winning), and `env` is a shallow merge with the
- * channel's keys overriding the shared ones.
+ * The launch recipe (`options` / `env` / `resume`) lives on `profiles[]`, not on
+ * the channel: a channel only describes where events come from. `fnl claude`
+ * applies the first profile bound to the chosen channel (or `--profile <name>`
+ * to pick another); the recipe is passed straight to the launcher and is not
+ * persisted into the global profile list.
  */
 
 const slackEnvSchema = z
@@ -67,7 +68,16 @@ export type ConnectorSpec = z.infer<typeof connectorSpecSchema>
 
 export const channelSpecSchema = z.object({
   name: z.string(),
-  /** Args prepended to the claude argv on every launch bound to this channel. */
+  connectors: z.array(connectorSpecSchema).optional(),
+})
+
+export type ChannelSpec = z.infer<typeof channelSpecSchema>
+
+export const profileSpecSchema = z.object({
+  name: z.string(),
+  /** Name of the channel (declared in `channels[]`) this profile subscribes to. */
+  channel: z.string(),
+  /** Args prepended to the claude argv on every launch through this profile. */
   options: z.array(z.string()).optional(),
   /** Env vars layered under the launched claude process. process.env wins on collision. */
   env: z.record(z.string(), z.string()).optional(),
@@ -75,18 +85,19 @@ export const channelSpecSchema = z.object({
    * When true (the default), funnel injects `--session-id <uuid>` so that
    * relaunching from the same cwd resumes the previous claude session
    * without bleeding into other channels or workspaces. Set to false for
-   * channels that should always start a fresh session.
+   * profiles that should always start a fresh session.
    */
   resume: z.boolean().optional(),
-  connectors: z.array(connectorSpecSchema).optional(),
 })
 
-export type ChannelSpec = z.infer<typeof channelSpecSchema>
+export type ProfileSpec = z.infer<typeof profileSpecSchema>
 
 export const localConfigSchema = z.object({
   $schema: z.string().optional(),
-  /** Declared channels. First entry is the default; --channel <name> selects by name. */
+  /** Declared channels (transport only). First entry is the default; --channel <name> selects by name. */
   channels: z.array(channelSpecSchema).min(1),
+  /** Launch presets bound to a channel. First entry bound to the chosen channel is the default. */
+  profiles: z.array(profileSpecSchema).optional(),
 })
 
 export type LocalConfig = z.infer<typeof localConfigSchema>

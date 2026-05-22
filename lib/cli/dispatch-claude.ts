@@ -1,5 +1,9 @@
 import { claudeHelp } from "@/cli/routes/claude"
-import type { ChannelSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
+import type {
+  ChannelSpec,
+  LocalConfig,
+  ProfileSpec,
+} from "@/engine/local-config/local-config-schema"
 import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
 import type { Funnel } from "@/funnel"
 
@@ -140,19 +144,26 @@ const pickChannel = (local: LocalConfig, requestedName: string | null): ChannelS
   return found
 }
 
+const pickProfile = (local: LocalConfig, channelName: string): ProfileSpec | null => {
+  return local.profiles?.find((p) => p.channel === channelName) ?? null
+}
+
 /**
  * Entry point for `fnl claude <args>`. Pulls only funnel-specific flags
  * (--profile / -p, --channel, --help / -h) out of argv and forwards every
- * other token verbatim to claude. Channel.options and channel.env (from
- * ~/.funnel/settings.json) are applied by FunnelClaude.launch — this layer
- * only decides which channel to bind.
+ * other token verbatim to claude. The launch recipe (options / env / resume)
+ * comes from the resolved profile — global (--profile / default) or the
+ * funnel.json profile bound to the chosen channel — and is passed to
+ * FunnelClaude.launch; this layer decides which channel to bind and which
+ * recipe to apply.
  *
  * Resolution order:
  *   1. --help → print help
- *   2. --profile <name> → named profile (ignores funnel.json)
- *   3. funnel.json in cwd → select channel (--channel <name> or first), sync, launch
- *   4. --channel <name> with no funnel.json → raw launch against existing settings.json channel
- *   5. default profile → launch
+ *   2. --profile <name> → named global profile (ignores funnel.json)
+ *   3. funnel.json in cwd → select channel (--channel <name> or first), sync,
+ *      apply the first funnel.json profile bound to that channel, launch
+ *   4. --channel <name> with no funnel.json → raw launch (no recipe)
+ *   5. default global profile → launch
  *   6. nothing matched → print help
  */
 export const dispatchClaude = async (
@@ -184,6 +195,9 @@ export const dispatchClaude = async (
       cwd: profile.path,
       userArgs: parsed.userArgs,
       profileName: profile.name,
+      options: profile.options,
+      env: profile.env,
+      resume: profile.resume,
     })
 
     return { stdout: null, stderr: null, exitCode }
@@ -202,10 +216,15 @@ export const dispatchClaude = async (
 
     await reconcileListeners(funnel, picked.name, synced)
 
+    const profile = pickProfile(local, picked.name)
+
     const exitCode = await funnel.claude.launch({
       channel: picked.name,
       cwd,
       userArgs: parsed.userArgs,
+      options: profile?.options,
+      env: profile?.env,
+      resume: profile?.resume,
     })
 
     return { stdout: null, stderr: null, exitCode }
@@ -232,6 +251,9 @@ export const dispatchClaude = async (
     cwd: defaultProfile.path,
     userArgs: parsed.userArgs,
     profileName: defaultProfile.name,
+    options: defaultProfile.options,
+    env: defaultProfile.env,
+    resume: defaultProfile.resume,
   })
 
   return { stdout: null, stderr: null, exitCode }

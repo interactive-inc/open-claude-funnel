@@ -36,11 +36,11 @@ external sources                          outbound replies
 
 Three concepts make up the model:
 
-Channel — a named subscription box. Holds one or more connectors. An agent session subscribes to exactly one channel. Delivery is `fanout` (every subscriber sees every event, the default) or `exclusive` (one event per subscriber, round-robin — for worker pools).
+Channel — a named subscription box (transport only). Holds one or more connectors and a delivery mode; it does not carry launch flags. An agent session subscribes to exactly one channel. Delivery is `fanout` (every subscriber sees every event, the default) or `exclusive` (one event per subscriber, round-robin — for worker pools).
 
 Connector — a single attachment from a channel to an external source. Four types ship today: `slack`, `gh`, `discord`, `schedule`. The first three are bidirectional (events in, replies out); `schedule` is one-way (cron ticks in).
 
-Profile — a saved launch preset for an agent. Bundles `{ path, sub-agent, channel }` so `fnl claude --profile cto` reproduces a known setup. The first profile in the list is the default.
+Profile — a saved launch preset. Bundles `{ path, channelId, options, env, resume }` so `fnl claude --profile cto` reproduces a known setup: which directory to launch from, which channel to bind, and the launch recipe (args prepended to the claude argv, env layered under the process, session reuse). The first profile in the list is the default.
 
 The daemon is where all external connections live. It runs on port 9742, supervises connectors with auto-restart, broadcasts events to subscribed agent sessions over WebSocket, and serves the reply API that MCP calls. Starting or stopping an agent never starts or stops external connections.
 
@@ -84,11 +84,11 @@ fnl claude --channel ops
 
 Every event the connector sees now arrives in the running agent session, and the agent can reply via the `my-slack` MCP tool.
 
-Save it as a profile for one-command launches:
+Save it as a profile for one-command launches — the profile carries the launch recipe:
 
 ```bash
-fnl profiles add cto --path=/repo/myapp --channel=ops
-fnl claude --profile cto         # cd + channel binding in one shot
+fnl profiles add cto --path=/repo/myapp --channel=ops --agent=pm --options="--brief"
+fnl claude --profile cto         # cd + channel binding + recipe in one shot
 ```
 
 Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo will use it:
@@ -99,10 +99,6 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
   "channels": [
     {
       "name": "ops",
-      "options": ["--brief", "--agent", "pm"],
-      "env": {
-        "ANTHROPIC_MODEL": "claude-sonnet-4-6"
-      },
       "connectors": [
         {
           "type": "slack",
@@ -115,7 +111,19 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
       ]
     },
     {
-      "name": "review",
+      "name": "review"
+    }
+  ],
+  "profiles": [
+    {
+      "name": "ops-pm",
+      "channel": "ops",
+      "options": ["--brief", "--agent", "pm"],
+      "env": { "ANTHROPIC_MODEL": "claude-sonnet-4-6" }
+    },
+    {
+      "name": "review-reviewer",
+      "channel": "review",
       "options": ["--agent", "reviewer"]
     }
   ]
@@ -124,11 +132,11 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 
 `channels[]` is required and the first entry is the default. `fnl claude --channel review` picks one by name; `fnl claude` with no `--channel` uses the first.
 
-Each channel has its own `options` (prepended to the claude argv before user-supplied CLI args, which still come last — use it for per-channel flags like `--brief`, `--agent <name>`, `--model <name>`) and `env` (layered under the launched claude process — `process.env` from the launching shell wins on collision, so funnel.json sets defaults that the user can still override one-off via the shell).
+A channel declares only transport — its `connectors` and delivery mode. The launch recipe lives on `profiles[]`: each profile binds to a channel by name and carries `options` (prepended to the claude argv before user-supplied CLI args, which still come last — use it for flags like `--brief`, `--agent <name>`, `--model <name>`), `env` (layered under the launched claude process — `process.env` from the launching shell wins on collision), and `resume`. `fnl claude` applies the first profile bound to the chosen channel.
 
 The optional `connectors` array on a channel is the source of truth for that channel: missing connectors are created, an existing connector matched by token under a different name is renamed in place, and connectors not declared are removed on launch. An absent `connectors` field leaves `~/.funnel` alone.
 
-On launch, the chosen channel's `options` / `env` / `connectors` are also materialized into the global `~/.funnel/settings.json` Channel entry. Raw launches (`fnl claude --channel <name>` without funnel.json) and profile launches read the same fields from there, so funnel.json and settings.json share one Channel data model.
+On launch, the chosen channel's transport (`connectors`, delivery) is materialized into the global `~/.funnel/settings.json` Channel entry; the profile recipe is passed straight to the launcher and is not persisted there. Raw launches (`fnl claude --channel <name>` without funnel.json) bind transport only and carry no recipe.
 
 The optional top-level `$schema` points at the JSON Schema so editors can validate and autocomplete the file. The recommended reference for repos with a local install is `./node_modules/@interactive-inc/claude-funnel/funnel.schema.json` — it works without a network round-trip and editors do not need to prompt for trust. The same file is also published at `https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json` (editors usually require explicit trust on first use), and `fnl schema > funnel.schema.json` regenerates a local copy on demand.
 
@@ -188,10 +196,12 @@ fnl channels <ch> connectors <c> schedules add <id> --cron="<expr>" --prompt="<t
 fnl channels <ch> connectors <c> schedules remove <id>
 
 fnl profiles                                 list (first entry is the default)
-fnl profiles add <name> --path=<dir> --channel=<channel-name>
+fnl profiles add <name> --path=<dir> --channel=<channel-name> \
+                        [--agent=<name>] [--options="<argv>"] [--env="K=V,K2=V2"] [--no-resume]
 fnl profiles <name>                          launch (alias for `<name> run`)
 fnl profiles <name> run                      launch (sugar for `fnl claude --profile <name>`)
-fnl profiles <name> set [--path=...] [--channel=...]
+fnl profiles <name> set [--path=...] [--channel=...] \
+                        [--agent=...] [--options="..."] [--env="..."] [--resume|--no-resume]
 fnl profiles <name> as-default               move to the front of the list
 fnl profiles rename <old> <new>
 fnl profiles remove <name>
@@ -245,10 +255,9 @@ To invoke a connector from outside an agent, the same path is reachable as `fnl 
 ## Data model
 
 ```
-Channel    = { id, name, delivery, options[], env, connectors[] }
-        subscription box plus launch settings. delivery is `fanout` (every WS client sees every event)
-        or `exclusive` (round-robin one client per event). options[] prepends to the claude argv on
-        launch; env layers under the launched process (process.env wins on collision)
+Channel    = { id, name, delivery, connectors[] }
+        subscription box (transport only). delivery is `fanout` (every WS client sees every event)
+        or `exclusive` (round-robin one client per event). carries no launch settings.
 
 Connector  =
   | { type: "slack",    name, botToken, appToken }      Slack Socket Mode
@@ -256,17 +265,23 @@ Connector  =
   | { type: "discord",  name, botToken }                Discord Gateway
   | { type: "schedule", name, entries[] }               cron-driven; entries = { id, cron, prompt, enabled?, catchupPolicy? }
 
-Profile    = { name, path, channelId }
-        named launch preset (just where to launch a channel from); the first profile is the default
+Profile    = { name, path, channelId, options[], env, resume }
+        named launch preset: where to launch (path), which channel to bind, and the launch recipe —
+        options[] prepends to the claude argv, env layers under the process (process.env wins on
+        collision), resume toggles session reuse. the first profile is the default.
 
-LocalConfig = { channels: ChannelSpec[] }
+LocalConfig = { channels: ChannelSpec[], profiles?: ProfileSpec[] }
         per-repo file (funnel.json). channels[] required; first entry is default, --channel selects.
 
-ChannelSpec = { name, options?, env?, connectors? }
-        mirrors Channel above (no id, since funnel.json declares by name). options/env/connectors
-        materialize into the matching Channel in ~/.funnel/settings.json on launch. Connector token
-        fields accept a literal, an env-var reference at `env.<field>` resolved from process.env and
-        ./.env.local, or omission for a TTY prompt persisted to ~/.funnel.
+ChannelSpec = { name, connectors? }
+        transport declaration (no id, since funnel.json declares by name). connectors materialize into
+        the matching Channel in ~/.funnel/settings.json on launch. Connector token fields accept a
+        literal, an env-var reference at `env.<field>` resolved from process.env and ./.env.local, or
+        omission for a TTY prompt persisted to ~/.funnel.
+
+ProfileSpec = { name, channel, options?, env?, resume? }
+        launch recipe bound to a channel by name. applied inline on launch (the first spec bound to the
+        chosen channel); not persisted into the global profiles[] list.
 
 Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json
 ```

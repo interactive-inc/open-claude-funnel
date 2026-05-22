@@ -19,7 +19,7 @@ CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core �
 
 ### Channel
 
-購読箱 + launch 設定。`{ id, name, delivery, options[], env, connectors[] }` を持ち、複数の Connector を nest する単位。WS クライアントはチャネル名で subscribe する。`options` は launch 時に claude argv の先頭に積む配列、`env` は claude プロセスに env vars として渡す record（process.env が衝突時に勝つ）。`delivery` は 2 種類。
+購読箱（transport）。`{ id, name, delivery, connectors[] }` を持ち、複数の Connector を nest する単位。WS クライアントはチャネル名で subscribe する。Channel は「event がどこから来てどこへ返るか」だけを持ち、launch 設定（options/env/resume）は持たない（それは Profile の責務）。`delivery` は 2 種類。
 
 - `fanout` — 全 subscriber が全 event を受信する。各 subscriber が独立した仕事を持つ場合（複数 Profile が同じ source を別々に処理する、TUI が観察するなど）
 - `exclusive` — 1 event を 1 subscriber が round-robin で消費する。subscriber が交換可能な worker で、各 event を 1 回だけ処理させたい場合
@@ -35,18 +35,19 @@ CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core �
 
 ### Profile
 
-machine-global な Claude 起動 pointer。`{ name, path, channelId }` の薄い束で `~/.funnel/settings.json` に nested。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定（`--agent` / `--brief` / `--model` などの options、env vars）は全部 channel 側に持つ。Profile 自身は Connector を持たない（Channel が持つ）。
+machine-global な Claude 起動 preset。`{ name, path, channelId, options[], env, resume }` で `~/.funnel/settings.json` に nested。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。Profile 自身は Connector を持たない（Channel が持つ）。
 
 ### LocalConfig（funnel.json）
 
-リポジトリ直下の `funnel.json`。channels[] を宣言してリポジトリと一緒に commit する。
+リポジトリ直下の `funnel.json`。channels[]（transport）と profiles[]（launch recipe）を宣言してリポジトリと一緒に commit する。
 
 ```
-LocalConfig = { channels: ChannelSpec[] }
-ChannelSpec = { name, options?, env?, connectors? }
+LocalConfig = { channels: ChannelSpec[], profiles?: ProfileSpec[] }
+ChannelSpec = { name, connectors? }
+ProfileSpec = { name, channel, options?, env?, resume? }
 ```
 
-`fnl claude` は --profile が無ければ cwd の funnel.json を読み、`--channel <name>` で配列から選ぶ（無指定なら先頭）。選択 channel の `options` / `env` / `connectors` は launch 時に `~/.funnel/settings.json` の Channel に sync される — 設定モデルは settings.json と完全に同じ（top-level shared な options/env は無い、全部 channel ごと）。token フィールドは literal / `env.<field>` 経由の env-var 参照 / TTY プロンプトで解決される。詳細は `lib/engine/local-config/` を参照。
+`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。選択 channel の `connectors` は launch 時に `~/.funnel/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。token フィールドは literal / `env.<field>` 経由の env-var 参照 / TTY プロンプトで解決される。詳細は `lib/engine/local-config/` を参照。
 
 ### Listener Supervisor と Broadcaster
 
@@ -202,12 +203,12 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - `fnl`（引数なし）で OpenTUI ダッシュボード。キーは `r` リフレッシュ、`q` / `esc` / `Ctrl-C` 終了
 - `fnl claude` の解決順（`dispatchClaude`）:
   1. `--help` / `-h` → help を stdout
-  2. `--profile <name>` / `-p <name>` → 名前付き profile（funnel.json は無視）
-  3. cwd の `funnel.json` がある → `--channel <name>` で配列から選択（無指定なら先頭）、sync して launch
-  4. funnel.json が無く `--channel <name>` のみ → raw launch（既存 `~/.funnel/settings.json` のチャネルを使う）
-  5. default profile → launch
+  2. `--profile <name>` / `-p <name>` → 名前付き global profile（funnel.json は無視）
+  3. cwd の `funnel.json` がある → `--channel <name>` で channels[] から選択（無指定なら先頭）、sync し、その channel に bound な funnel.json profiles[] 先頭の recipe を適用して launch
+  4. funnel.json が無く `--channel <name>` のみ → raw launch（recipe 無し、既存 `~/.funnel/settings.json` のチャネルを使う）
+  5. default global profile → launch
   6. どれも当たらない → help を stdout
-- argv の組立順は `[channel.options（settings.json から）] [user CLI args] [MCP server flag]`。env は `channel.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
+- recipe（options/env/resume）は解決された profile から `LaunchOptions` 経由で渡す。argv の組立順は `[profile.options] [user CLI args] [MCP server flag]`。env は `profile.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
 - 同一 profile 名の二重起動は PID ファイルで拒否する
 - `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `public/schema.json` を再生成
 

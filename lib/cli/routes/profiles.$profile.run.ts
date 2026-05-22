@@ -28,6 +28,9 @@ export const profilesLaunchHandler = factory.createHandlers(
       cwd: profile.path,
       userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
       profileName: profile.name,
+      options: profile.options,
+      env: profile.env,
+      resume: profile.resume,
     })
 
     process.exit(exitCode)

@@ -14,24 +14,6 @@
           "name": {
             "type": "string"
           },
-          "options": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "env": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "resume": {
-            "type": "boolean"
-          },
           "connectors": {
             "type": "array",
             "items": {
@@ -151,6 +133,43 @@
         ],
         "additionalProperties": false
       }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "resume": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "channel"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
@@ -158,6 +177,6 @@
   ],
   "additionalProperties": false,
   "title": "Funnel per-repo launch config",
-  "description": "Used by `fnl claude` when no --profile / --channel is given. Declares the channel to subscribe to, optional sub-agent and brief flag, environment variables to layer under process.env, and optional connectors to materialize into ~/.funnel/settings.json on launch."
+  "description": "Used by `fnl claude` to declare channels (transport: connectors to materialize into ~/.funnel/settings.json on launch) and profiles (launch recipe: options / env / resume) bound to those channels."
 }
 

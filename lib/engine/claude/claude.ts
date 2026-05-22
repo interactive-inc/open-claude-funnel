@@ -16,6 +16,12 @@ export type LaunchOptions = {
   cwd?: string
   userArgs?: string[]
   profileName?: string
+  /** Args prepended to the claude argv (typically a profile's recipe). Defaults to none. */
+  options?: string[]
+  /** Env vars layered under the launched claude process. process.env wins on collision. */
+  env?: Record<string, string>
+  /** Whether to inject a `--session-id`/`--resume` for the (channel, cwd). Defaults to true. */
+  resume?: boolean
   /** Invoked synchronously after the child claude process has been spawned, with its PID.
    *  Useful for hosts that need to register the spawned process before it exits
    *  (e.g. multi-session registries that track per-claude liveness). */
@@ -101,9 +107,10 @@ export class FunnelClaude {
       this.installCleanup(options.profileName)
     }
 
-    const session = channel.resume ? this.resolveSession(channel.id, cwd, options.userArgs ?? []) : null
-    const claudeArgs = this.buildArgs(channel.options, options.userArgs ?? [], cwd, session)
-    const env = this.buildEnv(channel.id, channel.env)
+    const resume = options.resume ?? true
+    const session = resume ? this.resolveSession(channel.id, cwd, options.userArgs ?? []) : null
+    const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
+    const env = this.buildEnv(channel.id, options.env ?? {})
 
     this.logger.info(`claude launch`, {
       channel: options.channel,
@@ -176,12 +183,12 @@ export class FunnelClaude {
   }
 
   private buildArgs(
-    channelOptions: string[],
+    recipeOptions: string[],
     userArgs: string[],
     cwd: string,
     session: SessionResolution,
   ): string[] {
-    const result = [...channelOptions, ...userArgs]
+    const result = [...recipeOptions, ...userArgs]
 
     if (session !== null) {
       // claude rejects `--session-id <uuid>` when the session jsonl already
@@ -226,10 +233,10 @@ export class FunnelClaude {
     return { id: this.sessions.create(channelId, cwd), mode: "new" }
   }
 
-  private buildEnv(channelId: string, channelEnv: Record<string, string>): Record<string, string> {
+  private buildEnv(channelId: string, recipeEnv: Record<string, string>): Record<string, string> {
     const env: Record<string, string> = {}
 
-    for (const [key, value] of Object.entries(channelEnv)) {
+    for (const [key, value] of Object.entries(recipeEnv)) {
       env[key] = value
     }
 

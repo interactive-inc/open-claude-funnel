@@ -79,9 +79,6 @@ export class FunnelChannels {
   add(input: {
     name: string
     delivery?: ChannelDeliveryMode
-    options?: string[]
-    env?: Record<string, string>
-    resume?: boolean
   }): ChannelConfig {
     const settings = this.store.read()
 
@@ -93,9 +90,6 @@ export class FunnelChannels {
       id: this.idGenerator.generate(),
       name: input.name,
       delivery: input.delivery ?? "fanout",
-      options: input.options ?? [],
-      env: input.env ?? {},
-      resume: input.resume ?? true,
       connectors: [],
     }
 
@@ -110,33 +104,6 @@ export class FunnelChannels {
     const channel = this.requireChannel(settings, name)
 
     channel.delivery = delivery
-
-    this.store.write(settings)
-  }
-
-  setResume(name: string, resume: boolean): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, name)
-
-    channel.resume = resume
-
-    this.store.write(settings)
-  }
-
-  setOptions(name: string, options: string[]): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, name)
-
-    channel.options = options
-
-    this.store.write(settings)
-  }
-
-  setEnv(name: string, env: Record<string, string>): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, name)
-
-    channel.env = env
 
     this.store.write(settings)
   }

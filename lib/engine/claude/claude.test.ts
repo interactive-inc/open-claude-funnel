@@ -190,18 +190,16 @@ describe("FunnelClaude", () => {
     expect(idA).not.toEqual(idB)
   })
 
-  test("launch omits session flags when channel.resume is false even if a session was previously persisted", async () => {
+  test("launch omits session flags when resume is false even if a session was previously persisted", async () => {
     // Pre-seeding makes this test catch a regression where resume=false would
     // still emit --resume for the persisted id. Without a pre-seeded session
     // the assertion would pass trivially.
-    const { claude, channel, channels, sessions, fs, process } = buildClaude()
+    const { claude, channel, sessions, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
     sessions.create(channel.id, "/work")
 
-    channels.setResume("ops", false)
-
-    await claude.launch({ channel: "ops", cwd: "/work" })
+    await claude.launch({ channel: "ops", cwd: "/work", resume: false })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 

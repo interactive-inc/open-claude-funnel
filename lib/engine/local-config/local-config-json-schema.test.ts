@@ -16,7 +16,7 @@ describe("funnelJsonSchema", () => {
     expect(schema.required).toContain("channels")
   })
 
-  test("each channel declares options / env / connectors", () => {
+  test("each channel declares name / connectors (transport only)", () => {
     const schema = funnelJsonSchema() as {
       properties: {
         channels: { items: { properties: Record<string, unknown> } }
@@ -26,9 +26,25 @@ describe("funnelJsonSchema", () => {
     const channelProps = schema.properties.channels.items.properties
 
     expect(channelProps).toHaveProperty("name")
-    expect(channelProps).toHaveProperty("options")
-    expect(channelProps).toHaveProperty("env")
     expect(channelProps).toHaveProperty("connectors")
+    expect(channelProps).not.toHaveProperty("options")
+    expect(channelProps).not.toHaveProperty("env")
+  })
+
+  test("each profile declares channel / options / env / resume (launch recipe)", () => {
+    const schema = funnelJsonSchema() as {
+      properties: {
+        profiles: { items: { properties: Record<string, unknown> } }
+      }
+    }
+
+    const profileProps = schema.properties.profiles.items.properties
+
+    expect(profileProps).toHaveProperty("name")
+    expect(profileProps).toHaveProperty("channel")
+    expect(profileProps).toHaveProperty("options")
+    expect(profileProps).toHaveProperty("env")
+    expect(profileProps).toHaveProperty("resume")
   })
 
   test("each channel item declares a discriminated connector union", () => {

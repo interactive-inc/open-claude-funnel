@@ -7,9 +7,10 @@ type Deps = {
 
 /**
  * Named launch presets for `fnl claude`. Each profile bundles a working
- * directory, a sub-agent name, and the channel id its Claude instance will
- * subscribe to. Implements ProfileChannelChecker so FunnelChannels can refuse
- * to remove a channel that is still referenced.
+ * directory, the channel id its Claude instance subscribes to, and the launch
+ * recipe (`options` prepended to the claude argv, `env` layered under the
+ * process, `resume` toggling session reuse). Implements ProfileChannelChecker
+ * so FunnelChannels can refuse to remove a channel that is still referenced.
  *
  * The first entry in the persisted array is treated as the default profile;
  * `asDefault` reorders the array to put a named profile first.
@@ -37,18 +38,32 @@ export class FunnelProfiles {
     return this.list()[0] ?? null
   }
 
-  add(config: ProfileConfig): void {
+  add(input: {
+    name: string
+    path: string
+    channelId: string
+    options?: string[]
+    env?: Record<string, string>
+    resume?: boolean
+  }): void {
     const settings = this.store.read()
 
-    if (settings.profiles.some((p) => p.name === config.name)) {
-      throw new Error(`profile "${config.name}" already exists`)
+    if (settings.profiles.some((p) => p.name === input.name)) {
+      throw new Error(`profile "${input.name}" already exists`)
     }
 
-    if (!settings.channels.some((c) => c.id === config.channelId)) {
-      throw new Error(`channel id "${config.channelId}" not found`)
+    if (!settings.channels.some((c) => c.id === input.channelId)) {
+      throw new Error(`channel id "${input.channelId}" not found`)
     }
 
-    settings.profiles.push(config)
+    settings.profiles.push({
+      name: input.name,
+      path: input.path,
+      channelId: input.channelId,
+      options: input.options ?? [],
+      env: input.env ?? {},
+      resume: input.resume ?? true,
+    })
 
     this.store.write(settings)
   }
@@ -119,6 +134,12 @@ export class FunnelProfiles {
     }
 
     if (fields.path !== undefined) profile.path = fields.path
+
+    if (fields.options !== undefined) profile.options = fields.options
+
+    if (fields.env !== undefined) profile.env = fields.env
+
+    if (fields.resume !== undefined) profile.resume = fields.resume
 
     this.store.write(settings)
   }

@@ -161,9 +161,10 @@ describe("dispatchClaude — argv parsing", () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channels: [
-            { name: "ops", options: ["--agent", "pm"] },
-            { name: "review", options: ["--agent", "reviewer"] },
+          channels: [{ name: "ops" }, { name: "review" }],
+          profiles: [
+            { name: "ops-pm", channel: "ops", options: ["--agent", "pm"] },
+            { name: "review-reviewer", channel: "review", options: ["--agent", "reviewer"] },
           ],
         }),
       },
@@ -216,11 +217,12 @@ describe("dispatchClaude — argv parsing", () => {
     expect(result.stdout).toContain("funnel claude")
   })
 
-  test("prepends channel options before user CLI args", async () => {
+  test("prepends profile options before user CLI args", async () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channels: [{ name: "ops", options: ["--brief", "--agent", "developer"] }],
+          channels: [{ name: "ops" }],
+          profiles: [{ name: "ops-dev", channel: "ops", options: ["--brief", "--agent", "developer"] }],
         }),
       },
     })
@@ -237,13 +239,15 @@ describe("dispatchClaude — argv parsing", () => {
     expect(command).toEqual(expect.arrayContaining(["--agent", "developer", "--resume", "abc"]))
   })
 
-  test("merges channel env into the claude process env", async () => {
+  test("merges profile env into the claude process env", async () => {
     const { funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channels: [
+          channels: [{ name: "ops" }],
+          profiles: [
             {
-              name: "ops",
+              name: "ops-model",
+              channel: "ops",
               env: { ANTHROPIC_MODEL: "claude-sonnet-4-6", FUNNEL_ONLY: "yes" },
             },
           ],

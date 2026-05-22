@@ -20,16 +20,6 @@ export const channelConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   delivery: channelDeliveryModeSchema.default("fanout"),
-  /** Args prepended to the claude argv on every launch bound to this channel. */
-  options: z.array(z.string()).default([]),
-  /** Env vars layered under the launched claude process. process.env wins on collision. */
-  env: z.record(z.string(), z.string()).default({}),
-  /**
-   * When true (the default), funnel injects `--session-id <uuid>` so that
-   * relaunching from the same cwd resumes the previous claude session.
-   * Set to false for channels that should always start a fresh session.
-   */
-  resume: z.boolean().default(true),
   connectors: z.array(connectorConfigSchema).default([]),
 })
 
@@ -39,6 +29,16 @@ export const profileConfigSchema = z.object({
   name: z.string(),
   path: z.string(),
   channelId: z.string(),
+  /** Args prepended to the claude argv on every launch through this profile. */
+  options: z.array(z.string()).default([]),
+  /** Env vars layered under the launched claude process. process.env wins on collision. */
+  env: z.record(z.string(), z.string()).default({}),
+  /**
+   * When true (the default), funnel injects `--session-id <uuid>` so that
+   * relaunching from the same cwd resumes the previous claude session.
+   * Set to false for profiles that should always start a fresh session.
+   */
+  resume: z.boolean().default(true),
 })
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>

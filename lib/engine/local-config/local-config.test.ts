@@ -19,17 +19,19 @@ describe("FunnelLocalConfig", () => {
     expect(config.read("/repo")).toEqual({ channels: [{ name: "ops" }] })
   })
 
-  test("parses per-channel options/env", () => {
+  test("parses profiles bound to channels with options/env/resume", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {
         "/repo/funnel.json": JSON.stringify({
-          channels: [
+          channels: [{ name: "ops" }, { name: "review" }],
+          profiles: [
             {
-              name: "ops",
+              name: "ops-pm",
+              channel: "ops",
               options: ["--brief", "--agent", "pm"],
               env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
             },
-            { name: "review", env: { EXTRA: "1" } },
+            { name: "review-extra", channel: "review", env: { EXTRA: "1" }, resume: false },
           ],
         }),
       },
@@ -37,15 +39,30 @@ describe("FunnelLocalConfig", () => {
     const config = new FunnelLocalConfig({ fs })
 
     expect(config.read("/repo")).toEqual({
-      channels: [
+      channels: [{ name: "ops" }, { name: "review" }],
+      profiles: [
         {
-          name: "ops",
+          name: "ops-pm",
+          channel: "ops",
           options: ["--brief", "--agent", "pm"],
           env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
         },
-        { name: "review", env: { EXTRA: "1" } },
+        { name: "review-extra", channel: "review", env: { EXTRA: "1" }, resume: false },
       ],
     })
+  })
+
+  test("strips unknown legacy channel recipe keys", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops", options: ["--brief"], env: { X: "1" }, resume: false }],
+        }),
+      },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(config.read("/repo")).toEqual({ channels: [{ name: "ops" }] })
   })
 
   test("throws on malformed JSON", () => {
