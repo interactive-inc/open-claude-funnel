@@ -1,3 +1,6 @@
+# Claude
+.claude/scheduled_tasks.lock
+
 # dependencies (bun install)
 node_modules
 
