@@ -128,7 +128,10 @@ export function App(props: Props) {
       await props.funnel.claude.launch({
         channel: profile.channelId,
         cwd: profile.path,
-        profileName: profile.name,
+        profileId: profile.id,
+        options: profile.options,
+        env: profile.env,
+        resume: profile.resume,
       })
     } catch (error) {
       process.stderr.write(`error: ${error instanceof Error ? error.message : String(error)}\n`)

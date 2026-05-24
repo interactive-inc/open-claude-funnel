@@ -27,7 +27,7 @@ export const profilesLaunchHandler = factory.createHandlers(
       channel: profile.channelId,
       cwd: profile.path,
       userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
-      profileName: profile.name,
+      profileId: profile.id,
       options: profile.options,
       env: profile.env,
       resume: profile.resume,

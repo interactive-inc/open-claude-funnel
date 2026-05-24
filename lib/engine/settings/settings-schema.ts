@@ -26,6 +26,11 @@ export const channelConfigSchema = z.object({
 export type ChannelConfig = z.infer<typeof channelConfigSchema>
 
 export const profileConfigSchema = z.object({
+  /** Stable identity (uuid). The primary key everything internal resolves to;
+   *  survives renames. CLI surfaces still address profiles by `name`. */
+  id: z.string(),
+  /** Human-facing label used only at the CLI/TUI surface (`--profile <name>`).
+   *  Renameable; never used as a storage key. */
   name: z.string(),
   path: z.string(),
   channelId: z.string(),
@@ -34,11 +39,20 @@ export const profileConfigSchema = z.object({
   /** Env vars layered under the launched claude process. process.env wins on collision. */
   env: z.record(z.string(), z.string()).default({}),
   /**
-   * When true (the default), funnel injects `--session-id <uuid>` so that
-   * relaunching from the same cwd resumes the previous claude session.
-   * Set to false for profiles that should always start a fresh session.
+   * When true (the default), funnel resumes this profile's previous claude
+   * session via `--session-id`/`--resume`. The id lives in `sessionId` below,
+   * scoped to this profile so an unrelated session in the same repo can't bleed
+   * in. Set to false for profiles that should always start fresh.
    */
   resume: z.boolean().default(true),
+  /**
+   * Execution state, not config: the claude session id this profile last
+   * launched. Written by the launcher, read on the next resume. Absent until
+   * the first launch; kept inside the profile (rather than a separate file) so
+   * the session belongs to the profile by identity and the transport layer
+   * (channels) never has to know profiles exist.
+   */
+  sessionId: z.string().optional(),
 })
 
 export type ProfileConfig = z.infer<typeof profileConfigSchema>

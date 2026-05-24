@@ -7,16 +7,18 @@ import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
-import { FunnelSessions } from "@/engine/sessions/sessions"
+import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
-
-const profileChecker = { hasChannelRef: () => false }
 
 const buildClaude = () => {
   const fs = new MemoryFunnelFileSystem()
   const process = new MemoryFunnelProcessRunner().on(() => ({ exitCode: 0 }))
   const store = new MockFunnelSettingsReader()
+  const profiles = new FunnelProfiles({
+    store,
+    idGenerator: new MemoryFunnelIdGenerator({ prefix: "prof" }),
+  })
   const factory = new FunnelConnectorFactory({
     fs,
     process,
@@ -26,7 +28,7 @@ const buildClaude = () => {
   const channels = new FunnelChannels({
     store,
     factory,
-    profileChecker,
+    profileChecker: profiles,
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "ch" }),
   })
@@ -36,23 +38,31 @@ const buildClaude = () => {
     isRunning: () => true,
     start: async () => true,
   }
-  const sessions = new FunnelSessions({
-    fs,
-    idGenerator: new MemoryFunnelIdGenerator({ prefix: "sess" }),
-    dir: "/funnel",
-  })
   const claude = new FunnelClaude({
     channels,
     mcp,
     gateway,
-    sessions,
+    profiles,
     fs,
     process,
+    idGenerator: new MemoryFunnelIdGenerator({ prefix: "sess" }),
     logger: new NoopFunnelLogger(),
     dir: "/funnel",
   })
 
-  return { claude, channels, channel, fs, process, sessions }
+  // Profiles are addressed by id internally; seed a few and hand back their ids
+  // so each test can launch under a known profile.
+  const addProfile = (name: string): string => {
+    profiles.add({ name, path: "/work", channelId: channel.id })
+
+    const created = profiles.get(name)
+
+    if (!created) throw new Error(`failed to seed profile "${name}"`)
+
+    return created.id
+  }
+
+  return { claude, channels, channel, fs, process, profiles, addProfile }
 }
 
 describe("FunnelClaude", () => {
@@ -79,15 +89,17 @@ describe("FunnelClaude", () => {
   })
 
   test("launch refuses to start a profile that already has a live PID file", async () => {
-    const { claude, fs, process } = buildClaude()
+    const { claude, fs, process, addProfile } = buildClaude()
 
     process.on(() => ({ exitCode: 0 }))
     process.onSync(() => ({ exitCode: 0, stdout: "S\n", stderr: "" }))
 
-    fs.mkdirSync("/funnel/claude", { recursive: true })
-    fs.writeFileSync("/funnel/claude/dev.pid", String(globalThis.process.pid))
+    const devId = addProfile("dev")
 
-    await expect(claude.launch({ channel: "ops", profileName: "dev" })).rejects.toThrow(
+    fs.mkdirSync("/funnel/claude", { recursive: true })
+    fs.writeFileSync(`/funnel/claude/${devId}.pid`, String(globalThis.process.pid))
+
+    await expect(claude.launch({ channel: "ops", profileId: devId })).rejects.toThrow(
       /already running/,
     )
   })
@@ -120,12 +132,14 @@ describe("FunnelClaude", () => {
 
   test("launch omits session flags when resume is left unset (the default)", async () => {
     // resume is opt-in now: a launch that doesn't ask for it starts fresh,
-    // even with a profile name, so unrelated sessions can never bleed in.
-    const { claude, fs, process } = buildClaude()
+    // even with a profile, so unrelated sessions can never bleed in.
+    const { claude, fs, process, profiles, addProfile } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev" })
+    const devId = addProfile("dev")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -133,12 +147,13 @@ describe("FunnelClaude", () => {
 
     expect(attach.command.includes("--session-id")).toBe(false)
     expect(attach.command.includes("--resume")).toBe(false)
+    expect(profiles.getSessionId(devId)).toBeNull()
   })
 
   test("launch never resumes without a profile, even when resume is true", async () => {
-    // The session store is keyed by profile name; a profile-less launch has
-    // no key to resume under, so it always starts a fresh, unrecorded session.
-    const { claude, channel, sessions, fs, process } = buildClaude()
+    // The session is owned by the profile; a profile-less launch has no profile
+    // to resume under, so it always starts a fresh, unrecorded session.
+    const { claude, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
@@ -150,15 +165,16 @@ describe("FunnelClaude", () => {
 
     expect(attach.command.includes("--session-id")).toBe(false)
     expect(attach.command.includes("--resume")).toBe(false)
-    expect(sessions.get(channel.id, "dev")).toBeNull()
   })
 
   test("first launch of a profile injects --session-id with a freshly minted id", async () => {
-    const { claude, channel, sessions, fs, process } = buildClaude()
+    const { claude, fs, process, profiles, addProfile } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true })
+    const devId = addProfile("dev")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: true })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -167,27 +183,29 @@ describe("FunnelClaude", () => {
     const idx = attach.command.indexOf("--session-id")
 
     expect(idx).toBeGreaterThan(0)
-    expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "dev") ?? undefined)
+    expect(attach.command[idx + 1]).toEqual(profiles.getSessionId(devId) ?? undefined)
     expect(attach.command.includes("--resume")).toBe(false)
   })
 
   test("relaunching the same profile switches to --resume once the jsonl exists", async () => {
     // Regression for #1: claude's `--session-id` rejects ids whose jsonl
     // already exists, so the second launch has to use `--resume` instead.
-    const { claude, channel, sessions, fs, process } = buildClaude()
+    const { claude, fs, process, profiles, addProfile } = buildClaude()
     const env = { CLAUDE_CONFIG_DIR: "/cfg" }
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true, env })
+    const devId = addProfile("dev")
 
-    const firstId = sessions.get(channel.id, "dev")
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: true, env })
+
+    const firstId = profiles.getSessionId(devId)
 
     // Simulate claude writing the session jsonl after the first launch.
     fs.mkdirSync("/cfg/projects/-work", { recursive: true })
     fs.writeFileSync(`/cfg/projects/-work/${firstId}.jsonl`, "{}")
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true, env })
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: true, env })
 
     const attaches = process.calls.filter((c) => c.kind === "attach")
 
@@ -206,20 +224,22 @@ describe("FunnelClaude", () => {
     const resumeIdx = attaches[1].command.indexOf("--resume")
     expect(resumeIdx).toBeGreaterThan(0)
     expect(attaches[1].command[resumeIdx + 1]).toEqual(firstId ?? undefined)
-    expect(sessions.get(channel.id, "dev")).toEqual(firstId)
+    expect(profiles.getSessionId(devId)).toEqual(firstId)
   })
 
   test("mints a fresh session when the persisted id has no jsonl on disk", async () => {
     // Self-heal: a recorded id can outlive its jsonl (claude pruned it, or the
     // first launch was aborted before the file appeared). Resuming it would
     // crash claude, so funnel must drop the dangling id and start fresh.
-    const { claude, channel, sessions, fs, process } = buildClaude()
+    const { claude, fs, process, profiles, addProfile } = buildClaude()
     const env = { CLAUDE_CONFIG_DIR: "/cfg" }
 
     fs.mkdirSync("/work", { recursive: true })
-    const staleId = sessions.create(channel.id, "dev")
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true, env })
+    const devId = addProfile("dev")
+    profiles.setSessionId(devId, "stale-session")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: true, env })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -231,19 +251,22 @@ describe("FunnelClaude", () => {
     expect(sessionIdx).toBeGreaterThan(0)
 
     const freshId = attach.command[sessionIdx + 1]
-    expect(freshId).not.toEqual(staleId)
-    expect(sessions.get(channel.id, "dev") ?? undefined).toEqual(freshId)
+    expect(freshId).not.toEqual("stale-session")
+    expect(profiles.getSessionId(devId) ?? undefined).toEqual(freshId)
   })
 
   test("two profiles in the same cwd keep distinct sessions", async () => {
     // The whole point of keying by profile: launching different profiles from
     // the same repo must not cross-resume into each other's conversation.
-    const { claude, fs, process } = buildClaude()
+    const { claude, fs, process, addProfile } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "alpha", resume: true })
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "beta", resume: true })
+    const alphaId = addProfile("alpha")
+    const betaId = addProfile("beta")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: alphaId, resume: true })
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: betaId, resume: true })
 
     const attaches = process.calls.filter((c) => c.kind === "attach")
 
@@ -261,12 +284,14 @@ describe("FunnelClaude", () => {
     // Pre-seeding makes this test catch a regression where resume=false would
     // still emit --resume for the persisted id. Without a pre-seeded session
     // the assertion would pass trivially.
-    const { claude, channel, sessions, fs, process } = buildClaude()
+    const { claude, fs, process, profiles, addProfile } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
-    sessions.create(channel.id, "dev")
 
-    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: false })
+    const devId = addProfile("dev")
+    profiles.setSessionId(devId, "prior-session")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: false })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -278,14 +303,14 @@ describe("FunnelClaude", () => {
 
   test("launch omits session flags when the user passes -c or --continue", async () => {
     for (const flag of ["-c", "--continue"]) {
-      const { claude, fs, process } = buildClaude()
+      const { claude, fs, process, addProfile } = buildClaude()
 
       fs.mkdirSync("/work", { recursive: true })
 
       await claude.launch({
         channel: "ops",
         cwd: "/work",
-        profileName: "dev",
+        profileId: addProfile("dev"),
         resume: true,
         userArgs: [flag],
       })
@@ -302,14 +327,14 @@ describe("FunnelClaude", () => {
 
   test("launch omits its own session flags when the user passes --resume=<id> or --session-id=<id>", async () => {
     for (const userArg of ["--resume=abc", "--session-id=fixed"]) {
-      const { claude, fs, process } = buildClaude()
+      const { claude, fs, process, addProfile } = buildClaude()
 
       fs.mkdirSync("/work", { recursive: true })
 
       await claude.launch({
         channel: "ops",
         cwd: "/work",
-        profileName: "dev",
+        profileId: addProfile("dev"),
         resume: true,
         userArgs: [userArg],
       })
@@ -328,14 +353,14 @@ describe("FunnelClaude", () => {
   })
 
   test("launch omits its own --resume when the user passes --resume", async () => {
-    const { claude, fs, process } = buildClaude()
+    const { claude, fs, process, addProfile } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
     await claude.launch({
       channel: "ops",
       cwd: "/work",
-      profileName: "dev",
+      profileId: addProfile("dev"),
       resume: true,
       userArgs: ["--resume", "abc"],
     })
@@ -356,14 +381,14 @@ describe("FunnelClaude", () => {
   })
 
   test("launch omits --session-id when the user passes their own --session-id", async () => {
-    const { claude, fs, process } = buildClaude()
+    const { claude, fs, process, addProfile } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
     await claude.launch({
       channel: "ops",
       cwd: "/work",
-      profileName: "dev",
+      profileId: addProfile("dev"),
       resume: true,
       userArgs: ["--session-id", "fixed"],
     })

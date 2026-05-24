@@ -35,7 +35,7 @@ CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core �
 
 ### Profile
 
-transport model（Channel + Connector）の外側にある launch 便宜レイヤ。起動に必須ではなく（`fnl claude --channel <name>` だけで起動できる）、preset を保存しておきたいときだけ使う。machine-global な Claude 起動 preset で、`{ name, path, channelId, options[], env, resume }` で `~/.funnel/settings.json` に nested。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。Profile 自身は Connector を持たない（Channel が持つ）。Profile は channel を内包するので `--profile` と `--channel` は併用不可（同時指定は error）。
+transport model（Channel + Connector）の外側にある launch 便宜レイヤ。起動に必須ではなく（`fnl claude --channel <name>` だけで起動できる）、preset を保存しておきたいときだけ使う。machine-global な Claude 起動 preset で、`{ id, name, path, channelId, options[], env, resume, sessionId? }` で `~/.funnel/settings.json` に nested。`id` は不変の uuid 主キー（rename しても追従させたい内部 state — PID ファイルと sessionId — のキー）、`name` は CLI/TUI が指す表示用ラベルで rename 可能（`--profile <name>`）。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。`sessionId` は config でなく execution state で、この profile が最後に起動した Claude session id（launcher が書き、次回 resume で読む）。session を profile（by id）に内包することで、同じ repo の無関係な session を引き継がず、transport 層（Channel）は profile / session を一切知らずに済む。Profile 自身は Connector を持たない（Channel が持つ）。Profile は channel を内包するので `--profile` と `--channel` は併用不可（同時指定は error）。
 
 ### LocalConfig（funnel.json）
 
@@ -133,7 +133,7 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - 永続データは `~/.funnel/` 配下、揮発ログ / イベントストアは `/tmp/funnel/` 配下に置く
 - パスはハードコードせず、各モジュールが `FUNNEL_DIR`（または DI された `dir` / `tmpDir`）から `join` で構築する。Memory 実装でテストできるようにするため
 - Connector の per-instance な永続 state は `channels/<channel-id>/connectors/<connector-id>/` 配下に置く。id ベースで切るので rename しても追従する。name ベースで切らない
-- Connector の「設定」は settings.json に nested で入れる、「state」だけ上のディレクトリに分ける。設定と state を同じ場所に混ぜない
+- Connector の「設定」は settings.json に nested で入れる、「state」だけ上のディレクトリに分ける。設定と state を同じ場所に混ぜない。この分離は Connector のための規約で、Connector の state（lastFiredAt / poll watermark 等）は量があり頻繁に書き換わるため別ディレクトリに逃がす。一方 Profile の `sessionId` は profile に 1 個ぶら下がるだけの軽量な execution state で、profile（by id）が所有することに意味がある（rename 追従・transport 層からの隠蔽）。これは settings.json の profile に内包してよい（別ファイルに切らない）。「混ぜない」は「人手の config に大量の流動 state を流し込むな」の意であって、profile が自分の session を 1 個持つことは禁じない
 - daemon 系の揮発ファイル（pid / token 等）は `~/.funnel/` 直下に置く
 - funnel.json はリポジトリ側 commit 物。funnel 本体は絶対に書き換えない（トークンは env / `.env.local` / `~/.funnel` のいずれかで保持し、commit されない）
 - Gateway ポートは 9742（`FUNNEL_PORT` で変更可）

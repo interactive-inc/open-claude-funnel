@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 
@@ -13,8 +14,9 @@ const buildProfiles = (): { profiles: FunnelProfiles; store: MockFunnelSettingsR
   const store = new MockFunnelSettingsReader({
     channels: [channel("ch-1", "ops")],
   })
+  const idGenerator = new MemoryFunnelIdGenerator({ prefix: "prof" })
 
-  return { profiles: new FunnelProfiles({ store }), store }
+  return { profiles: new FunnelProfiles({ store, idGenerator }), store }
 }
 
 const sampleProfile = {
@@ -142,5 +144,45 @@ describe("FunnelProfiles", () => {
         .map((p) => p.name)
         .sort(),
     ).toEqual(["b", "c"])
+  })
+
+  test("add mints a stable id distinct from the name", () => {
+    const { profiles } = buildProfiles()
+    profiles.add({ ...sampleProfile })
+
+    const added = profiles.get("default")
+
+    expect(added?.id).toBeTruthy()
+    expect(added?.id).not.toEqual(added?.name)
+    expect(profiles.getById(added!.id)?.name).toBe("default")
+  })
+
+  test("rename keeps the id so id-keyed state survives", () => {
+    const { profiles } = buildProfiles()
+    profiles.add({ ...sampleProfile, name: "a" })
+
+    const before = profiles.get("a")
+    profiles.rename("a", "renamed")
+
+    expect(profiles.get("renamed")?.id).toBe(before!.id)
+  })
+
+  test("session id round-trips by profile id and starts absent", () => {
+    const { profiles } = buildProfiles()
+    profiles.add({ ...sampleProfile })
+
+    const id = profiles.get("default")!.id
+
+    expect(profiles.getSessionId(id)).toBeNull()
+
+    profiles.setSessionId(id, "sess-xyz")
+
+    expect(profiles.getSessionId(id)).toBe("sess-xyz")
+  })
+
+  test("setSessionId throws for an unknown profile id", () => {
+    const { profiles } = buildProfiles()
+
+    expect(() => profiles.setSessionId("nope", "x")).toThrow(/not found/)
   })
 })

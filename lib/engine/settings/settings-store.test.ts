@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
+import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { SETTINGS_VERSION } from "@/engine/settings/settings-schema"
 import { FunnelSettingsStore } from "@/engine/settings/settings-store"
 
@@ -83,5 +84,52 @@ describe("FunnelSettingsStore", () => {
     const store = new FunnelSettingsStore({ path: PATH, fs })
 
     expect(() => store.read()).toThrow(/legacy settings\.json detected/)
+  })
+
+  test("backfills an id for a profile written before ids existed", () => {
+    const fs = new MemoryFunnelFileSystem()
+
+    fs.mkdirSync("/funnel", { recursive: true })
+    fs.writeFileSync(
+      PATH,
+      JSON.stringify({
+        version: SETTINGS_VERSION,
+        channels: [{ id: "ch-1", name: "ops", delivery: "fanout", connectors: [] }],
+        profiles: [{ name: "dev", path: "/repo", channelId: "ch-1" }],
+      }),
+    )
+
+    const store = new FunnelSettingsStore({
+      path: PATH,
+      fs,
+      idGenerator: new MemoryFunnelIdGenerator({ prefix: "prof" }),
+    })
+
+    const loaded = store.read()
+
+    expect(loaded.profiles[0]?.id).toBe("prof-1")
+    expect(loaded.profiles[0]?.name).toBe("dev")
+  })
+
+  test("preserves an existing profile id rather than reassigning it", () => {
+    const fs = new MemoryFunnelFileSystem()
+
+    fs.mkdirSync("/funnel", { recursive: true })
+    fs.writeFileSync(
+      PATH,
+      JSON.stringify({
+        version: SETTINGS_VERSION,
+        channels: [{ id: "ch-1", name: "ops", delivery: "fanout", connectors: [] }],
+        profiles: [{ id: "keep-me", name: "dev", path: "/repo", channelId: "ch-1" }],
+      }),
+    )
+
+    const store = new FunnelSettingsStore({
+      path: PATH,
+      fs,
+      idGenerator: new MemoryFunnelIdGenerator({ prefix: "prof" }),
+    })
+
+    expect(store.read().profiles[0]?.id).toBe("keep-me")
   })
 })

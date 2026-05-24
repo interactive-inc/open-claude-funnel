@@ -40,7 +40,7 @@ Channel — a named subscription box (transport only). Holds one or more connect
 
 Connector — a single attachment from a channel to an external source. Four types ship today: `slack`, `gh`, `discord`, `schedule`. The first three are bidirectional (events in, replies out); `schedule` is one-way (cron ticks in).
 
-Profile sits on top of that model as a launch convenience, not part of it — you never need one to run an agent (`fnl claude --channel <name>` is enough). It is a saved launch preset bundling `{ path, channelId, options, env, resume }` so `fnl claude --profile cto` reproduces a known setup: which directory to launch from, which channel to bind, and the launch recipe (args prepended to the claude argv, env layered under the process, session reuse). The first profile in the list is the default. Because a profile already binds a channel, `--profile` and `--channel` cannot be combined.
+Profile sits on top of that model as a launch convenience, not part of it — you never need one to run an agent (`fnl claude --channel <name>` is enough). It is a saved launch preset bundling `{ path, channelId, options, env, resume }` so `fnl claude --profile cto` reproduces a known setup: which directory to launch from, which channel to bind, and the launch recipe (args prepended to the claude argv, env layered under the process, session reuse). A profile carries a stable uuid `id` (the unit the PID file and the resumable session key off, so renaming it strands neither); `name` is just the handle you type. The first profile in the list is the default. Because a profile already binds a channel, `--profile` and `--channel` cannot be combined.
 
 The daemon is where all external connections live. It runs on port 9742, supervises connectors with auto-restart, broadcasts events to subscribed agent sessions over WebSocket, and serves the reply API that MCP calls. Starting or stopping an agent never starts or stops external connections.
 
@@ -263,10 +263,13 @@ Connector  =
   | { type: "discord",  name, botToken }                Discord Gateway
   | { type: "schedule", name, entries[] }               cron-driven; entries = { id, cron, prompt, enabled?, catchupPolicy? }
 
-Profile    = { name, path, channelId, options[], env, resume }
+Profile    = { id, name, path, channelId, options[], env, resume, sessionId? }
         named launch preset: where to launch (path), which channel to bind, and the launch recipe —
         options[] prepends to the claude argv, env layers under the process (process.env wins on
-        collision), resume toggles session reuse. the first profile is the default.
+        collision), resume toggles session reuse. the first profile is the default. id is a stable
+        uuid (the key the PID file and resumable session hang off, so a rename strands neither);
+        name is the CLI handle. sessionId is execution state, not config — the claude session this
+        profile last launched, written by the launcher and read back on the next resume.
 
 LocalConfig = { channels: ChannelSpec[], profiles?: ProfileSpec[] }
         per-repo file (funnel.json). channels[] required; first entry is default, --channel selects.
@@ -295,7 +298,7 @@ Persistent state lives under `~/.funnel/`. Volatile logs and the event log live 
 ├── gateway.pid                                         daemon PID
 ├── gateway.token                                       Bearer token for daemon HTTP / WS
 ├── claude/
-│   └── <profile>.pid                                   prevents double-launch of the same profile
+│   └── <profile-id>.pid                                prevents double-launch of the same profile (keyed by profile id)
 └── channels/
     └── <channel-id>/
         └── connectors/

@@ -2,6 +2,8 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
+import { FunnelIdGenerator } from "@/engine/id/id-generator"
+import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { SETTINGS_VERSION, settingsSchema } from "@/engine/settings/settings-schema"
 import type { Settings } from "@/engine/settings/settings-schema"
@@ -12,18 +14,22 @@ export const SETTINGS_PATH = join(FUNNEL_DIR, "settings.json")
 type Deps = {
   path?: string
   fs?: FunnelFileSystem
+  idGenerator?: FunnelIdGenerator
 }
 
 const defaultFs = new NodeFunnelFileSystem()
+const defaultIdGenerator = new NodeFunnelIdGenerator()
 
 export class FunnelSettingsStore extends FunnelSettingsReader {
   private readonly path: string
   private readonly fs: FunnelFileSystem
+  private readonly idGenerator: FunnelIdGenerator
 
   constructor(deps: Deps = {}) {
     super()
     this.path = deps.path ?? SETTINGS_PATH
     this.fs = deps.fs ?? defaultFs
+    this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     Object.freeze(this)
   }
 
@@ -55,6 +61,8 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
         `unsupported settings.json version (${this.path}): expected ${SETTINGS_VERSION}, got ${String(parsed.version)}`,
       )
     }
+
+    this.backfillProfileIds(parsed)
 
     const result = settingsSchema.safeParse(parsed)
 
@@ -100,6 +108,28 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
     }
 
     return false
+  }
+
+  /**
+   * Non-destructive migration for profiles written before `id` existed. The id
+   * is a later addition to an otherwise-compatible schema, so rather than
+   * rejecting the file we mint a uuid for each profile that lacks one; the next
+   * `write` persists it. Mutates `parsed` in place (it is freshly JSON-parsed
+   * and discarded after the schema parse, so no shared state is touched).
+   */
+  private backfillProfileIds(parsed: unknown): void {
+    if (!parsed || typeof parsed !== "object") return
+
+    const obj = parsed as Record<string, unknown>
+
+    if (!Array.isArray(obj.profiles)) return
+
+    for (const profile of obj.profiles) {
+      if (!profile || typeof profile !== "object") continue
+      const p = profile as Record<string, unknown>
+
+      if (typeof p.id !== "string") p.id = this.idGenerator.generate()
+    }
   }
 
   write(settings: Settings): void {

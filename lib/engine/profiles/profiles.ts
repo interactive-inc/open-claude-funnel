@@ -1,8 +1,10 @@
+import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import type { ProfileConfig } from "@/engine/settings/settings-schema"
 
 type Deps = {
   store: FunnelSettingsReader
+  idGenerator: FunnelIdGenerator
 }
 
 /**
@@ -12,17 +14,23 @@ type Deps = {
  * process, `resume` toggling session reuse). Implements ProfileChannelChecker
  * so FunnelChannels can refuse to remove a channel that is still referenced.
  *
- * The first entry in the persisted array is treated as the default profile;
- * `asDefault` reorders the array to put a named profile first.
+ * Each profile has a stable `id` (uuid) minted at `add`. That id is the unit
+ * everything internal keys on — the PID file, the resumable session id — so a
+ * rename never strands either. `name` is purely the CLI/TUI handle; the CRUD
+ * methods here take it because that is what the user types, but resolve to the
+ * id before touching id-keyed state. The first array entry is the default
+ * profile; `asDefault` reorders to put one first.
  *
  * `channelId` always stores the channel's stable id (uuid). CLI surfaces
  * resolve channel name → id before calling `add`/`update` here.
  */
 export class FunnelProfiles {
   private readonly store: FunnelSettingsReader
+  private readonly idGenerator: FunnelIdGenerator
 
   constructor(deps: Deps) {
     this.store = deps.store
+    this.idGenerator = deps.idGenerator
     Object.freeze(this)
   }
 
@@ -32,6 +40,10 @@ export class FunnelProfiles {
 
   get(name: string): ProfileConfig | null {
     return this.list().find((p) => p.name === name) ?? null
+  }
+
+  getById(id: string): ProfileConfig | null {
+    return this.list().find((p) => p.id === id) ?? null
   }
 
   getDefault(): ProfileConfig | null {
@@ -57,6 +69,7 @@ export class FunnelProfiles {
     }
 
     settings.profiles.push({
+      id: this.idGenerator.generate(),
       name: input.name,
       path: input.path,
       channelId: input.channelId,
@@ -116,6 +129,24 @@ export class FunnelProfiles {
 
   hasChannelRef(channelId: string): boolean {
     return this.store.read().profiles.some((p) => p.channelId === channelId)
+  }
+
+  /** Resumable claude session id last launched by this profile (by id), or null. */
+  getSessionId(id: string): string | null {
+    return this.getById(id)?.sessionId ?? null
+  }
+
+  /** Records the claude session id this profile launched, overwriting any prior one. */
+  setSessionId(id: string, sessionId: string): void {
+    const settings = this.store.read()
+
+    const profile = settings.profiles.find((p) => p.id === id)
+
+    if (!profile) throw new Error(`profile id "${id}" not found`)
+
+    profile.sessionId = sessionId
+
+    this.store.write(settings)
   }
 
   update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {

@@ -24,7 +24,6 @@ import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runne
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
-import { FunnelSessions } from "@/engine/sessions/sessions"
 import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prompter"
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
@@ -114,7 +113,6 @@ export class Funnel {
     factory?: FunnelConnectorFactory
     channels?: FunnelChannels
     profiles?: FunnelProfiles
-    sessions?: FunnelSessions
     localConfig?: FunnelLocalConfig
     localConfigSync?: FunnelLocalConfigSync
     dotenv?: FunnelDotenvReader
@@ -208,6 +206,7 @@ export class Funnel {
         new FunnelSettingsStore({
           path: this.paths.settings,
           fs: this.fs,
+          idGenerator: this.idGenerator,
         })
     }
 
@@ -247,22 +246,11 @@ export class Funnel {
 
   /** Launch profiles (named presets for `fnl claude`: path + sub-agent + channel id). */
   get profiles(): FunnelProfiles {
-    if (!this.memos.profiles) this.memos.profiles = new FunnelProfiles({ store: this.store })
-
-    return this.memos.profiles
-  }
-
-  /** Per-(channel, cwd) claude session-id store. Backs `--session-id` injection on launch. */
-  get sessions(): FunnelSessions {
-    if (!this.memos.sessions) {
-      this.memos.sessions = new FunnelSessions({
-        fs: this.fs,
-        idGenerator: this.idGenerator,
-        dir: this.paths.dir,
-      })
+    if (!this.memos.profiles) {
+      this.memos.profiles = new FunnelProfiles({ store: this.store, idGenerator: this.idGenerator })
     }
 
-    return this.memos.sessions
+    return this.memos.profiles
   }
 
   /** Reads `funnel.json` from a cwd. `fnl claude` consults it before falling back to the default profile. */
@@ -317,9 +305,10 @@ export class Funnel {
         channels: this.channels,
         mcp: this.mcp,
         gateway: this.gateway,
-        sessions: this.sessions,
+        profiles: this.profiles,
         fs: this.fs,
         process: this.process,
+        idGenerator: this.idGenerator,
         logger: this.logger,
         dir: this.paths.dir,
       })

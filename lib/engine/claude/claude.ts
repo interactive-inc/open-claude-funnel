@@ -4,25 +4,30 @@ import type { FunnelChannels } from "@/engine/channels/channels"
 import type { GatewayController } from "@/engine/claude/gateway-controller"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
+import { FunnelIdGenerator } from "@/engine/id/id-generator"
+import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
-import type { FunnelSessions } from "@/engine/sessions/sessions"
+import type { FunnelProfiles } from "@/engine/profiles/profiles"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 
 export type LaunchOptions = {
   channel: string
   cwd?: string
   userArgs?: string[]
-  profileName?: string
+  /** Stable id of the launching profile (uuid). Keys the singleton PID file and
+   *  the resumable session. Absent for a profile-less launch (raw `--channel`),
+   *  which never enforces singleton-ness and never resumes. */
+  profileId?: string
   /** Args prepended to the claude argv (typically a profile's recipe). Defaults to none. */
   options?: string[]
   /** Env vars layered under the launched claude process. process.env wins on collision. */
   env?: Record<string, string>
-  /** Whether to inject a `--session-id`/`--resume` for this (channel, profile).
-   *  Defaults to false: resuming is opt-in and only meaningful for a named
-   *  profile, since the persisted session is keyed by profile name. A launch
+  /** Whether to inject a `--session-id`/`--resume` for this profile.
+   *  Defaults to false: resuming is opt-in and only meaningful for a profile,
+   *  since the persisted session is owned by the profile (by id). A launch
    *  without a profile always starts a fresh session regardless of this flag. */
   resume?: boolean
   /** Invoked synchronously after the child claude process has been spawned, with its PID.
@@ -41,15 +46,17 @@ type Deps = {
   channels: FunnelChannels
   mcp: FunnelMcp
   gateway: GatewayController
-  sessions: FunnelSessions
+  profiles: FunnelProfiles
   process?: FunnelProcessRunner
   fs?: FunnelFileSystem
+  idGenerator?: FunnelIdGenerator
   logger?: FunnelLogger
   dir?: string
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
 const defaultFs = new NodeFunnelFileSystem()
+const defaultIdGenerator = new NodeFunnelIdGenerator()
 
 /**
  * Launches Claude Code with funnel pre-wired: ensures the gateway is running,
@@ -61,9 +68,10 @@ export class FunnelClaude {
   private readonly channels: FunnelChannels
   private readonly mcp: FunnelMcp
   private readonly gateway: GatewayController
-  private readonly sessions: FunnelSessions
+  private readonly profiles: FunnelProfiles
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
+  private readonly idGenerator: FunnelIdGenerator
   private readonly logger: FunnelLogger | undefined
   private readonly pidDir: string
 
@@ -71,9 +79,10 @@ export class FunnelClaude {
     this.channels = deps.channels
     this.mcp = deps.mcp
     this.gateway = deps.gateway
-    this.sessions = deps.sessions
+    this.profiles = deps.profiles
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
+    this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     this.logger = deps.logger
     this.pidDir = join(deps.dir ?? FUNNEL_DIR, "claude")
     Object.freeze(this)
@@ -86,8 +95,8 @@ export class FunnelClaude {
       throw new Error(`channel "${options.channel}" not found`)
     }
 
-    if (options.profileName && this.isRunning(options.profileName)) {
-      throw new Error(`profile "${options.profileName}" is already running`)
+    if (options.profileId && this.isRunning(options.profileId)) {
+      throw new Error(`profile "${options.profileId}" is already running`)
     }
 
     const cwd = options.cwd ?? globalThis.process.cwd()
@@ -104,17 +113,16 @@ export class FunnelClaude {
       await this.gateway.start()
     }
 
-    if (options.profileName) {
-      this.writePidFile(options.profileName)
-      this.installCleanup(options.profileName)
+    if (options.profileId) {
+      this.writePidFile(options.profileId)
+      this.installCleanup(options.profileId)
     }
 
     const resume = options.resume ?? false
     const session =
-      resume && options.profileName
+      resume && options.profileId
         ? this.resolveSession(
-            channel.id,
-            options.profileName,
+            options.profileId,
             cwd,
             options.userArgs ?? [],
             options.env ?? {},
@@ -136,24 +144,24 @@ export class FunnelClaude {
         onSpawned: options.onSpawned,
       })
     } finally {
-      if (options.profileName) this.removePidFile(options.profileName)
+      if (options.profileId) this.removePidFile(options.profileId)
     }
   }
 
-  isRunning(profileName: string): boolean {
-    const pid = this.readPid(profileName)
+  isRunning(profileId: string): boolean {
+    const pid = this.readPid(profileId)
 
     if (!pid) return false
 
     return this.isProcessAlive(pid)
   }
 
-  private pidPath(profileName: string): string {
-    return join(this.pidDir, `${profileName}.pid`)
+  private pidPath(profileId: string): string {
+    return join(this.pidDir, `${profileId}.pid`)
   }
 
-  private readPid(profileName: string): number | null {
-    const path = this.pidPath(profileName)
+  private readPid(profileId: string): number | null {
+    const path = this.pidPath(profileId)
 
     if (!this.fs.existsSync(path)) return null
 
@@ -169,24 +177,24 @@ export class FunnelClaude {
     }
   }
 
-  private writePidFile(profileName: string): void {
+  private writePidFile(profileId: string): void {
     this.fs.mkdirSync(this.pidDir, { recursive: true })
-    this.fs.writeFileSync(this.pidPath(profileName), String(globalThis.process.pid))
+    this.fs.writeFileSync(this.pidPath(profileId), String(globalThis.process.pid))
   }
 
-  private removePidFile(profileName: string): void {
-    const path = this.pidPath(profileName)
+  private removePidFile(profileId: string): void {
+    const path = this.pidPath(profileId)
 
     if (this.fs.existsSync(path)) this.fs.unlink(path)
   }
 
-  private installCleanup(profileName: string): void {
+  private installCleanup(profileId: string): void {
     // Default Bun behavior on SIGINT/SIGTERM is process.exit(130/143), which
     // fires the "exit" event. Hooking only "exit" keeps the PID file cleanup
     // running while letting the signal terminate the process normally —
     // adding our own SIGINT handler would suppress the default exit and leave
     // funnel hanging until claude responds.
-    globalThis.process.once("exit", () => this.removePidFile(profileName))
+    globalThis.process.once("exit", () => this.removePidFile(profileId))
   }
 
   private isProcessAlive(pid: number): boolean {
@@ -230,21 +238,21 @@ export class FunnelClaude {
    * session-shaping flag, since combining them would either confuse claude
    * or override the explicit user intent.
    *
-   * The session is keyed by (channel, profile), not by cwd: two profiles
+   * The session is owned by the profile (by id), not by cwd: two profiles
    * pointing at the same repo each keep their own conversation, and a launch
    * with no profile never resumes — so an unrelated session in the same repo
-   * can't bleed in.
+   * can't bleed in. The channel never enters into it; sessions belong to the
+   * launch layer (profiles), keeping the transport layer ignorant of them.
    *
    * A persisted id is only resumed when its session jsonl still exists on
    * disk. claude errors out on `--resume <id>` for a missing conversation, and
    * a persisted id can outlive its jsonl (claude pruned it, or the very first
-   * launch was aborted after `create` wrote the id but before the jsonl
+   * launch was aborted after the id was written but before the jsonl
    * appeared). When the file is gone we mint a fresh session instead, which
    * overwrites the dangling entry — so the store self-heals.
    */
   private resolveSession(
-    channelId: string,
-    profileName: string,
+    profileId: string,
     cwd: string,
     userArgs: string[],
     recipeEnv: Record<string, string>,
@@ -255,13 +263,17 @@ export class FunnelClaude {
       if (arg === "--session-id" || arg.startsWith("--session-id=")) return null
     }
 
-    const existing = this.sessions.get(channelId, profileName)
+    const existing = this.profiles.getSessionId(profileId)
 
     if (existing !== null && this.sessionFileExists(cwd, existing, recipeEnv)) {
       return { id: existing, mode: "resume" }
     }
 
-    return { id: this.sessions.create(channelId, profileName), mode: "new" }
+    const fresh = this.idGenerator.generate()
+
+    this.profiles.setSessionId(profileId, fresh)
+
+    return { id: fresh, mode: "new" }
   }
 
   /**

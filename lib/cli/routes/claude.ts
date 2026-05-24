@@ -67,7 +67,10 @@ export const claudeHandler = factory.createHandlers(
         channel: profile.channelId,
         cwd: profile.path,
         userArgs,
-        profileName: profile.name,
+        profileId: profile.id,
+        options: profile.options,
+        env: profile.env,
+        resume: profile.resume,
       })
 
       process.exit(exitCode)
@@ -123,7 +126,10 @@ export const claudeHandler = factory.createHandlers(
       channel: defaultProfile.channelId,
       cwd: defaultProfile.path,
       userArgs,
-      profileName: defaultProfile.name,
+      profileId: defaultProfile.id,
+      options: defaultProfile.options,
+      env: defaultProfile.env,
+      resume: defaultProfile.resume,
     })
 
     process.exit(exitCode)
