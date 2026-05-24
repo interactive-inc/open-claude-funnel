@@ -118,12 +118,47 @@ describe("FunnelClaude", () => {
     expect(fs.existsSync("/work/.mcp.json")).toBe(false)
   })
 
-  test("first launch from a cwd injects --session-id with a freshly minted id", async () => {
+  test("launch omits session flags when resume is left unset (the default)", async () => {
+    // resume is opt-in now: a launch that doesn't ask for it starts fresh,
+    // even with a profile name, so unrelated sessions can never bleed in.
+    const { claude, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev" })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    expect(attach.command.includes("--session-id")).toBe(false)
+    expect(attach.command.includes("--resume")).toBe(false)
+  })
+
+  test("launch never resumes without a profile, even when resume is true", async () => {
+    // The session store is keyed by profile name; a profile-less launch has
+    // no key to resume under, so it always starts a fresh, unrecorded session.
     const { claude, channel, sessions, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work" })
+    await claude.launch({ channel: "ops", cwd: "/work", resume: true })
+
+    const attach = process.calls.find((c) => c.kind === "attach")
+
+    if (attach?.kind !== "attach") throw new Error("expected attach call")
+
+    expect(attach.command.includes("--session-id")).toBe(false)
+    expect(attach.command.includes("--resume")).toBe(false)
+    expect(sessions.get(channel.id, "dev")).toBeNull()
+  })
+
+  test("first launch of a profile injects --session-id with a freshly minted id", async () => {
+    const { claude, channel, sessions, fs, process } = buildClaude()
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -132,11 +167,11 @@ describe("FunnelClaude", () => {
     const idx = attach.command.indexOf("--session-id")
 
     expect(idx).toBeGreaterThan(0)
-    expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "/work") ?? undefined)
+    expect(attach.command[idx + 1]).toEqual(sessions.get(channel.id, "dev") ?? undefined)
     expect(attach.command.includes("--resume")).toBe(false)
   })
 
-  test("relaunching from the same cwd switches to --resume once the jsonl exists", async () => {
+  test("relaunching the same profile switches to --resume once the jsonl exists", async () => {
     // Regression for #1: claude's `--session-id` rejects ids whose jsonl
     // already exists, so the second launch has to use `--resume` instead.
     const { claude, channel, sessions, fs, process } = buildClaude()
@@ -144,15 +179,15 @@ describe("FunnelClaude", () => {
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", env })
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true, env })
 
-    const firstId = sessions.get(channel.id, "/work")
+    const firstId = sessions.get(channel.id, "dev")
 
     // Simulate claude writing the session jsonl after the first launch.
     fs.mkdirSync("/cfg/projects/-work", { recursive: true })
     fs.writeFileSync(`/cfg/projects/-work/${firstId}.jsonl`, "{}")
 
-    await claude.launch({ channel: "ops", cwd: "/work", env })
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true, env })
 
     const attaches = process.calls.filter((c) => c.kind === "attach")
 
@@ -171,7 +206,7 @@ describe("FunnelClaude", () => {
     const resumeIdx = attaches[1].command.indexOf("--resume")
     expect(resumeIdx).toBeGreaterThan(0)
     expect(attaches[1].command[resumeIdx + 1]).toEqual(firstId ?? undefined)
-    expect(sessions.get(channel.id, "/work")).toEqual(firstId)
+    expect(sessions.get(channel.id, "dev")).toEqual(firstId)
   })
 
   test("mints a fresh session when the persisted id has no jsonl on disk", async () => {
@@ -182,9 +217,9 @@ describe("FunnelClaude", () => {
     const env = { CLAUDE_CONFIG_DIR: "/cfg" }
 
     fs.mkdirSync("/work", { recursive: true })
-    const staleId = sessions.create(channel.id, "/work")
+    const staleId = sessions.create(channel.id, "dev")
 
-    await claude.launch({ channel: "ops", cwd: "/work", env })
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: true, env })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -197,17 +232,18 @@ describe("FunnelClaude", () => {
 
     const freshId = attach.command[sessionIdx + 1]
     expect(freshId).not.toEqual(staleId)
-    expect(sessions.get(channel.id, "/work") ?? undefined).toEqual(freshId)
+    expect(sessions.get(channel.id, "dev") ?? undefined).toEqual(freshId)
   })
 
-  test("launch uses distinct fresh session ids for different cwds", async () => {
+  test("two profiles in the same cwd keep distinct sessions", async () => {
+    // The whole point of keying by profile: launching different profiles from
+    // the same repo must not cross-resume into each other's conversation.
     const { claude, fs, process } = buildClaude()
 
-    fs.mkdirSync("/work-a", { recursive: true })
-    fs.mkdirSync("/work-b", { recursive: true })
+    fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work-a" })
-    await claude.launch({ channel: "ops", cwd: "/work-b" })
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "alpha", resume: true })
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "beta", resume: true })
 
     const attaches = process.calls.filter((c) => c.kind === "attach")
 
@@ -228,9 +264,9 @@ describe("FunnelClaude", () => {
     const { claude, channel, sessions, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
-    sessions.create(channel.id, "/work")
+    sessions.create(channel.id, "dev")
 
-    await claude.launch({ channel: "ops", cwd: "/work", resume: false })
+    await claude.launch({ channel: "ops", cwd: "/work", profileName: "dev", resume: false })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -246,7 +282,13 @@ describe("FunnelClaude", () => {
 
       fs.mkdirSync("/work", { recursive: true })
 
-      await claude.launch({ channel: "ops", cwd: "/work", userArgs: [flag] })
+      await claude.launch({
+        channel: "ops",
+        cwd: "/work",
+        profileName: "dev",
+        resume: true,
+        userArgs: [flag],
+      })
 
       const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -264,7 +306,13 @@ describe("FunnelClaude", () => {
 
       fs.mkdirSync("/work", { recursive: true })
 
-      await claude.launch({ channel: "ops", cwd: "/work", userArgs: [userArg] })
+      await claude.launch({
+        channel: "ops",
+        cwd: "/work",
+        profileName: "dev",
+        resume: true,
+        userArgs: [userArg],
+      })
 
       const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -284,7 +332,13 @@ describe("FunnelClaude", () => {
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", userArgs: ["--resume", "abc"] })
+    await claude.launch({
+      channel: "ops",
+      cwd: "/work",
+      profileName: "dev",
+      resume: true,
+      userArgs: ["--resume", "abc"],
+    })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 
@@ -306,7 +360,13 @@ describe("FunnelClaude", () => {
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", userArgs: ["--session-id", "fixed"] })
+    await claude.launch({
+      channel: "ops",
+      cwd: "/work",
+      profileName: "dev",
+      resume: true,
+      userArgs: ["--session-id", "fixed"],
+    })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 

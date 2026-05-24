@@ -15,43 +15,43 @@ describe("FunnelSessions", () => {
   test("get returns null when no session has been recorded", () => {
     const { sessions } = buildSessions()
 
-    expect(sessions.get("ch1", "/repo")).toBeNull()
+    expect(sessions.get("ch1", "dev")).toBeNull()
   })
 
   test("create generates and persists a new session id", () => {
     const { sessions, fs } = buildSessions()
 
-    const id = sessions.create("ch1", "/repo")
+    const id = sessions.create("ch1", "dev")
 
     expect(id).toEqual("sess-1")
     expect(fs.existsSync("/funnel/channels/ch1/sessions.json")).toBe(true)
-    expect(sessions.get("ch1", "/repo")).toEqual(id)
+    expect(sessions.get("ch1", "dev")).toEqual(id)
   })
 
   test("create overwrites a prior entry so each call yields a fresh id", () => {
     const { sessions } = buildSessions()
 
-    const first = sessions.create("ch1", "/repo")
-    const second = sessions.create("ch1", "/repo")
+    const first = sessions.create("ch1", "dev")
+    const second = sessions.create("ch1", "dev")
 
     expect(second).not.toEqual(first)
-    expect(sessions.get("ch1", "/repo")).toEqual(second)
+    expect(sessions.get("ch1", "dev")).toEqual(second)
   })
 
-  test("create uses distinct ids for different cwds under the same channel", () => {
+  test("create uses distinct ids for different profiles under the same channel", () => {
     const { sessions } = buildSessions()
 
-    const a = sessions.create("ch1", "/repo-a")
-    const b = sessions.create("ch1", "/repo-b")
+    const a = sessions.create("ch1", "alpha")
+    const b = sessions.create("ch1", "beta")
 
     expect(a).not.toEqual(b)
   })
 
-  test("create uses distinct ids for different channels under the same cwd", () => {
+  test("create uses distinct ids for different channels under the same profile", () => {
     const { sessions } = buildSessions()
 
-    const a = sessions.create("ch1", "/repo")
-    const b = sessions.create("ch2", "/repo")
+    const a = sessions.create("ch1", "dev")
+    const b = sessions.create("ch2", "dev")
 
     expect(a).not.toEqual(b)
   })
@@ -59,16 +59,16 @@ describe("FunnelSessions", () => {
   test("clear drops the entry so the next get returns null", () => {
     const { sessions } = buildSessions()
 
-    sessions.create("ch1", "/repo")
-    sessions.clear("ch1", "/repo")
+    sessions.create("ch1", "dev")
+    sessions.clear("ch1", "dev")
 
-    expect(sessions.get("ch1", "/repo")).toBeNull()
+    expect(sessions.get("ch1", "dev")).toBeNull()
   })
 
   test("clearAll removes the channel's session file entirely", () => {
     const { sessions, fs } = buildSessions()
 
-    sessions.create("ch1", "/repo")
+    sessions.create("ch1", "dev")
     sessions.clearAll("ch1")
 
     expect(fs.existsSync("/funnel/channels/ch1/sessions.json")).toBe(false)
@@ -80,7 +80,7 @@ describe("FunnelSessions", () => {
     fs.mkdirSync("/funnel/channels/ch1", { recursive: true })
     fs.writeFileSync("/funnel/channels/ch1/sessions.json", "not json")
 
-    const id = sessions.create("ch1", "/repo")
+    const id = sessions.create("ch1", "dev")
 
     expect(id).toEqual("sess-1")
   })

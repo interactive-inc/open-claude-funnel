@@ -14,12 +14,14 @@ const sessionsMapSchema = z.record(z.string(), z.string())
 type SessionsMap = z.infer<typeof sessionsMapSchema>
 
 /**
- * Per-channel persistent Claude Code session IDs, keyed by the cwd the
- * channel was launched from. The whole point is to give each (channel, cwd)
- * its own stable conversation: relaunching from the same path resumes the
- * previous claude session via `--resume <uuid>`, while a different cwd (or
- * a different channel) gets an independent one — so sessions never silently
- * bleed across workspaces the way claude's `-c` does.
+ * Per-channel persistent Claude Code session IDs, keyed by the profile name
+ * the channel was launched under. The whole point is to give each
+ * (channel, profile) its own stable conversation: relaunching the same
+ * profile resumes its previous claude session via `--resume <uuid>`, while a
+ * different profile (even one pointing at the same repo) gets an independent
+ * one — so sessions never silently bleed across unrelated work the way
+ * claude's `-c` does. A launch with no profile is never recorded here and
+ * always starts fresh.
  *
  * `get` and `create` are intentionally separate: claude's `--session-id`
  * only accepts a fresh UUID (it errors if the session jsonl already
@@ -28,7 +30,7 @@ type SessionsMap = z.infer<typeof sessionsMapSchema>
  *
  * Storage lives under `<dir>/channels/<channel-id>/sessions.json` (channel
  * id, not name, so renames don't lose history). The file is a flat
- * `{ cwd: uuid }` map; the channel directory itself is created lazily.
+ * `{ profileName: uuid }` map; the channel directory itself is created lazily.
  */
 export class FunnelSessions {
   private readonly fs: FunnelFileSystem
@@ -42,29 +44,29 @@ export class FunnelSessions {
     Object.freeze(this)
   }
 
-  /** Returns the existing session id for (channelId, cwd) or null. */
-  get(channelId: string, cwd: string): string | null {
-    return this.readMap(channelId)[cwd] ?? null
+  /** Returns the existing session id for (channelId, profileName) or null. */
+  get(channelId: string, profileName: string): string | null {
+    return this.readMap(channelId)[profileName] ?? null
   }
 
-  /** Generates a new session id for (channelId, cwd) and persists it, overwriting any prior entry. */
-  create(channelId: string, cwd: string): string {
+  /** Generates a new session id for (channelId, profileName) and persists it, overwriting any prior entry. */
+  create(channelId: string, profileName: string): string {
     const map = this.readMap(channelId)
     const sessionId = this.idGenerator.generate()
 
-    map[cwd] = sessionId
+    map[profileName] = sessionId
     this.writeMap(channelId, map)
 
     return sessionId
   }
 
-  /** Drops the recorded session id for (channelId, cwd). No-op if absent. */
-  clear(channelId: string, cwd: string): void {
+  /** Drops the recorded session id for (channelId, profileName). No-op if absent. */
+  clear(channelId: string, profileName: string): void {
     const map = this.readMap(channelId)
 
-    if (!(cwd in map)) return
+    if (!(profileName in map)) return
 
-    delete map[cwd]
+    delete map[profileName]
     this.writeMap(channelId, map)
   }
 

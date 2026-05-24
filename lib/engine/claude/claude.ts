@@ -20,7 +20,10 @@ export type LaunchOptions = {
   options?: string[]
   /** Env vars layered under the launched claude process. process.env wins on collision. */
   env?: Record<string, string>
-  /** Whether to inject a `--session-id`/`--resume` for the (channel, cwd). Defaults to true. */
+  /** Whether to inject a `--session-id`/`--resume` for this (channel, profile).
+   *  Defaults to false: resuming is opt-in and only meaningful for a named
+   *  profile, since the persisted session is keyed by profile name. A launch
+   *  without a profile always starts a fresh session regardless of this flag. */
   resume?: boolean
   /** Invoked synchronously after the child claude process has been spawned, with its PID.
    *  Useful for hosts that need to register the spawned process before it exits
@@ -106,10 +109,17 @@ export class FunnelClaude {
       this.installCleanup(options.profileName)
     }
 
-    const resume = options.resume ?? true
-    const session = resume
-      ? this.resolveSession(channel.id, cwd, options.userArgs ?? [], options.env ?? {})
-      : null
+    const resume = options.resume ?? false
+    const session =
+      resume && options.profileName
+        ? this.resolveSession(
+            channel.id,
+            options.profileName,
+            cwd,
+            options.userArgs ?? [],
+            options.env ?? {},
+          )
+        : null
     const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
     const env = this.buildEnv(channel.id, options.env ?? {})
 
@@ -220,6 +230,11 @@ export class FunnelClaude {
    * session-shaping flag, since combining them would either confuse claude
    * or override the explicit user intent.
    *
+   * The session is keyed by (channel, profile), not by cwd: two profiles
+   * pointing at the same repo each keep their own conversation, and a launch
+   * with no profile never resumes — so an unrelated session in the same repo
+   * can't bleed in.
+   *
    * A persisted id is only resumed when its session jsonl still exists on
    * disk. claude errors out on `--resume <id>` for a missing conversation, and
    * a persisted id can outlive its jsonl (claude pruned it, or the very first
@@ -229,6 +244,7 @@ export class FunnelClaude {
    */
   private resolveSession(
     channelId: string,
+    profileName: string,
     cwd: string,
     userArgs: string[],
     recipeEnv: Record<string, string>,
@@ -239,13 +255,13 @@ export class FunnelClaude {
       if (arg === "--session-id" || arg.startsWith("--session-id=")) return null
     }
 
-    const existing = this.sessions.get(channelId, cwd)
+    const existing = this.sessions.get(channelId, profileName)
 
     if (existing !== null && this.sessionFileExists(cwd, existing, recipeEnv)) {
       return { id: existing, mode: "resume" }
     }
 
-    return { id: this.sessions.create(channelId, cwd), mode: "new" }
+    return { id: this.sessions.create(channelId, profileName), mode: "new" }
   }
 
   /**
