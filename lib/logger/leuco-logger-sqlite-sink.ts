@@ -38,6 +38,13 @@ type GetRecordsProps<I extends ReadonlyArray<string>> = {
   where?: Partial<IndexValues<I>>
   /** Maximum rows returned. Default 1000. */
   limit?: number
+  /**
+   * Which end of the seq range to take when `limit` clips the result.
+   * "asc" (default) returns the oldest matching rows; "desc" returns the
+   * newest. Rows are always sorted ascending by seq before returning, so the
+   * caller sees a chronological slice either way — "desc" just picks the tail.
+   */
+  order?: "asc" | "desc"
 }
 
 type EventRow = {
@@ -232,9 +239,17 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     const limit = props.limit ?? 1000
     params.push(limit)
 
-    const sql = `SELECT seq, ts, type, event FROM leuco_log WHERE ${conditions.join(" AND ")} ORDER BY seq ASC LIMIT ?`
+    // "desc" selects the newest `limit` rows at the DB; we then re-sort them
+    // ascending in JS so the returned slice is always chronological regardless
+    // of which end the limit clipped.
+    const dir = props.order === "desc" ? "DESC" : "ASC"
+    const sql = `SELECT seq, ts, type, event FROM leuco_log WHERE ${conditions.join(" AND ")} ORDER BY seq ${dir} LIMIT ?`
     const stmt = this.db.prepare<EventRow, SQLQueryBindings[]>(sql)
-    return stmt.all(...params).map(toRecord<E>)
+    const rows = stmt.all(...params)
+
+    if (dir === "DESC") rows.reverse()
+
+    return rows.map(toRecord<E>)
   }
 
   /**

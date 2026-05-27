@@ -8,12 +8,14 @@ describe("FunnelSlackEventProcessor", () => {
     const result = make().process({ type: "reaction_added" })
 
     expect(result.skip).toBe(true)
+    if (result.skip) expect(result.reason).toBe("skip:type")
   })
 
   test("skips disallowed subtypes", () => {
     const result = make().process({ type: "message", subtype: "channel_join" })
 
     expect(result.skip).toBe(true)
+    if (result.skip) expect(result.reason).toBe("skip:subtype")
   })
 
   test("skips messages from self", () => {
@@ -25,6 +27,7 @@ describe("FunnelSlackEventProcessor", () => {
     })
 
     expect(result.skip).toBe(true)
+    if (result.skip) expect(result.reason).toBe("skip:self-user")
   })
 
   test("emits on regular messages", () => {
@@ -66,7 +69,9 @@ describe("FunnelSlackEventProcessor", () => {
     const event = { type: "message", user: "UOTHER", channel: "C1", ts: "1.0", text: "a" }
 
     expect(p.process(event).skip).toBe(false)
-    expect(p.process(event).skip).toBe(true)
+    const second = p.process(event)
+    expect(second.skip).toBe(true)
+    if (second.skip) expect(second.reason).toBe("skip:dedup")
   })
 
   test("minifies content by default", () => {

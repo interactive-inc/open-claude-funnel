@@ -19,7 +19,8 @@ subcommands:
   stop                stop
   restart             stop then start
   run                 start in foreground (for developers)
-  logs [-n <N>]       show event logs
+  logs [-n <N>]       tail the daemon diagnostic log (lifecycle, listener boot)
+  sql --query "<SQL>" query inbound connector traffic (raw + processed verdict)
   listeners           list running connector listeners (alive / dead)
 
 examples:

@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { FunnelSlackListener } from "@/connectors/slack-listener"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 import type { SlackRawEvent } from "@/connectors/slack-event-processor"
+import { MemoryConnectorDiagnosticLog } from "@/gateway/memory-connector-diagnostic-log"
 
 const hoisted = {
   middlewareHandlers: [] as ((args: unknown) => Promise<void>)[],
   mockApp: null as MockApp | null,
   appConstructorCalls: 0,
+  // When set, the next-constructed FakeApp's auth.test rejects with this.
+  authError: null as Error | null,
 }
 
 type MockApp = {
@@ -29,7 +32,13 @@ mock.module("@slack/bolt", () => {
     start: ReturnType<typeof mock>
     stop: ReturnType<typeof mock>
     client = {
-      auth: { test: mock(() => Promise.resolve({ user_id: "U_BOT", bot_id: "B_BOT" })) },
+      auth: {
+        test: mock(() =>
+          hoisted.authError
+            ? Promise.reject(hoisted.authError)
+            : Promise.resolve({ user_id: "U_BOT", bot_id: "B_BOT" }),
+        ),
+      },
       reactions: { add: mock(() => Promise.resolve({ ok: true })) },
     }
 
@@ -65,11 +74,13 @@ beforeEach(() => {
   hoisted.middlewareHandlers.length = 0
   hoisted.mockApp = null
   hoisted.appConstructorCalls = 0
+  hoisted.authError = null
 })
 
 afterEach(() => {
   hoisted.middlewareHandlers.length = 0
   hoisted.mockApp = null
+  hoisted.authError = null
 })
 
 describe("FunnelSlackListener.onAppCreated", () => {
@@ -297,5 +308,153 @@ describe("FunnelSlackListener: backwards compatibility", () => {
 
     expect(hoisted.appConstructorCalls).toBe(1)
     expect(hoisted.mockApp?.start.mock.calls.length).toBe(1)
+  })
+
+  test("records nothing when no diagnosticLog is injected (no-op)", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+
+    // Just exercising the path; absence of a throw is the assertion.
+    await hoisted.middlewareHandlers[0]?.({
+      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+    })
+  })
+})
+
+describe("FunnelSlackListener: diagnostic log", () => {
+  test("records a raw row and an emitted processed row for a delivered event", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      channelId: "ch-uuid-1",
+      diagnosticLog,
+    })
+
+    await listener.start(async () => {})
+    await hoisted.middlewareHandlers[0]?.({
+      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+    })
+
+    const raws = diagnosticLog.queryRaw({})
+    expect(raws).toHaveLength(1)
+    expect(raws[0]?.type).toBe("slack")
+    expect(raws[0]?.connectorId).toBe("co-1")
+    expect(raws[0]?.channelId).toBe("ch-uuid-1")
+    expect(JSON.parse(raws[0]?.payload ?? "").channel).toBe("C1")
+
+    const processed = diagnosticLog.queryProcessed({})
+    expect(processed).toHaveLength(1)
+    expect(processed[0]?.outcome).toBe("emitted")
+    // The raw row and its processed verdict carry the same correlation id.
+    expect(processed[0]?.eventId).toBe(raws[0]?.eventId ?? "")
+  })
+
+  test("records the raw event but a skip outcome when the processor drops it", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(async () => {})
+    // reaction_added is not in ALLOWED_EVENTS — dropped at the type gate.
+    await hoisted.middlewareHandlers[0]?.({
+      event: { type: "reaction_added", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL" },
+    })
+
+    // The raw event is still captured even though no notification fired.
+    expect(diagnosticLog.queryRaw({})).toHaveLength(1)
+    expect(diagnosticLog.queryProcessed({ outcome: "skip:type" })).toHaveLength(1)
+  })
+
+  test("records a dedup skip on the second identical event", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+    const event = {
+      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+    }
+
+    await listener.start(async () => {})
+    await hoisted.middlewareHandlers[0]?.(event)
+    await hoisted.middlewareHandlers[0]?.(event)
+
+    expect(diagnosticLog.queryRaw({})).toHaveLength(2)
+    expect(diagnosticLog.queryProcessed({ outcome: "emitted" })).toHaveLength(1)
+    expect(diagnosticLog.queryProcessed({ outcome: "skip:dedup" })).toHaveLength(1)
+  })
+
+  test("records emitted:delivery-failed (not emitted) when notify throws", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const notify = mock(async () => {
+      throw new Error("delivery failed")
+    })
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(notify)
+    await expect(
+      hoisted.middlewareHandlers[0]?.({
+        event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+      }),
+    ).rejects.toThrow("delivery failed")
+
+    // The verdict reflects the failed delivery, not a false "emitted".
+    expect(diagnosticLog.queryProcessed({ outcome: "emitted" })).toHaveLength(0)
+    expect(diagnosticLog.queryProcessed({ outcome: "emitted:delivery-failed" })).toHaveLength(1)
+  })
+
+  test("records a preprocess skip when preprocessEvent drops the event", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      diagnosticLog,
+      preprocessEvent: () => null,
+    })
+
+    await listener.start(async () => {})
+    await hoisted.middlewareHandlers[0]?.({
+      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+    })
+
+    // Raw is captured before preprocessing, so it survives the drop.
+    expect(diagnosticLog.queryRaw({})).toHaveLength(1)
+    expect(diagnosticLog.queryProcessed({ outcome: "skip:preprocess" })).toHaveLength(1)
+  })
+})
+
+describe("FunnelSlackListener: connection lifecycle", () => {
+  test("records started then connected on a successful start", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(async () => {})
+
+    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
+    expect(statuses).toContain("started")
+    expect(statuses).toContain("connected")
+  })
+
+  test("records auth-failed (not connected) when auth.test throws", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    // Make the next app's auth.test reject (bad/expired token).
+    hoisted.authError = new Error("invalid_auth")
+
+    await expect(listener.start(async () => {})).rejects.toThrow("invalid_auth")
+
+    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
+    expect(statuses).toContain("auth-failed")
+    expect(statuses).not.toContain("connected")
+    expect(diagnosticLog.queryConnection({ status: "auth-failed" })[0]?.detail).toBe("invalid_auth")
+  })
+
+  test("records disconnected then stopped on stop()", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(async () => {})
+    await listener.stop()
+
+    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
+    expect(statuses).toContain("disconnected")
+    expect(statuses).toContain("stopped")
   })
 })
