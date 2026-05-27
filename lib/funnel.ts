@@ -28,12 +28,13 @@ import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prom
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
-import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store"
+import { FunnelSettingsStore, resolveFunnelDir } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
+import type { ConnectorDiagnosticLog } from "@/gateway/connector-diagnostic-log"
 import type { Env } from "@/gateway/factory"
 import type { FunnelEventLog } from "@/gateway/funnel-event-log"
 import { FunnelGateway } from "@/gateway/gateway"
@@ -76,6 +77,13 @@ type Props = {
    * each successful fire, useful for dropping one-shot entries.
    */
   scheduleListenerOptions?: ScheduleListenerOptions
+  /**
+   * Diagnostic log of inbound connector traffic (raw events before filtering
+   * and the processor's verdict after). Threaded into listeners that record
+   * it. Only the gateway daemon injects a `SqliteConnectorDiagnosticLog`; everywhere
+   * else this stays absent and recording is a no-op.
+   */
+  diagnosticLog?: ConnectorDiagnosticLog
   /**
    * Called when Funnel catches an exception that would otherwise be silently
    * swallowed (subscriber throw, listener start/stop failure, etc.). Pass
@@ -149,7 +157,7 @@ export class Funnel {
 
   /** Resolved on-disk paths the facade will read/write when methods are called. Pure compute, not memoized. */
   get paths(): { dir: string; tmpDir: string; settings: string } {
-    const dir = this.props.dir ?? FUNNEL_DIR
+    const dir = this.props.dir ?? resolveFunnelDir()
     const tmpDir = this.props.tmpDir ?? funnelTmpDir()
 
     return { dir, tmpDir, settings: join(dir, "settings.json") }
@@ -220,6 +228,7 @@ export class Funnel {
         fs: this.fs,
         process: this.process,
         logger: this.logger,
+        diagnosticLog: this.props.diagnosticLog,
         dir: this.paths.dir,
         slackListenerOptions: this.props.slackListenerOptions,
         scheduleListenerOptions: this.props.scheduleListenerOptions,

@@ -86,6 +86,9 @@ export class FunnelGateway {
     const command = this.buildStartCommand(gatewayScript, options)
 
     this.process.detach(command, {
+      // Scope the spawned daemon to this gateway's dir so a funnel.json launch
+      // (dir = <repo>/.funnel) keeps the daemon off ~/.funnel entirely.
+      env: { FUNNEL_DIR: this.dir },
       stdoutFile: this.gatewayLog,
       stderrFile: this.gatewayLog,
     })

@@ -51,6 +51,7 @@ import { claudeHandler } from "@/cli/routes/claude"
 import { gatewayGroupHandler } from "@/cli/routes/gateway"
 import { gatewayListenersHandler } from "@/cli/routes/gateway.listeners"
 import { gatewayLogsHandler } from "@/cli/routes/gateway.logs"
+import { gatewaySqlHandler } from "@/cli/routes/gateway.sql"
 import { gatewayRestartHandler } from "@/cli/routes/gateway.restart"
 import { gatewayRunHandler } from "@/cli/routes/gateway.run"
 import { gatewayStartHandler } from "@/cli/routes/gateway.start"
@@ -211,6 +212,7 @@ export const createCliApp = (funnel: Funnel) => {
   .get("/gateway/restart", ...gatewayRestartHandler)
   .get("/gateway/run", ...gatewayRunHandler)
   .get("/gateway/logs", ...gatewayLogsHandler)
+  .get("/gateway/sql", ...gatewaySqlHandler)
   .get("/gateway/listeners", ...gatewayListenersHandler)
   .get("/schema", ...schemaHandler)
   .get("/status", ...statusHandler)

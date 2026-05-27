@@ -2,7 +2,21 @@ import { minifySlackEvent } from "@/connectors/minify-slack-event"
 
 export type SlackRawEvent = Record<string, unknown>
 
-export type SlackProcessedSkip = { skip: true }
+/**
+ * Why the processor dropped an event. Mirrored verbatim into the diagnostic
+ * log's processed `outcome` column so "Slack delivered it but no notification arrived" is
+ * traceable to the exact gate that dropped it. The listener may additionally
+ * record `skip:preprocess` for events a host preprocessor dropped before the
+ * processor ran — that gate is outside this type.
+ */
+export type SlackSkipReason =
+  | "skip:type"
+  | "skip:subtype"
+  | "skip:dedup"
+  | "skip:self-user"
+  | "skip:self-bot"
+
+export type SlackProcessedSkip = { skip: true; reason: SlackSkipReason }
 
 export type SlackProcessedEmit = {
   skip: false
@@ -55,18 +69,18 @@ export class FunnelSlackEventProcessor {
   process(event: SlackRawEvent): SlackProcessed {
     const eventType = getString(event, "type")
 
-    if (!eventType || !ALLOWED_EVENTS.has(eventType)) return { skip: true }
+    if (!eventType || !ALLOWED_EVENTS.has(eventType)) return { skip: true, reason: "skip:type" }
 
     const subtype = getString(event, "subtype")
 
-    if (!ALLOWED_SUBTYPES.has(subtype)) return { skip: true }
+    if (!ALLOWED_SUBTYPES.has(subtype)) return { skip: true, reason: "skip:subtype" }
 
     const channelId = getString(event, "channel") ?? ""
     const eventTs = getString(event, "event_ts") ?? getString(event, "ts") ?? ""
     const dedupKey = `${channelId}:${eventTs}`
     const now = this.now()
 
-    if (this.dedup.has(dedupKey)) return { skip: true }
+    if (this.dedup.has(dedupKey)) return { skip: true, reason: "skip:dedup" }
 
     this.dedup.set(dedupKey, now)
 
@@ -77,8 +91,8 @@ export class FunnelSlackEventProcessor {
     const userId = getString(event, "user")
     const botId = getString(event, "bot_id")
 
-    if (userId === this.ownBotUserId) return { skip: true }
-    if (botId === this.ownBotId) return { skip: true }
+    if (userId === this.ownBotUserId) return { skip: true, reason: "skip:self-user" }
+    if (botId === this.ownBotId) return { skip: true, reason: "skip:self-bot" }
 
     const text = getString(event, "text") ?? ""
     const mentioned = text.includes(`<@${this.ownBotUserId}>`)

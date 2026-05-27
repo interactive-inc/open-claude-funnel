@@ -13,6 +13,7 @@ import {
   type SlackOnAppCreated,
   type SlackPreprocessEvent,
 } from "@/connectors/slack-listener"
+import type { ConnectorDiagnosticLog } from "@/gateway/connector-diagnostic-log"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelLogger } from "@/engine/logger/logger"
@@ -35,6 +36,8 @@ type Deps = {
   process?: FunnelProcessRunner
   logger?: FunnelLogger
   dir?: string
+  /** Diagnostic log of inbound connector traffic. Threaded into listeners that record raw/processed events. No-op when absent. */
+  diagnosticLog?: ConnectorDiagnosticLog
   /** Per-listener hooks for the slack connector type. Threaded into every Slack listener built by this factory. */
   slackListenerOptions?: SlackListenerOptions
   /** Per-listener hooks for the schedule connector type. Threaded into every Schedule listener built by this factory. */
@@ -60,6 +63,7 @@ export class FunnelConnectorFactory {
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
   private readonly logger: FunnelLogger | undefined
+  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
   private readonly dir: string
   private readonly slackListenerOptions: SlackListenerOptions
   private readonly scheduleListenerOptions: ScheduleListenerOptions
@@ -68,6 +72,7 @@ export class FunnelConnectorFactory {
     this.fs = deps.fs ?? defaultFs
     this.process = deps.process ?? defaultProcess
     this.logger = deps.logger
+    this.diagnosticLog = deps.diagnosticLog
     this.dir = deps.dir ?? FUNNEL_DIR
     this.slackListenerOptions = deps.slackListenerOptions ?? {}
     this.scheduleListenerOptions = deps.scheduleListenerOptions ?? {}
@@ -78,7 +83,9 @@ export class FunnelConnectorFactory {
     if (config.type === "slack") {
       return new FunnelSlackListener({
         config,
+        channelId,
         logger: this.logger,
+        diagnosticLog: this.diagnosticLog,
         onAppCreated: this.slackListenerOptions.onAppCreated,
         preprocessEvent: this.slackListenerOptions.preprocessEvent,
       })
