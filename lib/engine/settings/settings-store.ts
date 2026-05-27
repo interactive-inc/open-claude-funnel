@@ -8,6 +8,21 @@ import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { SETTINGS_VERSION, settingsSchema } from "@/engine/settings/settings-schema"
 import type { Settings } from "@/engine/settings/settings-schema"
 
+/**
+ * Resolves the funnel home dir. Defaults to `~/.funnel`, overridable via
+ * `FUNNEL_DIR` so a funnel.json-scoped launch can point everything (settings,
+ * gateway pid/token, claude pids) at a repo-local `<repo>/.funnel` and never
+ * touch the global home. Read at call time, not module load, so a daemon
+ * spawned with the env set resolves the override.
+ */
+export function resolveFunnelDir(): string {
+  const override = process.env.FUNNEL_DIR
+
+  if (override && override.length > 0) return override
+
+  return join(homedir(), ".funnel")
+}
+
 export const FUNNEL_DIR = join(homedir(), ".funnel")
 export const SETTINGS_PATH = join(FUNNEL_DIR, "settings.json")
 

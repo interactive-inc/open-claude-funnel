@@ -51,7 +51,13 @@ if (args[0] === "mcp") {
 }
 
 if (args[0] === "claude") {
-  const result = await dispatchClaude({ funnel }, args.slice(1))
+  const result = await dispatchClaude(
+    {
+      funnel,
+      makeLocalFunnel: (dir) => new Funnel({ logger: new NodeFunnelLogger(), dir }),
+    },
+    args.slice(1),
+  )
 
   if (result.stdout) process.stdout.write(`${result.stdout}\n`)
   if (result.stderr) process.stderr.write(`${result.stderr}\n`)

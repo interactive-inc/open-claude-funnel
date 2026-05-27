@@ -1,11 +1,15 @@
+import { join } from "node:path"
 import { claudeHelp } from "@/cli/routes/claude"
+import { ensureGitignored } from "@/engine/local-config/ensure-gitignored"
 import type {
   ChannelSpec,
   LocalConfig,
   ProfileSpec,
 } from "@/engine/local-config/local-config-schema"
 import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
-import type { Funnel } from "@/funnel"
+import { Funnel } from "@/funnel"
+
+const LOCAL_FUNNEL_DIRNAME = ".funnel"
 
 export type DispatchClaudeResult = {
   stdout: string | null
@@ -16,6 +20,14 @@ export type DispatchClaudeResult = {
 type Deps = {
   funnel: Funnel
   cwd?: string
+  /**
+   * Builds a Funnel scoped to a repo-local `<repo>/.funnel` dir, used when a
+   * funnel.json launch must keep all state out of the global `~/.funnel`.
+   * Production passes `(dir) => new Funnel({ logger, dir })`; tests pass an
+   * in-memory variant so the sandbox dir is honored. When absent, the launch
+   * sets `FUNNEL_DIR` and reuses the injected funnel (whose paths read the env).
+   */
+  makeLocalFunnel?: (dir: string) => Funnel
 }
 
 const HELP_LONG = "--help"
@@ -221,13 +233,29 @@ export const dispatchClaude = async (
       return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
     }
 
-    const synced = await funnel.localConfigSync.ensure(picked, cwd)
+    // A funnel.json launch is repo-local: every byte of state (settings,
+    // gateway pid/token, claude pids, the spawned daemon, the child claude's
+    // MCP) goes under <repo>/.funnel and the global ~/.funnel is never touched.
+    // FUNNEL_DIR is set so the spawned daemon and child claude inherit the same
+    // root; .funnel is force-gitignored so the secrets synced into it (Slack
+    // tokens) can never be committed.
+    const localDir = join(cwd, LOCAL_FUNNEL_DIRNAME)
 
-    await reconcileListeners(funnel, picked.name, synced)
+    process.env.FUNNEL_DIR = localDir
+
+    ensureGitignored(funnel.fs, cwd, LOCAL_FUNNEL_DIRNAME)
+
+    const localFunnel = deps.makeLocalFunnel
+      ? deps.makeLocalFunnel(localDir)
+      : new Funnel({ logger: funnel.logger, dir: localDir })
+
+    const synced = await localFunnel.localConfigSync.ensure(picked, cwd)
+
+    await reconcileListeners(localFunnel, picked.name, synced)
 
     const profile = pickProfile(local, picked.name)
 
-    const exitCode = await funnel.claude.launch({
+    const exitCode = await localFunnel.claude.launch({
       channel: picked.name,
       cwd,
       userArgs: parsed.userArgs,

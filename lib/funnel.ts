@@ -28,7 +28,7 @@ import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prom
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
-import { FUNNEL_DIR, FunnelSettingsStore } from "@/engine/settings/settings-store"
+import { FunnelSettingsStore, resolveFunnelDir } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
@@ -157,7 +157,7 @@ export class Funnel {
 
   /** Resolved on-disk paths the facade will read/write when methods are called. Pure compute, not memoized. */
   get paths(): { dir: string; tmpDir: string; settings: string } {
-    const dir = this.props.dir ?? FUNNEL_DIR
+    const dir = this.props.dir ?? resolveFunnelDir()
     const tmpDir = this.props.tmpDir ?? funnelTmpDir()
 
     return { dir, tmpDir, settings: join(dir, "settings.json") }
