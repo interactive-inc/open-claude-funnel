@@ -4,6 +4,7 @@ import type { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import type { FunnelConnectorListener } from "@/connectors/connector-listener"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
 import type { ScheduleEntry } from "@/connectors/schedule-connector-schema"
+import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 import { connectorTokens } from "@/engine/channels/connector-tokens"
 import { requireConnectorOfType } from "@/engine/channels/require-connector"
 import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
@@ -31,11 +32,54 @@ export type ChannelConnectorView = ConnectorConfig & {
   channelName: string
 }
 
+// Slack/Discord carry either a literal token or a `*TokenEnv` reference name
+// (resolved from the environment at listener start). The sync layer chooses
+// which to store; both shapes are accepted here and passed straight through.
 type AddConnectorInput =
-  | { type: "slack"; name: string; botToken: string; appToken: string; minify?: boolean }
+  | {
+      type: "slack"
+      name: string
+      botToken?: string
+      appToken?: string
+      botTokenEnv?: string
+      appTokenEnv?: string
+      minify?: boolean
+    }
   | { type: "gh"; name: string; pollInterval?: number }
-  | { type: "discord"; name: string; botToken: string }
+  | { type: "discord"; name: string; botToken?: string; botTokenEnv?: string }
   | { type: "schedule"; name: string; entries?: ScheduleEntry[] }
+
+/**
+ * Resolves one token slot (e.g. botToken/botTokenEnv) for an update. The
+ * literal and the env-ref form are mutually exclusive: if `fields` supplies
+ * either, that form wins and the other key is omitted entirely; if it supplies
+ * neither, the connector's current slot is carried over unchanged. Returns a
+ * partial object spread into the rebuilt connector, so an omitted key is truly
+ * absent rather than set to undefined.
+ */
+const slotFields = (
+  literalKey: string,
+  envKey: string,
+  fields: Record<string, string | undefined>,
+  current: Record<string, unknown>,
+): Record<string, string> => {
+  const literal = fields[literalKey]
+
+  if (literal !== undefined) return { [literalKey]: literal }
+
+  const envVar = fields[envKey]
+
+  if (envVar !== undefined) return { [envKey]: envVar }
+
+  const result: Record<string, string> = {}
+  const currentLiteral = current[literalKey]
+  const currentEnv = current[envKey]
+
+  if (typeof currentLiteral === "string") result[literalKey] = currentLiteral
+  if (typeof currentEnv === "string") result[envKey] = currentEnv
+
+  return result
+}
 
 const defaultClock = new NodeFunnelClock()
 const defaultIdGenerator = new NodeFunnelIdGenerator()
@@ -191,8 +235,10 @@ export class FunnelChannels {
           id,
           type: "slack",
           name: input.name,
-          botToken: input.botToken,
-          appToken: input.appToken,
+          ...(input.botToken !== undefined ? { botToken: input.botToken } : {}),
+          ...(input.appToken !== undefined ? { appToken: input.appToken } : {}),
+          ...(input.botTokenEnv !== undefined ? { botTokenEnv: input.botTokenEnv } : {}),
+          ...(input.appTokenEnv !== undefined ? { appTokenEnv: input.appTokenEnv } : {}),
           minify: input.minify ?? true,
           createdAt,
           updatedAt,
@@ -211,7 +257,8 @@ export class FunnelChannels {
           id,
           type: "discord",
           name: input.name,
-          botToken: input.botToken,
+          ...(input.botToken !== undefined ? { botToken: input.botToken } : {}),
+          ...(input.botTokenEnv !== undefined ? { botTokenEnv: input.botTokenEnv } : {}),
           createdAt,
           updatedAt,
         }
@@ -261,22 +308,30 @@ export class FunnelChannels {
   updateSlackConnector(
     channelName: string,
     connectorName: string,
-    fields: { botToken?: string; appToken?: string },
+    fields: { botToken?: string; appToken?: string; botTokenEnv?: string; appTokenEnv?: string },
   ): void {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
     const connector = requireConnectorOfType(channel, connectorName, "slack")
 
-    const updated = {
-      ...connector,
-      botToken: fields.botToken ?? connector.botToken,
-      appToken: fields.appToken ?? connector.appToken,
+    // Literal and reference are mutually exclusive per slot, so the slot is
+    // rebuilt from scratch (not Object.assign'd onto the old connector) — that
+    // way switching a slot from literal to ref drops the stale literal key
+    // instead of leaving both behind.
+    const updated: SlackConnectorConfig = {
+      id: connector.id,
+      name: connector.name,
+      type: "slack",
+      minify: connector.minify,
+      createdAt: connector.createdAt,
       updatedAt: this.clock.iso(),
+      ...slotFields("botToken", "botTokenEnv", fields, connector),
+      ...slotFields("appToken", "appTokenEnv", fields, connector),
     }
 
     this.assertNoTokenCollision(settings, updated)
 
-    Object.assign(connector, updated)
+    this.replaceConnector(channel, connector.name, updated)
     this.store.write(settings)
   }
 
@@ -298,21 +353,24 @@ export class FunnelChannels {
   updateDiscordConnector(
     channelName: string,
     connectorName: string,
-    fields: { botToken?: string },
+    fields: { botToken?: string; botTokenEnv?: string },
   ): void {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
     const connector = requireConnectorOfType(channel, connectorName, "discord")
 
-    const updated = {
-      ...connector,
-      botToken: fields.botToken ?? connector.botToken,
+    const updated: DiscordConnectorConfig = {
+      id: connector.id,
+      name: connector.name,
+      type: "discord",
+      createdAt: connector.createdAt,
       updatedAt: this.clock.iso(),
+      ...slotFields("botToken", "botTokenEnv", fields, connector),
     }
 
     this.assertNoTokenCollision(settings, updated)
 
-    Object.assign(connector, updated)
+    this.replaceConnector(channel, connector.name, updated)
     this.store.write(settings)
   }
 
@@ -429,6 +487,23 @@ export class FunnelChannels {
     if (!channel) throw new Error(`channel "${name}" not found`)
 
     return channel
+  }
+
+  // Swaps a connector for its rebuilt form by array index. Unlike
+  // Object.assign onto the live object, this drops keys the new form omits
+  // (e.g. a stale literal token when the slot moved to an env reference).
+  private replaceConnector(
+    channel: ChannelConfig,
+    connectorName: string,
+    next: ConnectorConfig,
+  ): void {
+    const index = channel.connectors.findIndex((c) => c.name === connectorName)
+
+    if (index < 0) {
+      throw new Error(`connector "${connectorName}" not found in channel "${channel.name}"`)
+    }
+
+    channel.connectors[index] = next
   }
 
   private assertNoTokenCollision(settings: Settings, candidate: ConnectorConfig): void {

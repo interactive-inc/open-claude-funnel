@@ -1,23 +1,28 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import { FunnelDiscordEventProcessor } from "@/connectors/discord-event-processor"
+import { resolveConnectorToken } from "@/connectors/resolve-connector-token"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
 
 type Deps = {
   config: DiscordConnectorConfig
+  /** Environment used to resolve a `botTokenEnv` reference. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv
   logger?: FunnelLogger
 }
 
 
 export class FunnelDiscordListener extends FunnelConnectorListener {
   private readonly config: DiscordConnectorConfig
+  private readonly env: NodeJS.ProcessEnv
   private readonly logger: FunnelLogger | undefined
   private client: Client | null = null
 
   constructor(deps: Deps) {
     super()
     this.config = deps.config
+    this.env = deps.env ?? process.env
     this.logger = deps.logger
   }
 
@@ -85,7 +90,14 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       })
     })
 
-    await client.login(this.config.botToken)
+    await client.login(
+      resolveConnectorToken({
+        literal: this.config.botToken,
+        envVar: this.config.botTokenEnv,
+        env: this.env,
+        label: `${this.config.name}.botToken`,
+      }),
+    )
     this.client = client
   }
 

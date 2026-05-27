@@ -54,7 +54,7 @@ describe("FunnelLocalConfigSync", () => {
     expect(channels.get("ops")).toMatchObject({ name: "ops" })
   })
 
-  test("resolves env: { ... } references from process env", async () => {
+  test("stores env: { ... } references by name, never the resolved secret", async () => {
     const { sync, channels } = buildSync({
       env: { SLACK_BOT_TOKEN: "xoxb-fromenv", SLACK_APP_TOKEN: "xapp-fromenv" },
     })
@@ -73,14 +73,20 @@ describe("FunnelLocalConfigSync", () => {
       "/repo",
     )
 
-    expect(channels.getConnector("ops", "my-slack")).toMatchObject({
+    const connector = channels.getConnector("ops", "my-slack")
+
+    // The reference name is stored; the secret stays in the environment and
+    // never lands in settings.
+    expect(connector).toMatchObject({
       type: "slack",
-      botToken: "xoxb-fromenv",
-      appToken: "xapp-fromenv",
+      botTokenEnv: "SLACK_BOT_TOKEN",
+      appTokenEnv: "SLACK_APP_TOKEN",
     })
+    expect(connector).not.toHaveProperty("botToken")
+    expect(connector).not.toHaveProperty("appToken")
   })
 
-  test("falls back to .env.local when the env var is unset", async () => {
+  test("accepts an env reference backed only by .env.local (still stored by name)", async () => {
     const { sync, channels } = buildSync({
       files: {
         "/repo/.env.local": "SLACK_BOT_TOKEN=xoxb-fromfile\nSLACK_APP_TOKEN=xapp-fromfile\n",
@@ -101,10 +107,13 @@ describe("FunnelLocalConfigSync", () => {
       "/repo",
     )
 
-    expect(channels.getConnector("ops", "my-slack")).toMatchObject({
-      botToken: "xoxb-fromfile",
-      appToken: "xapp-fromfile",
+    const connector = channels.getConnector("ops", "my-slack")
+
+    expect(connector).toMatchObject({
+      botTokenEnv: "SLACK_BOT_TOKEN",
+      appTokenEnv: "SLACK_APP_TOKEN",
     })
+    expect(connector).not.toHaveProperty("botToken")
   })
 
   test("uses a literal value as-is", async () => {
@@ -250,10 +259,16 @@ describe("FunnelLocalConfigSync", () => {
       "/repo",
     )
 
-    expect(channels.getConnector("ops", "my-slack")).toMatchObject({
-      botToken: "xoxb-new",
-      appToken: "xapp-new",
+    // Switching a connector from a literal token to an env reference replaces
+    // the slot: the reference name is stored and the stale literal is dropped.
+    const connector = channels.getConnector("ops", "my-slack")
+
+    expect(connector).toMatchObject({
+      botTokenEnv: "SLACK_BOT_TOKEN",
+      appTokenEnv: "SLACK_APP_TOKEN",
     })
+    expect(connector).not.toHaveProperty("botToken")
+    expect(connector).not.toHaveProperty("appToken")
   })
 
   test("throws when an existing connector has a conflicting type", async () => {
@@ -289,7 +304,7 @@ describe("FunnelLocalConfigSync", () => {
     })
   })
 
-  test("renames an existing slack connector when its tokens match the spec under a different name", async () => {
+  test("matches slack connectors by name: a renamed spec drops the old and adds the new", async () => {
     const { sync, channels } = buildSync({
       env: { SLACK_BOT_TOKEN: "xoxb-shared", SLACK_APP_TOKEN: "xapp-shared" },
     })
@@ -316,15 +331,18 @@ describe("FunnelLocalConfigSync", () => {
       "/repo",
     )
 
+    // Connectors are reconciled by name. Token-based rename is gone: with env
+    // references the secret is not in settings to match on, so a name change is
+    // a remove of the undeclared old connector and an add of the new one.
     expect(channels.getConnector("ops", "old-name")).toBeNull()
     expect(channels.getConnector("ops", "new-name")).toMatchObject({
       type: "slack",
-      botToken: "xoxb-shared",
-      appToken: "xapp-shared",
+      botTokenEnv: "SLACK_BOT_TOKEN",
+      appTokenEnv: "SLACK_APP_TOKEN",
     })
   })
 
-  test("renames an existing discord connector when its token matches the spec under a different name", async () => {
+  test("matches discord connectors by name: a renamed spec drops the old and adds the new", async () => {
     const { sync, channels } = buildSync({ env: { DISCORD_TOKEN: "abcdefghij" } })
 
     channels.add({ name: "ops" })
@@ -343,7 +361,7 @@ describe("FunnelLocalConfigSync", () => {
     expect(channels.getConnector("ops", "old-name")).toBeNull()
     expect(channels.getConnector("ops", "new-name")).toMatchObject({
       type: "discord",
-      botToken: "abcdefghij",
+      botTokenEnv: "DISCORD_TOKEN",
     })
   })
 
