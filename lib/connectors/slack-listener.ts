@@ -1,6 +1,7 @@
 import { App, LogLevel } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
+import { resolveConnectorToken } from "@/connectors/resolve-connector-token"
 import {
   FunnelSlackEventProcessor,
   type SlackRawEvent,
@@ -23,6 +24,8 @@ type Deps = {
   config: SlackConnectorConfig
   /** Funnel channel uuid this connector lives under; stamped onto diagnostic-log rows. */
   channelId?: string
+  /** Environment used to resolve `botTokenEnv`/`appTokenEnv` references. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv
   logger?: FunnelLogger
   /** Diagnostic log of inbound events, before and after processing. No-op when absent. */
   diagnosticLog?: ConnectorDiagnosticLog
@@ -42,6 +45,7 @@ type Deps = {
 export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly config: SlackConnectorConfig
   private readonly channelId: string | null
+  private readonly env: NodeJS.ProcessEnv
   private readonly logger: FunnelLogger | undefined
   private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
   private readonly onAppCreated: SlackOnAppCreated | null
@@ -52,6 +56,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     super()
     this.config = deps.config
     this.channelId = deps.channelId ?? null
+    this.env = deps.env ?? process.env
     this.logger = deps.logger
     this.diagnosticLog = deps.diagnosticLog
     this.onAppCreated = deps.onAppCreated ?? null
@@ -61,9 +66,22 @@ export class FunnelSlackListener extends FunnelConnectorListener {
   async start(notify: NotifyFn): Promise<void> {
     this.recordConnection("started", "")
 
+    const botToken = resolveConnectorToken({
+      literal: this.config.botToken,
+      envVar: this.config.botTokenEnv,
+      env: this.env,
+      label: `${this.config.name}.botToken`,
+    })
+    const appToken = resolveConnectorToken({
+      literal: this.config.appToken,
+      envVar: this.config.appTokenEnv,
+      env: this.env,
+      label: `${this.config.name}.appToken`,
+    })
+
     const app = new App({
-      token: this.config.botToken,
-      appToken: this.config.appToken,
+      token: botToken,
+      appToken,
       socketMode: true,
       logLevel: LogLevel.ERROR,
     })
@@ -71,7 +89,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     let authResult: Awaited<ReturnType<typeof app.client.auth.test>>
 
     try {
-      authResult = await app.client.auth.test({ token: this.config.botToken })
+      authResult = await app.client.auth.test({ token: botToken })
     } catch (error) {
       // A bad/expired token surfaces here, before the socket opens — the most
       // common "no events ever arrive" cause. Record it so it is visible in
@@ -144,7 +162,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       if (result.shouldReact) {
         try {
           await app.client.reactions.add({
-            token: this.config.botToken,
+            token: botToken,
             channel: result.channel,
             timestamp: result.timestamp,
             name: "eyes",

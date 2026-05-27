@@ -161,6 +161,33 @@ const pickProfile = (local: LocalConfig, channelName: string): ProfileSpec | nul
 }
 
 /**
+ * Loads the env vars a channel's connectors reference (`env: { botToken:
+ * "SLACK_BOT_TOKEN" }`) from `.env.local` into process.env, so the gateway
+ * daemon — which inherits process.env on spawn — can resolve the tokens at
+ * listener start without them ever being written to settings.json. A var
+ * already set in process.env is left as-is (process.env wins, as everywhere).
+ */
+const loadConnectorEnv = (dotenv: Record<string, string>, channel: ChannelSpec): void => {
+  for (const connector of channel.connectors ?? []) {
+    const refs =
+      connector.type === "slack"
+        ? [connector.env?.botToken, connector.env?.appToken]
+        : connector.type === "discord"
+          ? [connector.env?.botToken]
+          : []
+
+    for (const ref of refs) {
+      if (ref === undefined || ref === "") continue
+      if (process.env[ref] !== undefined) continue
+
+      const value = dotenv[ref]
+
+      if (value !== undefined) process.env[ref] = value
+    }
+  }
+}
+
+/**
  * Entry point for `fnl claude <args>`. Pulls only funnel-specific flags
  * (--profile / -p, --channel, --help / -h) out of argv and forwards every
  * other token verbatim to claude. The launch recipe (options / env / resume)
@@ -233,17 +260,24 @@ export const dispatchClaude = async (
       return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
     }
 
-    // A funnel.json launch is repo-local: every byte of state (settings,
+    // A funnel.json launch is repo-local: every byte of funnel state (settings,
     // gateway pid/token, claude pids, the spawned daemon, the child claude's
     // MCP) goes under <repo>/.funnel and the global ~/.funnel is never touched.
     // FUNNEL_DIR is set so the spawned daemon and child claude inherit the same
-    // root; .funnel is force-gitignored so the secrets synced into it (Slack
-    // tokens) can never be committed.
+    // root; .funnel is force-gitignored as a safety net.
     const localDir = join(cwd, LOCAL_FUNNEL_DIRNAME)
 
     process.env.FUNNEL_DIR = localDir
 
     ensureGitignored(funnel.fs, cwd, LOCAL_FUNNEL_DIRNAME)
+
+    // Tokens stay out of settings.json: a connector that declares `env: {...}`
+    // is stored as an env-var *reference* and resolved at listener start. The
+    // gateway daemon resolves from its own process.env, so load the referenced
+    // vars from .env.local into this process now — `detach` copies process.env
+    // into the daemon, carrying the secret across without ever writing it down.
+    // Existing process.env wins, matching funnel's env precedence elsewhere.
+    loadConnectorEnv(funnel.dotenv.read(cwd), picked)
 
     const localFunnel = deps.makeLocalFunnel
       ? deps.makeLocalFunnel(localDir)

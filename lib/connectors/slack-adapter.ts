@@ -1,5 +1,6 @@
 import { WebClient } from "@slack/web-api"
 import { FunnelConnectorAdapter, type CallInput } from "@/connectors/connector-adapter"
+import { resolveConnectorToken } from "@/connectors/resolve-connector-token"
 import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 
 export type SlackWebClientLike = {
@@ -40,6 +41,8 @@ const slackErrorResponse = (error: unknown): Record<string, unknown> | null => {
 
 type Deps = {
   config: SlackConnectorConfig
+  /** Environment used to resolve a `botTokenEnv` reference. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv
   client?: SlackWebClientLike
 }
 
@@ -48,7 +51,14 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
 
   constructor(deps: Deps) {
     super()
-    this.client = deps.client ?? new WebClient(deps.config.botToken)
+    const botToken = resolveConnectorToken({
+      literal: deps.config.botToken,
+      envVar: deps.config.botTokenEnv,
+      env: deps.env ?? process.env,
+      label: `${deps.config.name}.botToken`,
+    })
+
+    this.client = deps.client ?? new WebClient(botToken)
     Object.freeze(this)
   }
 

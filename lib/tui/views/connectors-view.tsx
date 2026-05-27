@@ -21,6 +21,16 @@ type Props = {
 type Connector = Snapshot["connectors"][number]
 type ConnectorType = Connector["type"]
 
+// A token slot is either a stored literal or a reference to an env var
+// (resolved at listener start). Show the literal, or the var name as
+// `env:<VAR>` so the dashboard reflects which form is in settings.json.
+const tokenDisplay = (literal: string | undefined, envVar: string | undefined): string => {
+  if (literal !== undefined && literal !== "") return literal
+  if (envVar !== undefined && envVar !== "") return `env:${envVar}`
+
+  return "—"
+}
+
 const formatTimestamp = (iso: string | undefined): string => {
   if (!iso) return "—"
 
@@ -121,15 +131,15 @@ export function ConnectorsView(props: Props) {
             <ReadonlyField label="id" value={connector.id} />
             {connector.type === "slack" ? (
               <>
-                <ReadonlyField label="bot-token" value={connector.botToken} />
-                <ReadonlyField label="app-token" value={connector.appToken} />
+                <ReadonlyField label="bot-token" value={tokenDisplay(connector.botToken, connector.botTokenEnv)} />
+                <ReadonlyField label="app-token" value={tokenDisplay(connector.appToken, connector.appTokenEnv)} />
               </>
             ) : null}
             {connector.type === "gh" ? (
               <ReadonlyField label="poll" value={String(connector.pollInterval ?? 60)} />
             ) : null}
             {connector.type === "discord" ? (
-              <ReadonlyField label="bot-token" value={connector.botToken} />
+              <ReadonlyField label="bot-token" value={tokenDisplay(connector.botToken, connector.botTokenEnv)} />
             ) : null}
             {connector.type === "schedule" ? (
               <ReadonlyField label="entries" value={String(connector.entries.length)} />

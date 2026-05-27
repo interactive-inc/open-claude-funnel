@@ -104,24 +104,39 @@ export class FunnelLocalConfigSync {
   ): Promise<EnsureOutcome> {
     const byName = this.findExistingSlack(channelName, spec.name)
 
-    const botToken = await this.resolveField({
+    const bot = await this.resolveSlot({
       literal: spec.botToken,
       envVar: spec.env?.botToken,
       dotenv,
       label: `${spec.name}.botToken`,
-      existing: byName?.botToken,
+      existingLiteral: byName?.botToken,
+      existingEnv: byName?.botTokenEnv,
     })
-    const appToken = await this.resolveField({
+    const app = await this.resolveSlot({
       literal: spec.appToken,
       envVar: spec.env?.appToken,
       dotenv,
       label: `${spec.name}.appToken`,
-      existing: byName?.appToken,
+      existingLiteral: byName?.appToken,
+      existingEnv: byName?.appTokenEnv,
     })
 
+    const update = {
+      botToken: bot.token,
+      botTokenEnv: bot.tokenEnv,
+      appToken: app.token,
+      appTokenEnv: app.tokenEnv,
+    }
+
     if (byName) {
-      if (byName.botToken !== botToken || byName.appToken !== appToken) {
-        this.channels.updateSlackConnector(channelName, spec.name, { botToken, appToken })
+      const unchanged =
+        byName.botToken === bot.token &&
+        byName.botTokenEnv === bot.tokenEnv &&
+        byName.appToken === app.token &&
+        byName.appTokenEnv === app.tokenEnv
+
+      if (!unchanged) {
+        this.channels.updateSlackConnector(channelName, spec.name, update)
 
         return { id: byName.id, name: spec.name, changed: true }
       }
@@ -129,23 +144,10 @@ export class FunnelLocalConfigSync {
       return { id: byName.id, name: spec.name, changed: false }
     }
 
-    const byToken = this.findSlackByToken(channelName, [botToken, appToken])
-
-    if (byToken) {
-      this.channels.renameConnector(channelName, byToken.name, spec.name)
-
-      if (byToken.botToken !== botToken || byToken.appToken !== appToken) {
-        this.channels.updateSlackConnector(channelName, spec.name, { botToken, appToken })
-      }
-
-      return { id: byToken.id, name: spec.name, changed: true }
-    }
-
     const added = this.channels.addConnector(channelName, {
       type: "slack",
       name: spec.name,
-      botToken,
-      appToken,
+      ...update,
       ...(spec.minify !== undefined ? { minify: spec.minify } : {}),
     })
 
@@ -159,17 +161,20 @@ export class FunnelLocalConfigSync {
   ): Promise<EnsureOutcome> {
     const byName = this.findExistingDiscord(channelName, spec.name)
 
-    const botToken = await this.resolveField({
+    const bot = await this.resolveSlot({
       literal: spec.botToken,
       envVar: spec.env?.botToken,
       dotenv,
       label: `${spec.name}.botToken`,
-      existing: byName?.botToken,
+      existingLiteral: byName?.botToken,
+      existingEnv: byName?.botTokenEnv,
     })
 
+    const update = { botToken: bot.token, botTokenEnv: bot.tokenEnv }
+
     if (byName) {
-      if (byName.botToken !== botToken) {
-        this.channels.updateDiscordConnector(channelName, spec.name, { botToken })
+      if (byName.botToken !== bot.token || byName.botTokenEnv !== bot.tokenEnv) {
+        this.channels.updateDiscordConnector(channelName, spec.name, update)
 
         return { id: byName.id, name: spec.name, changed: true }
       }
@@ -177,22 +182,10 @@ export class FunnelLocalConfigSync {
       return { id: byName.id, name: spec.name, changed: false }
     }
 
-    const byToken = this.findDiscordByToken(channelName, botToken)
-
-    if (byToken) {
-      this.channels.renameConnector(channelName, byToken.name, spec.name)
-
-      if (byToken.botToken !== botToken) {
-        this.channels.updateDiscordConnector(channelName, spec.name, { botToken })
-      }
-
-      return { id: byToken.id, name: spec.name, changed: true }
-    }
-
     const added = this.channels.addConnector(channelName, {
       type: "discord",
       name: spec.name,
-      botToken,
+      ...update,
     })
 
     return { id: added.id, name: spec.name, changed: true }
@@ -284,36 +277,6 @@ export class FunnelLocalConfigSync {
     return existing
   }
 
-  private findSlackByToken(channelName: string, tokens: string[]): SlackConnectorConfig | null {
-    const channel = this.channels.get(channelName)
-
-    if (!channel) return null
-
-    for (const connector of channel.connectors) {
-      if (connector.type !== "slack") continue
-
-      if (tokens.includes(connector.botToken) || tokens.includes(connector.appToken)) {
-        return connector
-      }
-    }
-
-    return null
-  }
-
-  private findDiscordByToken(channelName: string, token: string): DiscordConnectorConfig | null {
-    const channel = this.channels.get(channelName)
-
-    if (!channel) return null
-
-    for (const connector of channel.connectors) {
-      if (connector.type !== "discord") continue
-
-      if (connector.botToken === token) return connector
-    }
-
-    return null
-  }
-
   private removeExtras(channelName: string, touched: Set<string>): string[] {
     const channel = this.channels.get(channelName)
 
@@ -328,37 +291,51 @@ export class FunnelLocalConfigSync {
     return stale.map((c) => c.name)
   }
 
-  private async resolveField(input: {
+  /**
+   * Decides how a single token slot is stored in settings.json:
+   *
+   *   - `env.<field>` reference → `{ tokenEnv: "<VAR>" }`; the secret is NOT
+   *     resolved into settings, it stays in the environment / `.env.local` and
+   *     the listener resolves it at start. We still assert the var is set so a
+   *     typo fails loudly here instead of as a dead listener later.
+   *   - literal → `{ token: "<secret>" }`.
+   *   - neither, but a prior value exists → carry it over verbatim (whichever
+   *     form it already was), so a tokenless re-sync is a no-op.
+   *   - nothing at all → prompt for a literal (TTY only; throws otherwise).
+   */
+  private async resolveSlot(input: {
     literal: string | undefined
     envVar: string | undefined
     dotenv: Record<string, string>
     label: string
-    existing: string | undefined
-  }): Promise<string> {
+    existingLiteral: string | undefined
+    existingEnv: string | undefined
+  }): Promise<{ token: string | undefined; tokenEnv: string | undefined }> {
     if (input.literal !== undefined && input.envVar !== undefined) {
       throw new Error(
         `${input.label} is set both as a literal and as env.${input.label.split(".").pop()}; pick one`,
       )
     }
 
-    if (input.literal !== undefined && input.literal !== "") return input.literal
-
     if (input.envVar !== undefined && input.envVar !== "") {
-      const fromProcessEnv = this.env[input.envVar]
+      if (!this.env[input.envVar] && !input.dotenv[input.envVar]) {
+        throw new Error(
+          `${input.label} references env var "${input.envVar}" but it is not set in process env or .env.local`,
+        )
+      }
 
-      if (fromProcessEnv) return fromProcessEnv
-
-      const fromDotenv = input.dotenv[input.envVar]
-
-      if (fromDotenv) return fromDotenv
-
-      throw new Error(
-        `${input.label} references env var "${input.envVar}" but it is not set in process env or .env.local`,
-      )
+      return { token: undefined, tokenEnv: input.envVar }
     }
 
-    if (input.existing) return input.existing
+    if (input.literal !== undefined && input.literal !== "") {
+      return { token: input.literal, tokenEnv: undefined }
+    }
 
-    return await this.prompter.promptSecret(input.label)
+    if (input.existingEnv !== undefined) return { token: undefined, tokenEnv: input.existingEnv }
+    if (input.existingLiteral !== undefined) {
+      return { token: input.existingLiteral, tokenEnv: undefined }
+    }
+
+    return { token: await this.prompter.promptSecret(input.label), tokenEnv: undefined }
   }
 }

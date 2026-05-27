@@ -1,4 +1,5 @@
 import { FunnelConnectorAdapter, type CallInput } from "@/connectors/connector-adapter"
+import { resolveConnectorToken } from "@/connectors/resolve-connector-token"
 import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
@@ -7,6 +8,8 @@ const DISCORD_API_BASE = "https://discord.com/api/v10"
 
 type Deps = {
   config: DiscordConnectorConfig
+  /** Environment used to resolve a `botTokenEnv` reference. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv
   http?: FunnelHttpClient
 }
 
@@ -18,7 +21,12 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
 
   constructor(deps: Deps) {
     super()
-    this.token = deps.config.botToken
+    this.token = resolveConnectorToken({
+      literal: deps.config.botToken,
+      envVar: deps.config.botTokenEnv,
+      env: deps.env ?? process.env,
+      label: `${deps.config.name}.botToken`,
+    })
     this.http = deps.http ?? defaultHttp
     Object.freeze(this)
   }
