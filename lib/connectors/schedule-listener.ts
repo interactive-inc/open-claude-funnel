@@ -97,7 +97,9 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     notify: NotifyFn,
   ): Promise<boolean> {
     const lastFired = state.get(entry.id)
-    const searchFrom = lastFired ? new Date(lastFired.getTime() + 60_000) : now
+    const searchFrom = lastFired
+      ? new Date(lastFired.getTime() + 60_000)
+      : new Date(now.getTime() - MAX_CATCHUP_MINUTES * 60_000)
 
     if (searchFrom.getTime() > now.getTime()) return false
 
