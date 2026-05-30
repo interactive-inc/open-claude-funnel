@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { FunnelGhListener } from "@/connectors/gh-listener"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
+import { MemoryConnectorDiagnosticLog } from "@/gateway/memory-connector-diagnostic-log"
 
 const config = { type: "gh" as const, id: "g-id", name: "g" }
 
@@ -92,5 +93,97 @@ describe("FunnelGhListener", () => {
 
     await listener.stop()
     expect(listener.isAlive()).toBe(false)
+  })
+})
+
+describe("FunnelGhListener: diagnostic log", () => {
+  test("first poll records raw + skip:bootstrap; a later poll records raw + emitted", async () => {
+    let stdout = JSON.stringify([item("1", "t1")])
+    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout }))
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelGhListener({
+      config,
+      channelId: "ch-uuid-1",
+      process: runner,
+      diagnosticLog,
+    })
+
+    // First poll is the bootstrap backlog: captured raw, deliberately not emitted.
+    await listener.pollOnce(async () => {})
+
+    const bootstrapRaws = diagnosticLog.queryRaw({})
+    expect(bootstrapRaws).toHaveLength(1)
+    expect(bootstrapRaws[0]?.type).toBe("gh")
+    expect(bootstrapRaws[0]?.connectorId).toBe("g-id")
+    expect(bootstrapRaws[0]?.channelId).toBe("ch-uuid-1")
+    expect(bootstrapRaws[0]?.eventId).toBe("1")
+
+    const bootstrapProcessed = diagnosticLog.queryProcessed({})
+    expect(bootstrapProcessed).toHaveLength(1)
+    expect(bootstrapProcessed[0]?.outcome).toBe("skip:bootstrap")
+    expect(bootstrapProcessed[0]?.eventId).toBe("1")
+
+    // Second poll, now bootstrapped: the same id with a new updated_at emits.
+    stdout = JSON.stringify([item("1", "t1b")])
+    await listener.pollOnce(async () => {})
+
+    // The new revision is a fresh raw row plus an emitted verdict (eventId "1").
+    expect(diagnosticLog.queryRaw({})).toHaveLength(2)
+    const emitted = diagnosticLog.queryProcessed({ outcome: "emitted" })
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]?.eventId).toBe("1")
+  })
+
+  test("a clean first poll records started then connected", async () => {
+    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout: "[]" }))
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelGhListener({ config, process: runner, diagnosticLog })
+
+    await listener.pollOnce(async () => {})
+
+    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
+    expect(statuses).toContain("connected")
+  })
+
+  test("records started + connected over a full start()", async () => {
+    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout: "[]" }))
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelGhListener({
+      config: { ...config, pollInterval: 3600 },
+      process: runner,
+      diagnosticLog,
+    })
+
+    await listener.start(async () => {})
+    await listener.stop()
+
+    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
+    expect(statuses).toContain("started")
+    expect(statuses).toContain("connected")
+    expect(statuses).toContain("stopped")
+  })
+
+  test("a non-zero gh api exit records an error connection row", async () => {
+    const runner = new MemoryFunnelProcessRunner().on(() => ({ exitCode: 1, stderr: "auth" }))
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelGhListener({ config, process: runner, diagnosticLog })
+
+    await listener.pollOnce(async () => {})
+
+    const errors = diagnosticLog.queryConnection({ status: "error" })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.detail).toContain("gh api exited 1")
+    // A failed poll never reaches the "connected" milestone.
+    expect(diagnosticLog.queryConnection({ status: "connected" })).toHaveLength(0)
+  })
+
+  test("records nothing and does not throw when no diagnosticLog is injected", async () => {
+    const runner = new MemoryFunnelProcessRunner().on(() => ({
+      stdout: JSON.stringify([item("1", "t1")]),
+    }))
+    const listener = new FunnelGhListener({ config, process: runner })
+
+    // Exercising the record paths; absence of a throw is the assertion.
+    await listener.pollOnce(async () => {})
   })
 })

@@ -161,4 +161,47 @@ describe("ConnectorDiagnosticSqlReader", () => {
 
     expect(rows).toEqual([{ status: "auth-failed", detail: "invalid_auth" }])
   })
+
+  // Single-statement writes carry no semicolon, so the multi-statement guard
+  // does not catch them — the prefix guard must. These pin that boundary.
+  test("rejects a single-statement write that has no semicolon", () => {
+    const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
+
+    for (const sql of [
+      "UPDATE leuco_log SET ts = 0",
+      "INSERT INTO leuco_log (ts, type, event) VALUES (1, 'x', '{}')",
+      "DELETE FROM raw",
+      "PRAGMA writable_schema = 1",
+    ]) {
+      const result = reader.query(sql)
+      expect(result).toBeInstanceOf(Error)
+    }
+
+    reader.close()
+  })
+
+  test("rejects a WITH/CTE query (documents the current SELECT-prefix boundary)", () => {
+    const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
+
+    // A CTE is read-only but the prefix guard only allows a leading SELECT.
+    // Pinning this makes any future loosening a visible, deliberate change.
+    const result = reader.query("WITH x AS (SELECT 1 AS n) SELECT n FROM x")
+
+    reader.close()
+
+    expect(result).toBeInstanceOf(Error)
+  })
+
+  test("rejects a SELECT whose string literal contains a semicolon (known guard limitation)", () => {
+    const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
+
+    // The multi-statement guard is a literal `.includes(";")`, so a legitimate
+    // semicolon inside a string literal is over-rejected. Pinned so the
+    // trade-off (simple guard, rare false reject) is a deliberate, visible one.
+    const result = reader.query("SELECT detail FROM connection WHERE detail = 'a;b'")
+
+    reader.close()
+
+    expect(result).toBeInstanceOf(Error)
+  })
 })

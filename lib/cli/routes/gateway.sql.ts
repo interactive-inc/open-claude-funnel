@@ -72,8 +72,14 @@ export const gatewaySqlHandler = factory.createHandlers(
     }
 
     const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
-    const rows = reader.query(sql)
-    reader.close()
+
+    const rows = (() => {
+      try {
+        return reader.query(sql)
+      } finally {
+        reader.close()
+      }
+    })()
 
     if (rows instanceof Error) return c.text(`error: ${rows.message}`)
 

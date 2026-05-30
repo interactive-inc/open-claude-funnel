@@ -1,3 +1,6 @@
+import { chmodSync } from "node:fs"
+import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
+import { FunnelLogger } from "@/engine/logger/logger"
 import {
   type ConnectorConnectionEvent,
   type ConnectorConnectionQuery,
@@ -39,10 +42,18 @@ type Props = {
   /** SQLite file for the connection (lifecycle) table. ":memory:" for tests. */
   connectionPath: string
   now?: () => number
-  /** Optional per-table row cap, pruned on every insert. */
+  /** Row cap for the processed and connection tables. Pruned on every insert. */
   maxRows?: number
-  /** Optional per-table age cap in ms, pruned on every insert. */
+  /**
+   * Row cap for the raw table specifically. Raw rows can each hold up to
+   * `RAW_PAYLOAD_CAP` bytes, so they want a tighter cap than the small
+   * processed/connection verdict rows. Defaults to `maxRows` when unset.
+   */
+  rawMaxRows?: number
+  /** Age cap in ms for all tables — bounds how long untouched payloads (with PII) live. Pruned on every insert. */
   maxAgeMs?: number
+  /** When set, `insert()` errors (disk full, WAL lock) are logged instead of silently dropped. */
+  logger?: FunnelLogger
 }
 
 type WhereClause = { connector_id?: string | null; channel_id?: string | null }
@@ -66,14 +77,23 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   private readonly processed: LeucoLoggerSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>
   private readonly connection: LeucoLoggerSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>
   private readonly now: () => number
+  private readonly logger: FunnelLogger | undefined
 
   constructor(props: Props) {
     super()
     this.now = props.now ?? (() => Date.now())
-    const caps = {
+    this.logger = props.logger
+    const ageCap = props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}
+    const verdictCap = {
       now: this.now,
+      ...ageCap,
       ...(props.maxRows !== undefined ? { maxRows: props.maxRows } : {}),
-      ...(props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}),
+    }
+    const rawMax = props.rawMaxRows ?? props.maxRows
+    const rawCap = {
+      now: this.now,
+      ...ageCap,
+      ...(rawMax !== undefined ? { maxRows: rawMax } : {}),
     }
     this.raw = new LeucoLoggerSqliteSink<ConnectorRawEvent, RawIndexes>({
       path: props.rawPath,
@@ -83,7 +103,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
         connector_id: event.connector_id,
         channel_id: event.channel_id,
       }),
-      ...caps,
+      ...rawCap,
     })
     this.processed = new LeucoLoggerSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>({
       path: props.processedPath,
@@ -94,7 +114,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
         channel_id: event.channel_id,
         outcome: event.outcome,
       }),
-      ...caps,
+      ...verdictCap,
     })
     this.connection = new LeucoLoggerSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>({
       path: props.connectionPath,
@@ -104,8 +124,16 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
         channel_id: event.channel_id,
         status: event.status,
       }),
-      ...caps,
+      ...verdictCap,
     })
+
+    // These files hold untouched inbound payloads (Slack message text, user
+    // ids). On a shared host /tmp is world-traversable, so lock the files to
+    // the owner — same posture as the gateway token file.
+    restrictPermissions(props.rawPath)
+    restrictPermissions(props.processedPath)
+    restrictPermissions(props.connectionPath)
+
     Object.freeze(this)
   }
 
@@ -117,7 +145,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       channel_id: record.channelId,
       payload: capPayload(record.payload, record.type),
     }
-    this.raw.insert({ ts: this.now(), event })
+    this.report("raw", this.raw.insert({ ts: this.now(), event }))
   }
 
   recordProcessed(record: ConnectorProcessedRecord): void {
@@ -129,7 +157,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       outcome: record.outcome,
       payload: record.payload,
     }
-    this.processed.insert({ ts: this.now(), event })
+    this.report("processed", this.processed.insert({ ts: this.now(), event }))
   }
 
   recordConnection(record: ConnectorConnectionRecord): void {
@@ -140,7 +168,15 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       status: record.status,
       detail: record.detail,
     }
-    this.connection.insert({ ts: this.now(), event })
+    this.report("connection", this.connection.insert({ ts: this.now(), event }))
+  }
+
+  // A diagnostic store that swallows its own write failures is the one thing
+  // it must not do: surface the error so a disk-full or locked WAL is visible.
+  private report(table: string, result: LeucoLoggerRecord<unknown> | Error): void {
+    if (result instanceof Error) {
+      this.logger?.error("diagnostic log insert failed", { table, error: result.message })
+    }
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
@@ -211,6 +247,21 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     this.raw.close()
     this.processed.close()
     this.connection.close()
+  }
+}
+
+// Lock a freshly-opened db file (and its WAL sidecars) to the owner. ":memory:"
+// has no file; a chmod failure (already gone, unusual FS) is non-fatal — the
+// store still works, it just isn't hardened, so we swallow rather than crash.
+const restrictPermissions = (path: string): void => {
+  if (path === ":memory:") return
+
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try {
+      chmodSync(`${path}${suffix}`, 0o600)
+    } catch {
+      // sidecar may not exist yet, or FS may not support chmod — ignore
+    }
   }
 }
 

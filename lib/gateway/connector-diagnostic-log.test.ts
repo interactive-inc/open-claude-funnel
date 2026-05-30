@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { ConnectorDiagnosticLog } from "@/gateway/connector-diagnostic-log"
 import { MemoryConnectorDiagnosticLog } from "@/gateway/memory-connector-diagnostic-log"
 import { SqliteConnectorDiagnosticLog } from "@/gateway/sqlite-connector-diagnostic-log"
@@ -232,5 +236,177 @@ describe("SqliteConnectorDiagnosticLog oversize handling", () => {
     expect(stored._funnel_oversized).toBeUndefined()
 
     log.close()
+  })
+
+  // The cap compares Buffer.byteLength(payload) to 256*1024. These pin the
+  // exact boundary so an off-by-one (< vs <=) or a switch to .length would fail.
+  const CAP = 256 * 1024
+
+  test("keeps a payload of exactly the cap byte length verbatim", () => {
+    const log = buildSqlite()
+    // {"type":"message","text":"..."} — pad text so total bytes == CAP exactly.
+    const envelope = JSON.stringify({ type: "message", text: "" })
+    const fill = CAP - Buffer.byteLength(envelope, "utf8")
+    const payload = JSON.stringify({ type: "message", text: "x".repeat(fill) })
+
+    expect(Buffer.byteLength(payload, "utf8")).toBe(CAP)
+
+    log.recordRaw(raw({ payload }))
+
+    const stored = JSON.parse(log.queryRaw({})[0]?.payload ?? "") as Record<string, unknown>
+
+    expect(stored._funnel_oversized).toBeUndefined()
+    expect(typeof stored.text).toBe("string")
+
+    log.close()
+  })
+
+  test("offloads a payload one byte over the cap", () => {
+    const log = buildSqlite()
+    const envelope = JSON.stringify({ type: "message", text: "" })
+    const fill = CAP - Buffer.byteLength(envelope, "utf8") + 1
+    const payload = JSON.stringify({ type: "message", text: "x".repeat(fill) })
+
+    expect(Buffer.byteLength(payload, "utf8")).toBe(CAP + 1)
+
+    log.recordRaw(raw({ payload }))
+
+    const stored = JSON.parse(log.queryRaw({})[0]?.payload ?? "") as Record<string, unknown>
+
+    expect(stored._funnel_oversized).toBe(CAP + 1)
+    expect(stored.text).toBeUndefined()
+
+    log.close()
+  })
+
+  test("offloads by utf8 bytes, not character count (multibyte)", () => {
+    const log = buildSqlite()
+    // 'あ' is 3 bytes in utf8 but 1 char. ~90k chars = ~270KB > cap, but
+    // .length would read ~90k < cap and wrongly keep it.
+    const payload = JSON.stringify({ type: "message", text: "あ".repeat(90_000) })
+
+    expect(payload.length).toBeLessThan(CAP)
+    expect(Buffer.byteLength(payload, "utf8")).toBeGreaterThan(CAP)
+
+    log.recordRaw(raw({ payload }))
+
+    const stored = JSON.parse(log.queryRaw({})[0]?.payload ?? "") as Record<string, unknown>
+
+    expect(stored._funnel_oversized).toBeGreaterThan(CAP)
+    expect(stored.text).toBeUndefined()
+
+    log.close()
+  })
+
+  test("offloads a non-JSON oversized payload to metadata-only with empty head", () => {
+    const log = buildSqlite()
+    const payload = "x".repeat(CAP + 1) // not JSON
+
+    log.recordRaw(raw({ payload }))
+
+    // headFields fails to parse and degrades to {}, but the wrapper stays valid JSON.
+    const stored = JSON.parse(log.queryRaw({})[0]?.payload ?? "") as Record<string, unknown>
+
+    expect(stored._funnel_oversized).toBe(CAP + 1)
+    expect(stored._funnel_type).toBe("slack")
+    expect(stored.type).toBeUndefined()
+
+    log.close()
+  })
+})
+
+describe("SqliteConnectorDiagnosticLog retention", () => {
+  test("rawMaxRows caps the raw table independently of the verdict cap", () => {
+    const log = new SqliteConnectorDiagnosticLog({
+      rawPath: ":memory:",
+      processedPath: ":memory:",
+      connectionPath: ":memory:",
+      rawMaxRows: 2,
+      maxRows: 100,
+    })
+
+    for (let i = 0; i < 5; i += 1) {
+      log.recordRaw(raw({ eventId: `ev-${i}` }))
+      log.recordProcessed(processed({ eventId: `ev-${i}` }))
+    }
+
+    // raw pruned to its own tight cap; processed kept under the looser one.
+    expect(log.queryRaw({ limit: 100 })).toHaveLength(2)
+    expect(log.queryProcessed({ limit: 100 })).toHaveLength(5)
+
+    log.close()
+  })
+
+  test("maxAgeMs prunes rows older than the window across all tables", () => {
+    let clock = 1_000_000
+    const log = new SqliteConnectorDiagnosticLog({
+      rawPath: ":memory:",
+      processedPath: ":memory:",
+      connectionPath: ":memory:",
+      maxAgeMs: 1000,
+      now: () => clock,
+    })
+
+    log.recordRaw(raw({ eventId: "old" }))
+    log.recordConnection(connection({ status: "started" }))
+
+    clock += 5000 // advance well past the age window
+
+    // Pruning runs per-table on that table's own insert, so touch each one.
+    log.recordRaw(raw({ eventId: "new" }))
+    log.recordConnection(connection({ status: "connected" }))
+
+    const rawIds = log.queryRaw({ limit: 100 }).map((r) => r.eventId)
+    expect(rawIds).toEqual(["new"])
+    const statuses = log.queryConnection({ limit: 100 }).map((r) => r.status)
+    expect(statuses).toEqual(["connected"])
+
+    log.close()
+  })
+})
+
+describe("SqliteConnectorDiagnosticLog forward-compat", () => {
+  let rawPath = ""
+  let processedPath = ""
+  let connectionPath = ""
+
+  beforeEach(() => {
+    const stamp = `${Math.floor(performance.now())}-${process.pid}`
+    rawPath = join(tmpdir(), `diag-fc-raw-${stamp}.db`)
+    processedPath = join(tmpdir(), `diag-fc-proc-${stamp}.db`)
+    connectionPath = join(tmpdir(), `diag-fc-conn-${stamp}.db`)
+  })
+
+  afterEach(() => {
+    for (const path of [rawPath, processedPath, connectionPath]) {
+      for (const suffix of ["", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true })
+    }
+  })
+
+  test("statusOf degrades an unknown stored status to 'error'", () => {
+    // Create the tables via the real log, then close it.
+    const log = new SqliteConnectorDiagnosticLog({ rawPath, processedPath, connectionPath })
+    log.recordConnection(connection({ status: "connected" }))
+    log.close()
+
+    // Write a row carrying a status outside the union, as a newer build might.
+    const writer = new Database(connectionPath)
+    const event = JSON.stringify({
+      type: "slack",
+      connector_id: "co-1",
+      channel_id: "ch-1",
+      status: "quantum-entangled",
+      detail: "",
+    })
+    writer.prepare("INSERT INTO leuco_log (ts, type, event) VALUES (?, ?, ?)").run(1, "slack", event)
+    writer.close()
+
+    const reopened = new SqliteConnectorDiagnosticLog({ rawPath, processedPath, connectionPath })
+    const statuses = reopened.queryConnection({ limit: 100 }).map((r) => r.status)
+    reopened.close()
+
+    // The unknown value is narrowed to "error" rather than leaking a bad type.
+    expect(statuses).toContain("error")
+    expect(statuses).toContain("connected")
   })
 })

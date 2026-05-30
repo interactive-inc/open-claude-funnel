@@ -420,15 +420,18 @@ describe("FunnelSlackListener: diagnostic log", () => {
 })
 
 describe("FunnelSlackListener: connection lifecycle", () => {
-  test("records started then connected on a successful start", async () => {
+  // queryConnection returns rows oldest-first, so mapping status yields the
+  // exact emission order — the docstring makes that order load-bearing.
+  const orderedStatuses = (diagnosticLog: MemoryConnectorDiagnosticLog) =>
+    diagnosticLog.queryConnection({ limit: 100 }).map((row) => row.status)
+
+  test("records started then connected, in that order, on a successful start", async () => {
     const diagnosticLog = new MemoryConnectorDiagnosticLog()
     const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
 
     await listener.start(async () => {})
 
-    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
-    expect(statuses).toContain("started")
-    expect(statuses).toContain("connected")
+    expect(orderedStatuses(diagnosticLog)).toEqual(["started", "connected"])
   })
 
   test("records auth-failed (not connected) when auth.test throws", async () => {
@@ -440,21 +443,79 @@ describe("FunnelSlackListener: connection lifecycle", () => {
 
     await expect(listener.start(async () => {})).rejects.toThrow("invalid_auth")
 
-    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
-    expect(statuses).toContain("auth-failed")
-    expect(statuses).not.toContain("connected")
+    expect(orderedStatuses(diagnosticLog)).toEqual(["started", "auth-failed"])
     expect(diagnosticLog.queryConnection({ status: "auth-failed" })[0]?.detail).toBe("invalid_auth")
   })
 
-  test("records disconnected then stopped on stop()", async () => {
+  test("records error (not connected) when app.start throws", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({
+      config: buildConfig(),
+      diagnosticLog,
+      // onAppCreated runs after the App is built but before app.start(); swap
+      // start() to reject so we exercise the start-failure branch.
+      onAppCreated: (app) => {
+        const mockApp = app as unknown as MockApp
+        mockApp.start.mockImplementation(() => Promise.reject(new Error("socket refused")))
+      },
+    })
+
+    await expect(listener.start(async () => {})).rejects.toThrow("socket refused")
+
+    const statuses = orderedStatuses(diagnosticLog)
+    expect(statuses).toEqual(["started", "error"])
+    expect(diagnosticLog.queryConnection({ status: "error" })[0]?.detail).toBe("socket refused")
+  })
+
+  test("records disconnected then stopped, in order, on stop()", async () => {
     const diagnosticLog = new MemoryConnectorDiagnosticLog()
     const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
 
     await listener.start(async () => {})
     await listener.stop()
 
-    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
-    expect(statuses).toContain("disconnected")
-    expect(statuses).toContain("stopped")
+    expect(orderedStatuses(diagnosticLog)).toEqual(["started", "connected", "disconnected", "stopped"])
+  })
+
+  test("records error then stopped when app.stop rejects", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(async () => {})
+    hoisted.mockApp?.stop.mockImplementation(() => Promise.reject(new Error("stop failed")))
+
+    await listener.stop()
+
+    // disconnected is NOT recorded (stop threw); error + stopped are.
+    expect(orderedStatuses(diagnosticLog)).toEqual(["started", "connected", "error", "stopped"])
+    expect(diagnosticLog.queryConnection({ status: "error" })[0]?.detail).toBe("stop failed")
+  })
+
+  test("records nothing when no diagnosticLog is injected (no-op)", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    // Absence of a throw is the assertion.
+    await listener.start(async () => {})
+    await listener.stop()
+  })
+})
+
+describe("FunnelSlackListener: non-event payloads do not touch the diagnostic log", () => {
+  test("block_actions records no raw/processed/connection rows from the message path", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(async () => {})
+
+    const next = mock(async () => {})
+    await hoisted.middlewareHandlers[0]?.({
+      body: { type: "block_actions", actions: [{ action_id: "approve" }] },
+      next,
+    })
+
+    // A regression that logged interactive payloads as events would add rows here.
+    expect(diagnosticLog.queryRaw({})).toHaveLength(0)
+    expect(diagnosticLog.queryProcessed({})).toHaveLength(0)
+    expect(next).toHaveBeenCalledTimes(1)
   })
 })

@@ -97,9 +97,16 @@ export type ConnectorRawRecord = ConnectorEventKeys & {
 
 /** The processor's verdict for one inbound event. */
 export type ConnectorProcessedRecord = ConnectorEventKeys & {
-  /** "emitted" when delivered, else "skip:<reason>". */
+  /**
+   * "emitted" on successful delivery, "emitted:delivery-failed" when the
+   * downstream notify threw, or "skip:<reason>" when the processor dropped it.
+   */
   outcome: string
-  /** The emitted body (content + meta) when delivered, "" when skipped. */
+  /**
+   * The delivered body (content + meta) for an emitted event. For a skipped
+   * event there is no body, so the listener records the event JSON here
+   * instead — keeping a skipped row self-describing rather than blank.
+   */
   payload: string
 }
 

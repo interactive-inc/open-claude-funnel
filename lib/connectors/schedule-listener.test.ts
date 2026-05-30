@@ -4,6 +4,7 @@ import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedu
 import { ScheduleStateStore } from "@/connectors/schedule-state-store"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
+import { MemoryConnectorDiagnosticLog } from "@/gateway/memory-connector-diagnostic-log"
 
 const buildEntry = (overrides: Partial<ScheduleEntry> = {}): ScheduleEntry => ({
   id: "e1",
@@ -172,5 +173,94 @@ describe("FunnelScheduleListener", () => {
     })
 
     expect(sent2).toHaveLength(0)
+  })
+})
+
+describe("FunnelScheduleListener: diagnostic log", () => {
+  const buildWith = (
+    config: ScheduleConnectorConfig,
+    now: Date,
+    diagnosticLog: MemoryConnectorDiagnosticLog,
+    channelId?: string,
+  ): FunnelScheduleListener => {
+    const fs = new MemoryFunnelFileSystem()
+    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+
+    return new FunnelScheduleListener({
+      config,
+      lastFiredStore,
+      channelId,
+      logger: new NoopFunnelLogger(),
+      diagnosticLog,
+      now: () => now,
+    })
+  }
+
+  test("a firing entry records raw + emitted with eventId `${id}@${firedAt}`", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const config = buildConfig([buildEntry({ id: "e1", cron: "* * * * *" })])
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = buildWith(config, now, diagnosticLog, "ch-uuid-1")
+
+    await listener.tick(async () => {})
+
+    const raws = diagnosticLog.queryRaw({})
+    expect(raws).toHaveLength(1)
+    expect(raws[0]?.type).toBe("schedule")
+    expect(raws[0]?.connectorId).toBe("co-1")
+    expect(raws[0]?.channelId).toBe("ch-uuid-1")
+    expect(raws[0]?.eventId).toBe(`e1@${now.toISOString()}`)
+
+    const processed = diagnosticLog.queryProcessed({})
+    expect(processed).toHaveLength(1)
+    expect(processed[0]?.outcome).toBe("emitted")
+    expect(processed[0]?.eventId).toBe(raws[0]?.eventId ?? "")
+  })
+
+  test("records started on start() and stopped on stop()", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const config = buildConfig([buildEntry({ cron: "* * * * *" })])
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = buildWith(config, now, diagnosticLog)
+
+    await listener.start(async () => {})
+    await listener.stop()
+
+    const statuses = diagnosticLog.queryConnection({}).map((row) => row.status)
+    expect(statuses).toContain("started")
+    expect(statuses).toContain("stopped")
+  })
+
+  test("an invalid cron records an error connection row", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    // "bad" has one field, not five — matchCron throws on it.
+    const config = buildConfig([buildEntry({ id: "e1", cron: "bad" })])
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = buildWith(config, now, diagnosticLog)
+
+    await listener.tick(async () => {})
+
+    const errors = diagnosticLog.queryConnection({ status: "error" })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.detail).toContain("invalid cron")
+    // An invalid cron neither fires nor records a processed verdict.
+    expect(diagnosticLog.queryProcessed({})).toHaveLength(0)
+  })
+
+  test("records nothing and does not throw when no diagnosticLog is injected", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const config = buildConfig([buildEntry({ cron: "* * * * *" })])
+    const fs = new MemoryFunnelFileSystem()
+    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const listener = new FunnelScheduleListener({
+      config,
+      lastFiredStore,
+      logger: new NoopFunnelLogger(),
+      now: () => now,
+    })
+
+    // Exercising the record paths; absence of a throw is the assertion.
+    await listener.start(async () => {})
+    await listener.stop()
   })
 })

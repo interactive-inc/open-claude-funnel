@@ -2,6 +2,10 @@ import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-l
 import { matchCron } from "@/connectors/match-cron"
 import { ScheduleStateStore } from "@/connectors/schedule-state-store"
 import { FunnelLogger } from "@/engine/logger/logger"
+import type {
+  ConnectorConnectionStatus,
+  ConnectorDiagnosticLog,
+} from "@/gateway/connector-diagnostic-log"
 import type { ScheduleConnectorConfig, ScheduleEntry } from "@/connectors/schedule-connector-schema"
 
 export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Promise<void>
@@ -9,7 +13,11 @@ export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Pr
 type Deps = {
   config: ScheduleConnectorConfig
   lastFiredStore: ScheduleStateStore
+  /** Funnel channel uuid this connector lives under; stamped onto diagnostic-log rows. */
+  channelId?: string
   logger?: FunnelLogger
+  /** Diagnostic log of fired entries and lifecycle. No-op when absent. */
+  diagnosticLog?: ConnectorDiagnosticLog
   now?: () => Date
   /**
    * Invoked after a schedule entry fires successfully. Use to remove one-shot
@@ -25,7 +33,9 @@ const MAX_CATCHUP_MINUTES = 60 * 24
 export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly config: ScheduleConnectorConfig
   private readonly lastFiredStore: ScheduleStateStore
+  private readonly channelId: string | null
   private readonly logger: FunnelLogger | undefined
+  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
   private readonly now: () => Date
   private readonly onFired: ScheduleOnFired | null
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -35,13 +45,17 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     super()
     this.config = deps.config
     this.lastFiredStore = deps.lastFiredStore
+    this.channelId = deps.channelId ?? null
     this.logger = deps.logger
+    this.diagnosticLog = deps.diagnosticLog
     this.now = deps.now ?? (() => new Date())
     this.onFired = deps.onFired ?? null
   }
 
   async start(notify: NotifyFn): Promise<void> {
     this.stopped = false
+
+    this.recordConnection("started", "")
 
     const scheduleNext = () => {
       if (this.stopped) return
@@ -68,6 +82,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       clearTimeout(this.timer)
       this.timer = null
     }
+
+    this.recordConnection("stopped", "")
   }
 
   override isAlive(): boolean {
@@ -152,7 +168,20 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (catchup) meta.catchup = "true"
 
-    await notify(entry.prompt, meta)
+    // A fire is this connector's "inbound event". The id pairs the entry with
+    // the exact firing time so catch-up fires of one entry stay distinct.
+    const eventId = `${entry.id}@${firedAt.toISOString()}`
+
+    this.recordRaw(eventId, entry, firedAt, catchup)
+
+    try {
+      await notify(entry.prompt, meta)
+    } catch (error) {
+      this.recordProcessed(eventId, entry, "emitted:delivery-failed")
+      throw error
+    }
+
+    this.recordProcessed(eventId, entry, "emitted")
 
     if (this.onFired) {
       try {
@@ -211,11 +240,14 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private logInvalidCron(entry: Pick<ScheduleEntry, "id" | "cron">, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error)
+
+    this.recordConnection("error", `invalid cron "${entry.cron}" (entry ${entry.id}): ${message}`)
     this.logger?.error("invalid cron expression in schedule", {
       connector: this.config.name,
       id: entry.id,
       cron: entry.cron,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     })
   }
 
@@ -223,5 +255,47 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     const copy = new Date(date.getTime())
     copy.setSeconds(0, 0)
     return copy
+  }
+
+  private recordRaw(
+    eventId: string,
+    entry: ScheduleEntry,
+    firedAt: Date,
+    catchup: boolean,
+  ): void {
+    this.diagnosticLog?.recordRaw({
+      eventId,
+      type: "schedule",
+      connectorId: this.config.id,
+      channelId: this.channelId,
+      payload: JSON.stringify({
+        schedule_id: entry.id,
+        cron: entry.cron,
+        prompt: entry.prompt,
+        fired_at: firedAt.toISOString(),
+        catchup,
+      }),
+    })
+  }
+
+  private recordProcessed(eventId: string, entry: ScheduleEntry, outcome: string): void {
+    this.diagnosticLog?.recordProcessed({
+      eventId,
+      type: "schedule",
+      connectorId: this.config.id,
+      channelId: this.channelId,
+      outcome,
+      payload: entry.prompt,
+    })
+  }
+
+  private recordConnection(status: ConnectorConnectionStatus, detail: string): void {
+    this.diagnosticLog?.recordConnection({
+      type: "schedule",
+      connectorId: this.config.id,
+      channelId: this.channelId,
+      status,
+      detail,
+    })
   }
 }
