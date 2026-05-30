@@ -31,12 +31,25 @@ export class ConnectorDiagnosticSqlReader {
   constructor(props: Props) {
     // Opening the raw file as the main connection and attaching the others
     // lets one query reference all three. All are read-only.
-    this.db = new Database(props.rawPath, { readonly: true })
-    this.db.prepare("ATTACH DATABASE ? AS processeddb").run(props.processedPath)
-    this.db.prepare("ATTACH DATABASE ? AS connectiondb").run(props.connectionPath)
-    this.db.run(rawViewSql)
-    this.db.run(processedViewSql)
-    this.db.run(connectionViewSql)
+    const db = new Database(props.rawPath, { readonly: true })
+
+    try {
+      // The daemon writes these in WAL mode from another process; without a
+      // timeout a query racing a checkpoint fails instantly with SQLITE_BUSY.
+      db.run("PRAGMA busy_timeout = 500")
+      db.prepare("ATTACH DATABASE ? AS processeddb").run(props.processedPath)
+      db.prepare("ATTACH DATABASE ? AS connectiondb").run(props.connectionPath)
+      db.run(rawViewSql)
+      db.run(processedViewSql)
+      db.run(connectionViewSql)
+    } catch (error) {
+      // ATTACH/view setup can throw on a corrupt or partially written file;
+      // close the already-open handle before propagating so it does not leak.
+      db.close()
+      throw error
+    }
+
+    this.db = db
     Object.freeze(this)
   }
 

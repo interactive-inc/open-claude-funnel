@@ -92,11 +92,22 @@ export class FunnelConnectorFactory {
     }
 
     if (config.type === "gh") {
-      return new FunnelGhListener({ config, process: this.process, logger: this.logger })
+      return new FunnelGhListener({
+        config,
+        channelId,
+        process: this.process,
+        logger: this.logger,
+        diagnosticLog: this.diagnosticLog,
+      })
     }
 
     if (config.type === "discord") {
-      return new FunnelDiscordListener({ config, logger: this.logger })
+      return new FunnelDiscordListener({
+        config,
+        channelId,
+        logger: this.logger,
+        diagnosticLog: this.diagnosticLog,
+      })
     }
 
     const lastFiredStore = new ScheduleStateStore({
@@ -107,7 +118,9 @@ export class FunnelConnectorFactory {
     return new FunnelScheduleListener({
       config,
       lastFiredStore,
+      channelId,
       logger: this.logger,
+      diagnosticLog: this.diagnosticLog,
       onFired: this.scheduleListenerOptions.onFired,
     })
   }

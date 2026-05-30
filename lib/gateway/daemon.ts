@@ -8,8 +8,13 @@ import { Funnel } from "@/funnel"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { SqliteConnectorDiagnosticLog } from "@/gateway/sqlite-connector-diagnostic-log"
 
-/** Cap on diagnostic rows per table — enough history to debug a flaky day without unbounded growth. */
-const RAW_LOG_MAX_ROWS = 50_000
+// Raw rows can each hold up to ~256 KiB, so they get a tight cap (~5k rows ≈
+// 1.3 GiB worst case); the small verdict/lifecycle rows get a looser one.
+const RAW_MAX_ROWS = 5_000
+const VERDICT_MAX_ROWS = 50_000
+// Untouched payloads carry PII (message text, user ids); bound how long they
+// live on disk regardless of volume.
+const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 const PORT = Number(process.env.FUNNEL_PORT) || 9742
 // Honors a FUNNEL_DIR override (a funnel.json-scoped launch points this at
@@ -54,7 +59,21 @@ const diagnosticLog = new SqliteConnectorDiagnosticLog({
   rawPath: join(tmpDir, "connector-raw.db"),
   processedPath: join(tmpDir, "connector-processed.db"),
   connectionPath: join(tmpDir, "connector-connection.db"),
-  maxRows: RAW_LOG_MAX_ROWS,
+  rawMaxRows: RAW_MAX_ROWS,
+  maxRows: VERDICT_MAX_ROWS,
+  maxAgeMs: DIAGNOSTIC_MAX_AGE_MS,
+  logger,
+})
+
+// Close the WAL handles on shutdown so the sidecar files are checkpointed.
+// `exit` fires synchronously after the SIGINT/SIGTERM handlers call exit(),
+// and close() is synchronous, so this runs cleanly.
+process.on("exit", () => {
+  try {
+    diagnosticLog.close()
+  } catch {
+    // ignore
+  }
 })
 
 const funnel = new Funnel({ logger, diagnosticLog, dir: funnelDir })
