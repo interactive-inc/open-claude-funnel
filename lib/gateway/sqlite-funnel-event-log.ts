@@ -17,6 +17,10 @@ type Props = {
   maxRows?: number
   /** Optional age cap in ms. Pruned on every insert. */
   maxAgeMs?: number
+  /** Optional on-disk byte cap. Checked periodically; on overflow the oldest rows are dropped toward targetBytes and the file is VACUUMed. */
+  maxBytes?: number
+  /** Shrink target when maxBytes is exceeded. Defaults to maxBytes/4. */
+  targetBytes?: number
 }
 
 /**
@@ -53,6 +57,8 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       now: this.now,
       ...(props.maxRows !== undefined ? { maxRows: props.maxRows } : {}),
       ...(props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}),
+      ...(props.maxBytes !== undefined ? { maxBytes: props.maxBytes } : {}),
+      ...(props.targetBytes !== undefined ? { targetBytes: props.targetBytes } : {}),
     })
   }
 
@@ -124,6 +130,10 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
 
   findMaxOffset(): number {
     return this.sink.getMaxSeq()
+  }
+
+  clear(): void {
+    this.sink.clear()
   }
 
   close(): void {
