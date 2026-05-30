@@ -16,6 +16,8 @@ type Props<E, I extends ReadonlyArray<string>> = I extends readonly []
       path: string
       maxRows?: number
       maxAgeMs?: number
+      maxBytes?: number
+      targetBytes?: number
       now?: () => number
       indexes?: I
       extractIndexes?: never
@@ -24,6 +26,8 @@ type Props<E, I extends ReadonlyArray<string>> = I extends readonly []
       path: string
       maxRows?: number
       maxAgeMs?: number
+      maxBytes?: number
+      targetBytes?: number
       now?: () => number
       indexes: I
       extractIndexes: (event: E) => IndexValues<I>
@@ -61,6 +65,9 @@ type ColumnRow = { name: string }
 
 /** Conservative whitelist for column names interpolated into SQL. */
 const COLUMN_NAME_RE = /^[a-z_][a-z0-9_]*$/
+
+/** How many inserts between on-disk size checks (see insertsSinceByteCheck). */
+const BYTE_CHECK_INTERVAL = 500
 
 const RESERVED_COLUMNS: ReadonlySet<string> = new Set(["seq", "ts", "type", "event"])
 
@@ -116,6 +123,8 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
   private readonly db: Database
   private readonly maxRows: number | null
   private readonly maxAgeMs: number | null
+  private readonly maxBytes: number | null
+  private readonly targetBytes: number | null
   private readonly now: () => number
   private readonly indexes: I
   private readonly extractIndexes: ((event: E) => IndexValues<I>) | null
@@ -125,6 +134,14 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
   private readonly countStmt: Statement<CountRow, []>
   private readonly trimRowsStmt: Statement<unknown, [number]>
   private readonly trimAgeStmt: Statement<unknown, [number]>
+  private readonly trimOldestStmt: Statement<unknown, [number]>
+  // Byte-size trimming is expensive (a VACUUM rewrites the file), so it is not
+  // run on every insert like row/age trimming. Instead the sink counts inserts
+  // and only checks the on-disk size every BYTE_CHECK_INTERVAL writes; on
+  // overflow it deletes oldest rows down to targetBytes and VACUUMs once. The
+  // gap between maxBytes and targetBytes means that check runs rarely (the file
+  // has to refill the whole delta before the next overflow).
+  private insertsSinceByteCheck = 0
 
   constructor(props: Props<E, I>) {
     this.db = new Database(props.path)
@@ -133,6 +150,11 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
 
     this.maxRows = props.maxRows ?? null
     this.maxAgeMs = props.maxAgeMs ?? null
+    this.maxBytes = props.maxBytes ?? null
+    // Default the shrink target to a quarter of the cap when only maxBytes is
+    // given, so a sink with a byte cap always has somewhere to shrink to.
+    this.targetBytes =
+      props.targetBytes ?? (props.maxBytes !== undefined ? Math.floor(props.maxBytes / 4) : null)
     this.now = props.now ?? (() => Date.now())
 
     // The conditional `Props<E, I>` type widens to a union when `I` is a
@@ -167,6 +189,9 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
       "DELETE FROM leuco_log WHERE seq <= (SELECT seq FROM leuco_log ORDER BY seq DESC LIMIT 1 OFFSET ?)",
     )
     this.trimAgeStmt = this.db.prepare("DELETE FROM leuco_log WHERE ts < ?")
+    this.trimOldestStmt = this.db.prepare(
+      "DELETE FROM leuco_log WHERE seq IN (SELECT seq FROM leuco_log ORDER BY seq ASC LIMIT ?)",
+    )
   }
 
   insert(input: { ts: number; event: E }): LeucoLoggerRecord<E> | Error {
@@ -306,6 +331,58 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     if (this.maxAgeMs !== null) {
       this.trimAgeStmt.run(this.now() - this.maxAgeMs)
     }
+
+    this.maybeTrimBytes()
+  }
+
+  /**
+   * Throttled byte-size enforcement. Only every BYTE_CHECK_INTERVAL inserts do
+   * we measure the file; on overflow we estimate how many of the oldest rows to
+   * drop to land near targetBytes (by the byte/row ratio), delete them in one
+   * statement, then VACUUM once to return the freed pages to the filesystem (a
+   * plain DELETE only frees pages inside the file). One DELETE + one VACUUM per
+   * overflow keeps the expensive rewrite rare — the file must refill the whole
+   * maxBytes→targetBytes delta before the next overflow can trigger.
+   */
+  private maybeTrimBytes(): void {
+    if (this.maxBytes === null || this.targetBytes === null) return
+
+    this.insertsSinceByteCheck += 1
+
+    if (this.insertsSinceByteCheck < BYTE_CHECK_INTERVAL) return
+
+    this.insertsSinceByteCheck = 0
+
+    const bytes = this.byteSize()
+
+    if (bytes <= this.maxBytes) return
+
+    const rows = this.countStmt.get()?.n ?? 0
+
+    if (rows === 0) return
+
+    // Drop enough of the oldest rows to bring the file to ~targetBytes, by the
+    // current average bytes-per-row. Over/undershoot self-corrects next check.
+    const bytesToFree = bytes - this.targetBytes
+    const bytesPerRow = bytes / rows
+    const rowsToDrop = Math.min(rows, Math.ceil(bytesToFree / bytesPerRow))
+
+    this.trimOldestStmt.run(rowsToDrop)
+    this.db.run("VACUUM")
+  }
+
+  private byteSize(): number {
+    const pageCount = this.db.prepare<{ n: number }, []>("PRAGMA page_count").get()?.n ?? 0
+    const pageSize = this.db.prepare<{ n: number }, []>("PRAGMA page_size").get()?.n ?? 0
+
+    return pageCount * pageSize
+  }
+
+  /** Drop every row and reclaim the file space. Used by `<log>.clear()`. */
+  clear(): void {
+    this.db.run("DELETE FROM leuco_log")
+    this.db.run("VACUUM")
+    this.insertsSinceByteCheck = 0
   }
 
   private syncIndexColumns(): void {

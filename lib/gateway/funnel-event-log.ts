@@ -48,5 +48,9 @@ export abstract class FunnelEventLog {
 
   abstract findMaxOffset(): number
 
+  /** Drop every stored event and reclaim the file. The broadcaster's in-memory
+   *  offset counter is unaffected, so offsets keep increasing after a clear. */
+  abstract clear(): void
+
   abstract close(): void
 }

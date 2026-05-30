@@ -243,6 +243,12 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     }))
   }
 
+  clear(): void {
+    this.raw.clear()
+    this.processed.clear()
+    this.connection.clear()
+  }
+
   close(): void {
     this.raw.close()
     this.processed.close()

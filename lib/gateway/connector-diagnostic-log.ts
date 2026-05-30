@@ -186,5 +186,8 @@ export abstract class ConnectorDiagnosticLog {
 
   abstract queryConnection(query: ConnectorConnectionQuery): StoredConnectionEvent[]
 
+  /** Drop every diagnostic row across all three tables and reclaim the files. */
+  abstract clear(): void
+
   abstract close(): void
 }
