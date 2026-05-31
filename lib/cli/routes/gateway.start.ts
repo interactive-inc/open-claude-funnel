@@ -13,7 +13,7 @@ Spawned as a detached background process so it keeps running after the terminal 
 On macOS wraps the process with caffeinate -is by default to prevent idle and system sleep.
 Use --no-caffeine to disable caffeinate.
 
-port: 9742 (override via FUNNEL_PORT)
+port: 9743 (CLI default; override via FUNNEL_PORT)
 pid:  ~/.funnel/gateway.pid
 log:  ${join(funnelTmpDir(), "gateway.log")}
 

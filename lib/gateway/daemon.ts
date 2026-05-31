@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
-import { resolveFunnelDir } from "@/engine/settings/settings-store"
+import { resolveFunnelDir, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { Funnel } from "@/funnel"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
@@ -16,7 +16,7 @@ const VERDICT_MAX_ROWS = 50_000
 // live on disk regardless of volume.
 const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
-const PORT = Number(process.env.FUNNEL_PORT) || 9742
+const PORT = resolveFunnelPort()
 // Loopback by default; set FUNNEL_HOST=0.0.0.0 to expose the gateway on the LAN
 // (e.g. agents on other machines). The bearer token still gates every endpoint.
 const HOST = process.env.FUNNEL_HOST || "127.0.0.1"

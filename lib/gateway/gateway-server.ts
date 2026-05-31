@@ -15,11 +15,10 @@ import { gatewayRoutes } from "@/gateway/routes"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import type { FunnelSettingsReader } from "@/engine/settings/settings-reader"
-import { FUNNEL_DIR } from "@/engine/settings/settings-store"
+import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import type { FunnelClock } from "@/engine/time/clock"
 
-const DEFAULT_PORT = 9742
 // Bind to loopback by default so the gateway is never reachable off-box. The
 // daemon honors FUNNEL_HOST to expose it deliberately; every privileged
 // endpoint still requires the bearer token regardless of the bind address.
@@ -107,7 +106,7 @@ export class FunnelGatewayServer {
   constructor(deps: Deps) {
     this.channels = deps.channels
     this.settings = deps.settings
-    this.port = deps.port ?? DEFAULT_PORT
+    this.port = deps.port ?? resolveFunnelPort()
     this.hostname = deps.hostname ?? DEFAULT_HOST
     this.dbPath = deps.dbPath ?? defaultDbPath()
     this.process = deps.process

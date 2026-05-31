@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { SETTINGS_VERSION } from "@/engine/settings/settings-schema"
-import { FunnelSettingsStore } from "@/engine/settings/settings-store"
+import { FunnelSettingsStore, resolveFunnelPort } from "@/engine/settings/settings-store"
 
 const PATH = "/funnel/settings.json"
 
@@ -140,5 +140,20 @@ describe("FunnelSettingsStore", () => {
     })
 
     expect(store.read().profiles[0]?.id).toBe("keep-me")
+  })
+})
+
+describe("resolveFunnelPort", () => {
+  test("defaults to 9742 and honors FUNNEL_PORT", () => {
+    const saved = process.env.FUNNEL_PORT
+
+    delete process.env.FUNNEL_PORT
+    expect(resolveFunnelPort()).toBe(9742)
+
+    process.env.FUNNEL_PORT = "9743"
+    expect(resolveFunnelPort()).toBe(9743)
+
+    if (saved === undefined) delete process.env.FUNNEL_PORT
+    else process.env.FUNNEL_PORT = saved
   })
 })

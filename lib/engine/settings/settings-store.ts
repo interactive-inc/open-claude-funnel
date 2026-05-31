@@ -23,6 +23,19 @@ export function resolveFunnelDir(): string {
   return join(homedir(), ".funnel")
 }
 
+export const DEFAULT_GATEWAY_PORT = 9742
+
+/**
+ * Resolves the gateway port. Defaults to 9742 — the port a programmatically
+ * hosted gateway (`new Funnel().gatewayServer()`) uses. The `funnel` CLI entry
+ * sets `FUNNEL_PORT` to a distinct default so a CLI launch never collides with
+ * an embedding app's gateway on 9742. Read at call time so a daemon spawned
+ * with the env set resolves the override.
+ */
+export function resolveFunnelPort(): number {
+  return Number(process.env.FUNNEL_PORT) || DEFAULT_GATEWAY_PORT
+}
+
 export const FUNNEL_DIR = join(homedir(), ".funnel")
 export const SETTINGS_PATH = join(FUNNEL_DIR, "settings.json")
 

@@ -14,6 +14,14 @@ import { Funnel } from "@/funnel"
 
 process.title = "funnel"
 
+// A `funnel` CLI launch defaults to a distinct gateway port so it never
+// collides with a gateway hosted programmatically on 9742 (e.g. another app
+// embedding Funnel). FUNNEL_PORT still overrides. Set before building Funnel so
+// every facet — daemon spawn, MCP, listener client — shares the same port.
+const CLI_DEFAULT_PORT = 9743
+
+if (!process.env.FUNNEL_PORT) process.env.FUNNEL_PORT = String(CLI_DEFAULT_PORT)
+
 // When the cwd has a funnel.json, scope all funnel state to ~/.funnel/projects/<id>/
 // before building Funnel — setting FUNNEL_DIR makes every facet (CLI routing,
 // dispatchClaude, MCP, the spawned daemon) resolve to the same root and never

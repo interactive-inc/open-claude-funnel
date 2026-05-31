@@ -4,12 +4,11 @@ import { resolveDaemonScript } from "@/gateway/resolve-daemon-script"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
-import { FUNNEL_DIR } from "@/engine/settings/settings-store"
+import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 
-const DEFAULT_PORT = 9742
 const STARTUP_TIMEOUT_MS = 5000
 const SIGTERM_TIMEOUT_MS = 2000
 const POLL_INTERVAL_MS = 100
@@ -57,7 +56,7 @@ export class FunnelGateway {
     this.tmpDir = deps.tmpDir ?? funnelTmpDir()
     this.pidFile = join(this.dir, "gateway.pid")
     this.gatewayLog = join(this.tmpDir, "gateway.log")
-    this.port = deps.port ?? DEFAULT_PORT
+    this.port = deps.port ?? resolveFunnelPort()
     this.sleep = deps.sleep ?? defaultSleep
     Object.freeze(this)
   }

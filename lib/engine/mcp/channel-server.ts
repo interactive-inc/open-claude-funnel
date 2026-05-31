@@ -11,9 +11,9 @@ import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
 import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
 import { readGatewayToken } from "@/engine/mcp/read-gateway-token"
 import { usageHintForType } from "@/engine/mcp/usage-hint-for-type"
+import { resolveFunnelPort } from "@/engine/settings/settings-store"
 
 const DEFAULT_FUNNEL_DIR = join(homedir(), ".funnel")
-const DEFAULT_GATEWAY_BASE_URL = "http://localhost:9742"
 
 export type ChannelServerOptions = {
   /** Funnel home directory (settings.json + gateway.token). Defaults to ~/.funnel. */
@@ -31,7 +31,7 @@ export const startChannelServer = async (
 ): Promise<void> => {
   const dir = options.dir ?? DEFAULT_FUNNEL_DIR
   const gatewayBaseUrl =
-    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? DEFAULT_GATEWAY_BASE_URL
+    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? `http://localhost:${resolveFunnelPort()}`
   const gatewayWsUrl = `${gatewayBaseUrl.replace(/^http/, "ws")}/ws`
   const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
   const channel = channelId ? readChannelConnectors(dir, channelId) : null
