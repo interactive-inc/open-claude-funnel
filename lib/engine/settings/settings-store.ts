@@ -150,6 +150,8 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
   write(settings: Settings): void {
     this.fs.mkdirSync(dirname(this.path), { recursive: true })
     const versioned: Settings = { ...settings, version: SETTINGS_VERSION }
-    this.fs.writeFileSync(this.path, `${JSON.stringify(versioned, null, 2)}\n`)
+    // settings.json inlines live connector tokens (Slack/Discord bot tokens),
+    // so it must be owner-only (0600) like gateway.token — never world-readable.
+    this.fs.writeSecretFileSync(this.path, `${JSON.stringify(versioned, null, 2)}\n`)
   }
 }

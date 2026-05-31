@@ -49,6 +49,15 @@ describe("FunnelSettingsStore", () => {
     expect(loaded.channels[0]?.connectors[0]?.id).toBe("co-1")
   })
 
+  test("writes settings.json owner-only (0600) since it inlines connector tokens", () => {
+    const fs = new MemoryFunnelFileSystem()
+    const store = new FunnelSettingsStore({ path: PATH, fs })
+
+    store.write({ version: SETTINGS_VERSION, channels: [], profiles: [] })
+
+    expect(fs.statSync(PATH).mode).toBe(0o600)
+  })
+
   test("rejects legacy connectors-as-strings shape with a guidance message", () => {
     const fs = new MemoryFunnelFileSystem()
 
