@@ -120,6 +120,35 @@ describe("FunnelSettingsStore", () => {
     expect(loaded.profiles[0]?.name).toBe("dev")
   })
 
+  test("persists a backfilled id so repeated reads return the same id", () => {
+    const fs = new MemoryFunnelFileSystem()
+
+    fs.mkdirSync("/funnel", { recursive: true })
+    fs.writeFileSync(
+      PATH,
+      JSON.stringify({
+        version: SETTINGS_VERSION,
+        channels: [{ id: "ch-1", name: "ops", delivery: "fanout", connectors: [] }],
+        profiles: [{ name: "dev", path: "/repo", channelId: "ch-1" }],
+      }),
+    )
+
+    const store = new FunnelSettingsStore({
+      path: PATH,
+      fs,
+      idGenerator: new MemoryFunnelIdGenerator({ prefix: "prof" }),
+    })
+
+    const first = store.read().profiles[0]?.id
+    const second = store.read().profiles[0]?.id
+
+    // Without persistence the second read re-mints prof-2, and setSessionId
+    // (a separate read) could never match the id the launch used.
+    expect(first).toBe("prof-1")
+    expect(second).toBe("prof-1")
+    expect(JSON.parse(fs.readFileSync(PATH)).profiles[0].id).toBe("prof-1")
+  })
+
   test("preserves an existing profile id rather than reassigning it", () => {
     const fs = new MemoryFunnelFileSystem()
 

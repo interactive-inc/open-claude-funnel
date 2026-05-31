@@ -90,7 +90,7 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
       )
     }
 
-    this.backfillProfileIds(parsed)
+    const minted = this.backfillProfileIds(parsed)
 
     const result = settingsSchema.safeParse(parsed)
 
@@ -99,6 +99,10 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
         `invalid settings.json (${this.path}): ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")}`,
       )
     }
+
+    // Persist backfilled ids once, on the first read of a pre-id legacy file, so
+    // every later read returns the same id (mirrors FunnelLocalConfigWriter.ensureId).
+    if (minted) this.write(result.data)
 
     return result.data
   }
@@ -139,25 +143,32 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
   }
 
   /**
-   * Non-destructive migration for profiles written before `id` existed. The id
-   * is a later addition to an otherwise-compatible schema, so rather than
-   * rejecting the file we mint a uuid for each profile that lacks one; the next
-   * `write` persists it. Mutates `parsed` in place (it is freshly JSON-parsed
-   * and discarded after the schema parse, so no shared state is touched).
+   * Non-destructive migration for profiles written before `id` existed. Mints a
+   * uuid for each profile lacking one and returns whether anything was minted, so
+   * `read` can persist it immediately — a profile id must be STABLE across reads,
+   * otherwise `setSessionId` (a second read) sees a different id and can't match
+   * the one the launch used. Mutates `parsed` in place (freshly JSON-parsed).
    */
-  private backfillProfileIds(parsed: unknown): void {
-    if (!parsed || typeof parsed !== "object") return
+  private backfillProfileIds(parsed: unknown): boolean {
+    if (!parsed || typeof parsed !== "object") return false
 
     const obj = parsed as Record<string, unknown>
 
-    if (!Array.isArray(obj.profiles)) return
+    if (!Array.isArray(obj.profiles)) return false
+
+    let minted = false
 
     for (const profile of obj.profiles) {
       if (!profile || typeof profile !== "object") continue
       const p = profile as Record<string, unknown>
 
-      if (typeof p.id !== "string") p.id = this.idGenerator.generate()
+      if (typeof p.id !== "string") {
+        p.id = this.idGenerator.generate()
+        minted = true
+      }
     }
+
+    return minted
   }
 
   write(settings: Settings): void {

@@ -11,7 +11,7 @@ import type { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import type { FunnelProfiles } from "@/engine/profiles/profiles"
-import { FUNNEL_DIR } from "@/engine/settings/settings-store"
+import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 
 export type LaunchOptions = {
   channel: string
@@ -309,6 +309,12 @@ export class FunnelClaude {
     }
 
     env.FUNNEL_CHANNEL_ID = channelId
+    // Pin the MCP child to the same gateway port this launch resolved, so a
+    // CLI-default port never diverges from a programmatically-hosted gateway
+    // (e.g. nocker's 9742 vs a CLI funnel's 9743). resolveFunnelPort reads
+    // FUNNEL_PORT, and process.env already won above, so this just makes the
+    // resolved port explicit for the child and its MCP server.
+    env.FUNNEL_PORT = String(resolveFunnelPort())
 
     return env
   }
