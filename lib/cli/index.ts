@@ -4,7 +4,6 @@ import { dispatchClaude } from "@/cli/dispatch-claude"
 import { resolveRepoDir } from "@/cli/resolve-repo-dir"
 import { startChannelServer } from "@/engine/mcp/channel-server"
 import { toRequest } from "@/cli/router/to-request"
-import { launchTui } from "@/tui/tui"
 import { createCliApp } from "@/cli/routes"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
@@ -17,7 +16,7 @@ process.title = "funnel"
 
 // When the cwd has a funnel.json, scope all funnel state to ~/.funnel/projects/<id>/
 // before building Funnel — setting FUNNEL_DIR makes every facet (CLI routing,
-// dispatchClaude, TUI, MCP, the spawned daemon) resolve to the same root and never
+// dispatchClaude, MCP, the spawned daemon) resolve to the same root and never
 // touch the global ~/.funnel. Node implementations are wired directly here (entry
 // point), matching daemon.ts.
 const repoFs = new NodeFunnelFileSystem()
@@ -43,7 +42,7 @@ const HELP = `funnel — Open Claude Funnel
 usage: funnel [command]
 
 commands:
-  (none)                launch TUI
+  (none)                show help
   claude                launch Claude Code (default profile or --profile)
   channels              manage subscription boxes (and their nested connectors)
   profiles              manage launch profiles
@@ -62,7 +61,7 @@ more: funnel <command> --help`
 const args = process.argv.slice(2)
 
 if (args.length === 0) {
-  await launchTui(funnel)
+  process.stdout.write(`${HELP}\n`)
   process.exit(0)
 }
 

@@ -95,7 +95,7 @@ type Props = {
 /**
  * Facade exposing every funnel facet as a getter.
  *
- * The same `Funnel` is used by the CLI, the TUI, and as a programmable library.
+ * The same `Funnel` is used by the CLI and as a programmable library.
  * All side-effecting boundaries (filesystem, process, logger, clock, id, paths) are
  * injectable via `Props` — passing memory implementations gives a fully sandboxed
  * Funnel that touches no real disk, processes, or wall-clock time.

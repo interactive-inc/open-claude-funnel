@@ -213,7 +213,7 @@ fnl gateway listeners                        live registry (alive / dead)
 fnl status                                   overall status (channels / profiles / gateway / clients)
 fnl schema                                   print the JSON Schema for funnel.json (pipe to a file for editor support)
 fnl update                                   `bun i -g @interactive-inc/claude-funnel`
-fnl                                          (no args) launch the OpenTUI dashboard
+fnl                                          (no args) show help
 
 fnl --version
 fnl --help                                   every subcommand has --help; verb-without-arg also returns help
@@ -441,16 +441,6 @@ console.log(await res.text())
 ```
 
 `cliApp` is the same app pre-wired to `new Funnel()` for callers who just want the default. The middleware sets the chosen Funnel onto `c.var.funnel`; the matching `Env` type is exported for composing custom routes that share the same context variable.
-
-### Launching the TUI
-
-`launchTui(funnel)` boots the OpenTUI dashboard against any `Funnel` instance — pass `Funnel.inMemory()` to drive it against a fake state, or your production funnel for a live view.
-
-```ts
-import { Funnel, launchTui } from "@interactive-inc/claude-funnel"
-
-await launchTui(new Funnel())
-```
 
 ### Validating connector configs
 

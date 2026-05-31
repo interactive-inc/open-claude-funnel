@@ -11,7 +11,7 @@ external sources → daemon → channel → agent (MCP)
                        ↑ ← outbound replies (MCP tools)
 ```
 
-CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core から共有する。Web UI は持たない。
+CLI とプログラマブル API (`new Funnel(...)`) を 1 つの core から共有する。Web UI は持たない。
 
 ## ドメイン語彙
 
@@ -21,9 +21,9 @@ CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core �
 
 購読箱（transport）。`{ id, name, delivery, connectors[] }` を持ち、複数の Connector を nest する単位。WS クライアントはチャネル名で subscribe する。Channel は「event がどこから来てどこへ返るか」だけを持ち、launch 設定（options/env/resume）は持たない（それは Profile の責務）。`delivery` は 2 種類。
 
-- `fanout` — 全 subscriber が全 event を受信する。各 subscriber が独立した仕事を持つ場合（複数 Profile が同じ source を別々に処理する、TUI が観察するなど）
+- `fanout` — 全 subscriber が全 event を受信する。各 subscriber が独立した仕事を持つ場合（複数 Profile が同じ source を別々に処理する、観察用クライアントが覗くなど）
 - `exclusive` — 1 event を 1 subscriber が round-robin で消費する。subscriber が交換可能な worker で、各 event を 1 回だけ処理させたい場合
-- `tap=all`（TUI 等の観察用クライアント）は delivery mode に関係なく常に全部受信する
+- `tap=all`（観察用クライアント）は delivery mode に関係なく常に全部受信する
 
 ### Connector
 
@@ -35,7 +35,7 @@ CLI と TUI、プログラマブル API (`new Funnel(...)`) を 1 つの core �
 
 ### Profile
 
-transport model（Channel + Connector）の外側にある launch 便宜レイヤ。起動に必須ではなく（`fnl claude --channel <name>` だけで起動できる）、preset を保存しておきたいときだけ使う。machine-global な Claude 起動 preset で、`{ id, name, path, channelId, options[], env, resume, sessionId? }` で `~/.funnel/settings.json` に nested。`id` は不変の uuid 主キー（rename しても追従させたい内部 state — PID ファイルと sessionId — のキー）、`name` は CLI/TUI が指す表示用ラベルで rename 可能（`--profile <name>`）。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。`sessionId` は config でなく execution state で、この profile が最後に起動した Claude session id（launcher が書き、次回 resume で読む）。session を profile（by id）に内包することで、同じ repo の無関係な session を引き継がず、transport 層（Channel）は profile / session を一切知らずに済む。Profile 自身は Connector を持たない（Channel が持つ）。Profile は channel を内包するので `--profile` と `--channel` は併用不可（同時指定は error）。
+transport model（Channel + Connector）の外側にある launch 便宜レイヤ。起動に必須ではなく（`fnl claude --channel <name>` だけで起動できる）、preset を保存しておきたいときだけ使う。machine-global な Claude 起動 preset で、`{ id, name, path, channelId, options[], env, resume, sessionId? }` で `~/.funnel/settings.json` に nested。`id` は不変の uuid 主キー（rename しても追従させたい内部 state — PID ファイルと sessionId — のキー）、`name` は CLI が指す表示用ラベルで rename 可能（`--profile <name>`）。`fnl claude --profile <name>` で path（cwd）に移動し、`FUNNEL_CHANNEL_ID` を注入して Claude を起動する。launch 固有の設定 — `--agent` / `--brief` / `--model` などの `options`（claude argv の先頭に積む）、`env`（process.env が衝突時に勝つ）、`resume`（session 再利用の可否）— は全部 Profile が持つ。`sessionId` は config でなく execution state で、この profile が最後に起動した Claude session id（launcher が書き、次回 resume で読む）。session を profile（by id）に内包することで、同じ repo の無関係な session を引き継がず、transport 層（Channel）は profile / session を一切知らずに済む。Profile 自身は Connector を持たない（Channel が持つ）。Profile は channel を内包するので `--profile` と `--channel` は併用不可（同時指定は error）。
 
 ### LocalConfig（funnel.json）
 
@@ -47,7 +47,7 @@ ChannelSpec = { name, connectors? }
 ProfileSpec = { channel, options?, env?, resume? }
 ```
 
-`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / TUI / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/engine/local-config/` を参照。
+`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/engine/local-config/` を参照。
 
 ### Listener Supervisor と Broadcaster
 
@@ -68,7 +68,7 @@ Slack → SlackListener.start(notify) → notify(channel, connector, content, me
 
 ### gateway の要否
 
-`fnl channels add` 等の store 編集系は gateway なしでも動く。Listener を起動するもの（実イベントを流す）、WS で受け取るもの（MCP / TUI 観察）、outbound（Claude → external も HTTP hop 経由）が gateway を必要とする。store 編集後に gateway が動いていれば、対応する Listener を hot-reload する（ただし `FunnelLocalConfigSync` の rename-by-token 経路は engine の `FunnelChannels.renameConnector` を直叩きするので reload が走らない — `fnl gateway restart` で取り込む）。
+`fnl channels add` 等の store 編集系は gateway なしでも動く。Listener を起動するもの（実イベントを流す）、WS で受け取るもの（MCP / 観察クライアント）、outbound（Claude → external も HTTP hop 経由）が gateway を必要とする。store 編集後に gateway が動いていれば、対応する Listener を hot-reload する（ただし `FunnelLocalConfigSync` の rename-by-token 経路は engine の `FunnelChannels.renameConnector` を直叩きするので reload が走らない — `fnl gateway restart` で取り込む）。
 
 ## コマンド
 
@@ -87,20 +87,20 @@ bun lib/bin.ts <args> # 開発用直接実行（build 不要、起動 ~2s）
 
 `fnl` / `funnel` は `dist/bin.js` を指す bundle。コード変更を `fnl` で確かめるなら `make build` を再実行。日常の試行は `bun lib/bin.ts ...` が速い。
 
-テストファイルは全て `.test.ts`（TUI は `.test.tsx`）で統一し、`bun test` 一本で走らせる（`make test` = `bun test`）。テストランナーは Bun ネイティブの `bun:test`（`import { describe, expect, test, mock } from "bun:test"`）。production と同じ Bun ランタイムで実行するので、`Bun.serve` / `bun:sqlite` を import チェーンに含む統合テストも普通に動く（vitest の Node ワーカー時代に必要だった exclude リストの二重管理は廃止）。mock は `mock(fn)`（旧 `vi.fn`）、module mock は `mock.module(specifier, factory)`（旧 `vi.mock`、bun では hoist されて static import を intercept する）。新規テストは `bun:test` から import するだけでよい。`@/` alias は tsconfig の `paths` から解決される。
+テストファイルは全て `.test.ts` で統一し、`bun test` 一本で走らせる（`make test` = `bun test`）。テストランナーは Bun ネイティブの `bun:test`（`import { describe, expect, test, mock } from "bun:test"`）。production と同じ Bun ランタイムで実行するので、`Bun.serve` / `bun:sqlite` を import チェーンに含む統合テストも普通に動く（vitest の Node ワーカー時代に必要だった exclude リストの二重管理は廃止）。mock は `mock(fn)`（旧 `vi.fn`）、module mock は `mock.module(specifier, factory)`（旧 `vi.mock`、bun では hoist されて static import を intercept する）。新規テストは `bun:test` から import するだけでよい。`@/` alias は tsconfig の `paths` から解決される。
 
 ## レイヤ地図
 
 依存は一方向で、内側のレイヤは外側を知らない。
 
 ```
-engine ← connectors ← gateway ← cli / tui
-                                 ↖ bin.ts → funnel.ts (facade)
+engine ← connectors ← gateway ← cli
+                                ↖ bin.ts → funnel.ts (facade)
 ```
 
 ### lib/engine
 
-コアドメイン。他レイヤを知らない。外部境界（FS / HTTP / process / clock / id / logger / settings / token prompter 等）はすべて abstract class + Node 実装 + Memory 実装で並置し、テストは Memory 実装で書く。主要サービスは channels（購読箱 + nested connector CRUD + schedule entries + adapter dispatch）、claude（起動）、mcp（`.mcp.json` install と stdio サーバ）、profiles、settings、local-config（funnel.json の read / sync / dotenv reader）、token-prompter（TTY での secret 入力）。
+コアドメイン。他レイヤを知らない。外部境界（FS / HTTP / process / clock / id / logger / settings / token prompter 等）はすべて abstract class + Node 実装 + Memory 実装で並置し、テストは Memory 実装で書く。主要サービスは channels（購読箱 + nested connector CRUD + schedule entries + adapter dispatch）、claude（起動）、mcp（`.mcp.json` install と stdio サーバ）、profiles、settings、local-config（funnel.json の read / sync / id 書き戻し）、token-prompter（TTY での secret 入力）。
 
 ### lib/connectors
 
@@ -113,10 +113,6 @@ Slack / GitHub / Discord / Schedule の Connector 実装。型ごとに Listener
 ### lib/cli
 
 CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリへ流す（実ネットワークは経由しない）。`claude` サブコマンドだけは `dispatchClaude` で HTTP routing を bypass し、argv を verbatim に claude へ転送する（positional / 未知の短縮フラグの取り扱いを保つため）。
-
-### lib/tui
-
-OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI レイヤ依存なし。
 
 ### lib/funnel.ts と lib/bin.ts と lib/index.ts
 
@@ -201,9 +197,8 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - 受信系 — gateway に WS 接続してイベントを Claude に流す。`FUNNEL_CHANNEL_ID` 未設定なら no-op。`experimental: { "claude/channel": {} }` capability 必須。対象リポジトリの `.mcp.json` は `fnl claude` 起動時に `FunnelMcp.install` が自動追記する（既存エントリは触らない）
 - 送信系 — 起動時に該当チャネルの connectors を読み、tool 1 つに 1 connector を動的公開する（schedule は除外）。tool 名 = connector 名、引数は `{ method, path, body? }`。tool 呼び出しは gateway の channel call エンドポイントへ Bearer auth 付き HTTP POST し、レスポンス JSON をそのまま Claude に返す（bash を経由しない）
 
-### TUI と Claude 起動
+### Claude 起動
 
-- `fnl`（引数なし）で OpenTUI ダッシュボード。キーは `r` リフレッシュ、`q` / `esc` / `Ctrl-C` 終了
 - `fnl claude` の解決順（`dispatchClaude`）:
   1. `--help` / `-h` → help を stdout
   2. `--profile` と `--channel` の同時指定 → error（profile が既に channel を bind しているため併用不可）

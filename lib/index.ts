@@ -82,6 +82,3 @@ export * from "@/cli/factory"
 export * from "@/cli/router/to-request"
 export * from "@/cli/router/query-to-cli-args"
 export { app as cliApp, createCliApp } from "@/cli/routes"
-
-// TUI — launcher (consumers can spawn the OpenTUI dashboard with their own Funnel)
-export * from "@/tui/tui"
