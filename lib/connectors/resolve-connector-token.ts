@@ -2,7 +2,7 @@
  * Resolves a connector token from either a literal value or the name of an env
  * var. A connector config carries one or the other per slot (see
  * slack-connector-schema): literals are inlined into settings.json, references
- * keep the secret in the environment (`.env.local`) and out of settings.json.
+ * keep the secret in `process.env` and out of settings.json.
  *
  * Errors loudly when neither yields a value — a misconfigured connector should
  * fail at listener start, not connect with an empty token and silently never

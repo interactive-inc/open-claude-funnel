@@ -4,12 +4,11 @@ import { z } from "zod"
  * A slack connector resolves its tokens one of two ways, set at sync time:
  *
  *   - literal: `botToken` / `appToken` hold the real `xoxb-`/`xapp-` secret
- *     (funnel.json gave a literal, or a `fnl channels` command did).
- *   - by reference: `botTokenEnv` / `appTokenEnv` hold the *name* of an env var
- *     (funnel.json used `env: { botToken: "SLACK_BOT_TOKEN" }`). The secret
- *     never lands in settings.json; the listener resolves it from the
- *     environment at start. This keeps repo-local launches' tokens in
- *     `.env.local` only.
+ *     (set by a `fnl channels` command or a TTY prompt at launch).
+ *   - by reference: `botTokenEnv` / `appTokenEnv` hold the *name* of an env var.
+ *     The secret never lands in settings.json; the listener resolves it from
+ *     `process.env` at start. This form is only set through the engine API
+ *     (`new Funnel(...)`) — funnel.json and the `fnl` CLI produce literals.
  *
  * Both are optional at the schema level (a discriminated-union member can't
  * carry a cross-field refine); the listener requires exactly one resolved
