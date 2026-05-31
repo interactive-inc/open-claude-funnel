@@ -52,8 +52,6 @@ process.on("exit", () => {
     // ignore
   }
 })
-process.on("SIGINT", () => process.exit(130))
-process.on("SIGTERM", () => process.exit(143))
 
 const tmpDir = funnelTmpDir()
 mkdirSync(tmpDir, { recursive: true })
@@ -83,3 +81,34 @@ const funnel = new Funnel({ logger, diagnosticLog, dir: funnelDir })
 const server = funnel.gatewayServer({ port: PORT, hostname: HOST })
 
 await server.start()
+
+// Graceful shutdown: stop listeners so @slack/bolt closes the Socket Mode
+// websocket and Slack drops the connection immediately. A bare process.exit
+// (the old handler) tore the TCP socket down with no disconnect frame, leaving
+// a server-side ghost connection on Slack until its ping-timeout — those ghosts
+// stole inbound events across restarts. Cap the wait so a hung close still exits.
+let shuttingDown = false
+
+const shutdown = async (code: number): Promise<void> => {
+  if (shuttingDown) return
+
+  shuttingDown = true
+
+  try {
+    await Promise.race([
+      server.stop(),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ])
+  } catch {
+    // exit regardless of a failed stop
+  }
+
+  process.exit(code)
+}
+
+process.on("SIGINT", () => {
+  void shutdown(130)
+})
+process.on("SIGTERM", () => {
+  void shutdown(143)
+})
