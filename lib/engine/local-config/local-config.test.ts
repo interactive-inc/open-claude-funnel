@@ -37,11 +37,12 @@ describe("FunnelLocalConfig", () => {
           channels: [{ name: "ops" }, { name: "review" }],
           profiles: [
             {
+              name: "pm",
               channel: "ops",
               options: ["--brief", "--agent", "pm"],
               env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
             },
-            { channel: "review", env: { EXTRA: "1" }, resume: false },
+            { name: "rev", channel: "review", env: { EXTRA: "1" }, resume: false },
           ],
         }),
       },
@@ -52,11 +53,12 @@ describe("FunnelLocalConfig", () => {
       channels: [{ name: "ops" }, { name: "review" }],
       profiles: [
         {
+          name: "pm",
           channel: "ops",
           options: ["--brief", "--agent", "pm"],
           env: { ANTHROPIC_MODEL: "claude-sonnet-4-6" },
         },
-        { channel: "review", env: { EXTRA: "1" }, resume: false },
+        { name: "rev", channel: "review", env: { EXTRA: "1" }, resume: false },
       ],
     })
   })
@@ -106,7 +108,7 @@ describe("FunnelLocalConfig", () => {
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
-          profiles: [{ channel: "opss", options: ["--agent", "pm"] }],
+          profiles: [{ name: "pm", channel: "opss", options: ["--agent", "pm"] }],
         }),
       },
     })
@@ -115,18 +117,38 @@ describe("FunnelLocalConfig", () => {
     expect(() => config.read("/repo")).toThrow(/not declared in channels/)
   })
 
-  test("throws when more than one profile binds the same channel", () => {
+  test("throws when two profiles share a name", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
-          profiles: [{ channel: "ops" }, { channel: "ops" }],
+          profiles: [
+            { name: "dup", channel: "ops" },
+            { name: "dup", channel: "ops" },
+          ],
         }),
       },
     })
     const config = new FunnelLocalConfig({ fs })
 
-    expect(() => config.read("/repo")).toThrow(/more than one profile/)
+    expect(() => config.read("/repo")).toThrow(/names must be unique/)
+  })
+
+  test("accepts multiple profiles bound to the same channel", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops" }],
+          profiles: [
+            { name: "pm", channel: "ops", options: ["--agent", "pm"] },
+            { name: "dev", channel: "ops", options: ["--agent", "developer"] },
+          ],
+        }),
+      },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(config.read("/repo")?.profiles).toHaveLength(2)
   })
 
   test("accepts one profile per declared channel", () => {
@@ -135,8 +157,8 @@ describe("FunnelLocalConfig", () => {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }, { name: "review" }],
           profiles: [
-            { channel: "ops", options: ["--agent", "pm"] },
-            { channel: "review", options: ["--agent", "reviewer"] },
+            { name: "pm", channel: "ops", options: ["--agent", "pm"] },
+            { name: "reviewer", channel: "review", options: ["--agent", "reviewer"] },
           ],
         }),
       },

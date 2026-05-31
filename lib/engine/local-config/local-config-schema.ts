@@ -57,7 +57,9 @@ export const channelSpecSchema = z.object({
 export type ChannelSpec = z.infer<typeof channelSpecSchema>
 
 export const profileSpecSchema = z.object({
-  /** Name of the channel (declared in `channels[]`) this profile subscribes to. */
+  /** Handle for `fnl claude --profile <name>`. A profile is only launchable by this name. */
+  name: z.string(),
+  /** Name of the channel (declared in `channels[]`) this profile binds. The profile depends on the channel, never the reverse. */
   channel: z.string(),
   /** Args prepended to the claude argv on every launch through this profile. */
   options: z.array(z.string()).optional(),

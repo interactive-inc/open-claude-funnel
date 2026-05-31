@@ -31,7 +31,7 @@ describe("funnelJsonSchema", () => {
     expect(channelProps).not.toHaveProperty("env")
   })
 
-  test("each profile declares channel / options / env / resume (launch recipe)", () => {
+  test("each profile declares name / channel / options / env / resume (launch recipe)", () => {
     const schema = funnelJsonSchema() as {
       properties: {
         profiles: { items: { properties: Record<string, unknown> } }
@@ -40,7 +40,7 @@ describe("funnelJsonSchema", () => {
 
     const profileProps = schema.properties.profiles.items.properties
 
-    expect(profileProps).not.toHaveProperty("name")
+    expect(profileProps).toHaveProperty("name")
     expect(profileProps).toHaveProperty("channel")
     expect(profileProps).toHaveProperty("options")
     expect(profileProps).toHaveProperty("env")

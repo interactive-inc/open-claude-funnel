@@ -126,7 +126,7 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 
 `channels[]` is required and the first entry is the default. `fnl claude --channel review` picks one by name; `fnl claude` with no `--channel` uses the first.
 
-A channel declares only transport — its `connectors` and delivery mode. The launch recipe lives on `profiles[]`: each profile binds to a channel by name and carries `options` (prepended to the claude argv before user-supplied CLI args, which still come last — use it for flags like `--brief`, `--agent <name>`, `--model <name>`), `env` (layered under the launched claude process — `process.env` from the launching shell wins on collision), and `resume`. `fnl claude` applies the first profile bound to the chosen channel.
+A channel declares only transport — its `connectors` and delivery mode. The launch recipe lives on `profiles[]`: each profile has a unique `name`, binds to a channel by name, and carries `options` (prepended to the claude argv before user-supplied CLI args, which still come last — use it for flags like `--brief`, `--agent <name>`, `--model <name>`), `env` (layered under the launched claude process — `process.env` from the launching shell wins on collision), and `resume`. A profile is launched by name with `fnl claude --profile <name>`; the channel never selects a profile on its own. Multiple profiles may bind the same channel — they are told apart by `name`.
 
 The optional `connectors` array on a channel is the source of truth for that channel: missing connectors are created and connectors not declared are removed on launch. Connectors are matched by name. An absent `connectors` field leaves existing connectors alone.
 
@@ -274,7 +274,7 @@ ChannelSpec = { name, connectors? }
         the matching Channel in ~/.funnel/projects/<id>/settings.json on launch. Connectors carry no
         tokens; a token is set via the CLI or prompted on a TTY at launch and saved to that scoped settings.
 
-ProfileSpec = { channel, options?, env?, resume? }
+ProfileSpec = { name, channel, options?, env?, resume? }
         launch recipe bound to a channel by name. applied inline on launch (the first spec bound to the
         chosen channel — selected by its channel binding, not by name); not persisted into the global
         profiles[] list.

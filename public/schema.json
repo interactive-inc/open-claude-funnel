@@ -112,6 +112,9 @@
       "items": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string"
+          },
           "channel": {
             "type": "string"
           },
@@ -135,6 +138,7 @@
           }
         },
         "required": [
+          "name",
           "channel"
         ],
         "additionalProperties": false

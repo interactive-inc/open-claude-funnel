@@ -44,10 +44,10 @@ transport model（Channel + Connector）の外側にある launch 便宜レイ�
 ```
 LocalConfig = { id?, channels: ChannelSpec[], profiles?: ProfileSpec[] }
 ChannelSpec = { name, connectors? }
-ProfileSpec = { channel, options?, env?, resume? }
+ProfileSpec = { name, channel, options?, env?, resume? }
 ```
 
-`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/engine/local-config/` を参照。
+`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。profile は `--profile <name>` で名前指定して launch に渡す（channel は profile を選ばない — channel は transport のみ、profile が channel を bind する一方向。同じ channel に複数 profile を bind してよく、`name` で一意に解決する）。global profile への永続化はしない。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/engine/local-config/` を参照。
 
 ### Listener Supervisor と Broadcaster
 
@@ -202,8 +202,8 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - `fnl claude` の解決順（`dispatchClaude`）:
   1. `--help` / `-h` → help を stdout
   2. `--profile` と `--channel` の同時指定 → error（profile が既に channel を bind しているため併用不可）
-  3. `--profile <name>` / `-p <name>` → 名前付き global profile（funnel.json は無視）
-  4. cwd の `funnel.json` がある → `--channel <name>` で channels[] から選択（無指定なら先頭）、sync し、その channel に bound な funnel.json profiles[] 先頭の recipe を適用して launch
+  3. `--profile <name>` / `-p <name>` → global profile、無ければ cwd の funnel.json profiles[] を `name` で解決（その profile の channel を bind し recipe を適用）
+  4. cwd の `funnel.json` がある → `--channel <name>` で channels[] から選択（無指定なら先頭）、sync して transport だけ bind（recipe 無し — channel は profile を選ばない）
   5. funnel.json が無く `--channel <name>` のみ → raw launch（recipe 無し、既存 `~/.funnel/settings.json` のチャネルを使う）
   6. default global profile → launch
   7. どれも当たらない → help を stdout

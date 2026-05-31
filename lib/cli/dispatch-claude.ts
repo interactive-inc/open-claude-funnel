@@ -2,7 +2,6 @@ import { claudeHelp } from "@/cli/routes/claude"
 import type {
   ChannelSpec,
   LocalConfig,
-  ProfileSpec,
 } from "@/engine/local-config/local-config-schema"
 import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
 import { Funnel } from "@/funnel"
@@ -144,25 +143,22 @@ const pickChannel = (local: LocalConfig, requestedName: string | null): ChannelS
   return found
 }
 
-const pickProfile = (local: LocalConfig, channelName: string): ProfileSpec | null => {
-  return local.profiles?.find((p) => p.channel === channelName) ?? null
-}
-
 /**
  * Entry point for `fnl claude <args>`. Pulls only funnel-specific flags
  * (--profile / -p, --channel, --help / -h) out of argv and forwards every
  * other token verbatim to claude. The launch recipe (options / env / resume)
- * comes from the resolved profile — global (--profile / default) or the
- * funnel.json profile bound to the chosen channel — and is passed to
- * FunnelClaude.launch; this layer decides which channel to bind and which
- * recipe to apply.
+ * comes from the resolved profile — global (--profile / default) or a
+ * funnel.json profile selected by name (--profile <name>) — and is passed to
+ * FunnelClaude.launch. A channel only ever binds transport; it never pulls in
+ * a profile on its own.
  *
  * Resolution order:
  *   1. --help → print help
  *   2. --profile + --channel together → error (a profile already binds a channel)
- *   3. --profile <name> → named global profile (ignores funnel.json)
- *   4. funnel.json in cwd → select channel (--channel <name> or first), sync,
- *      apply the first funnel.json profile bound to that channel, launch
+ *   3. --profile <name> → global profile, else the funnel.json profile with that
+ *      name (resolves its channel, syncs, applies its recipe)
+ *   4. funnel.json in cwd → bind the selected channel's transport only
+ *      (--channel <name> or first); no recipe
  *   5. --channel <name> with no funnel.json → raw launch (no recipe)
  *   6. default global profile → launch
  *   7. nothing matched → print help
@@ -189,27 +185,53 @@ export const dispatchClaude = async (
   const cwd = deps.cwd ?? process.cwd()
 
   if (parsed.profile !== null) {
-    const profile = funnel.profiles.get(parsed.profile)
+    const globalProfile = funnel.profiles.get(parsed.profile)
 
-    if (!profile) {
-      return {
-        stdout: null,
-        stderr: `error: profile "${parsed.profile}" not found`,
-        exitCode: 1,
-      }
+    if (globalProfile) {
+      const exitCode = await funnel.claude.launch({
+        channel: globalProfile.channelId,
+        cwd: globalProfile.path,
+        userArgs: parsed.userArgs,
+        profileId: globalProfile.id,
+        options: globalProfile.options,
+        env: globalProfile.env,
+        resume: globalProfile.resume,
+      })
+
+      return { stdout: null, stderr: null, exitCode }
     }
 
-    const exitCode = await funnel.claude.launch({
-      channel: profile.channelId,
-      cwd: profile.path,
-      userArgs: parsed.userArgs,
-      profileId: profile.id,
-      options: profile.options,
-      env: profile.env,
-      resume: profile.resume,
-    })
+    const localForProfile = funnel.localConfig.read(cwd)
+    const localProfile = localForProfile?.profiles?.find((p) => p.name === parsed.profile)
 
-    return { stdout: null, stderr: null, exitCode }
+    if (localForProfile && localProfile) {
+      const picked = pickChannel(localForProfile, localProfile.channel)
+
+      if (typeof picked === "string") {
+        return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
+      }
+
+      const synced = await funnel.localConfigSync.ensure(picked)
+
+      await reconcileListeners(funnel, picked.name, synced)
+
+      const exitCode = await funnel.claude.launch({
+        channel: picked.name,
+        cwd,
+        userArgs: parsed.userArgs,
+        options: localProfile.options,
+        env: localProfile.env,
+        resume: localProfile.resume,
+      })
+
+      return { stdout: null, stderr: null, exitCode }
+    }
+
+    return {
+      stdout: null,
+      stderr: `error: profile "${parsed.profile}" not found`,
+      exitCode: 1,
+    }
   }
 
   const local = funnel.localConfig.read(cwd)
@@ -230,15 +252,13 @@ export const dispatchClaude = async (
 
     await reconcileListeners(funnel, picked.name, synced)
 
-    const profile = pickProfile(local, picked.name)
-
+    // A channel binds transport only — no launch recipe. Options/env/resume come
+    // from a profile, reachable solely via `--profile <name>`. The channel never
+    // pulls in a profile on its own.
     const exitCode = await funnel.claude.launch({
       channel: picked.name,
       cwd,
       userArgs: parsed.userArgs,
-      options: profile?.options,
-      env: profile?.env,
-      resume: profile?.resume,
     })
 
     return { stdout: null, stderr: null, exitCode }
