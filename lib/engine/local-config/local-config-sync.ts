@@ -1,5 +1,4 @@
 import type { FunnelChannels } from "@/engine/channels/channels"
-import { FunnelDotenvReader } from "@/engine/local-config/dotenv-reader"
 import type { ChannelSpec, ConnectorSpec } from "@/engine/local-config/local-config-schema"
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
@@ -7,9 +6,7 @@ import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
 
 type Deps = {
   channels: FunnelChannels
-  dotenv: FunnelDotenvReader
   prompter: FunnelTokenPrompter
-  env?: NodeJS.ProcessEnv
 }
 
 export type ConnectorSyncOutcome = {
@@ -49,19 +46,15 @@ type EnsureOutcome = {
  */
 export class FunnelLocalConfigSync {
   private readonly channels: FunnelChannels
-  private readonly dotenv: FunnelDotenvReader
   private readonly prompter: FunnelTokenPrompter
-  private readonly env: NodeJS.ProcessEnv
 
   constructor(deps: Deps) {
     this.channels = deps.channels
-    this.dotenv = deps.dotenv
     this.prompter = deps.prompter
-    this.env = deps.env ?? process.env
     Object.freeze(this)
   }
 
-  async ensure(channel: ChannelSpec, cwd: string): Promise<LocalConfigSyncResult> {
+  async ensure(channel: ChannelSpec): Promise<LocalConfigSyncResult> {
     const existing = this.channels.get(channel.name)
 
     if (!existing) {
@@ -70,12 +63,11 @@ export class FunnelLocalConfigSync {
 
     if (channel.connectors === undefined) return { touched: [], removed: [] }
 
-    const dotenv = this.dotenv.read(cwd)
     const touched: ConnectorSyncOutcome[] = []
     const touchedIds = new Set<string>()
 
     for (const spec of channel.connectors) {
-      const outcome = await this.ensureConnector(channel.name, spec, dotenv)
+      const outcome = await this.ensureConnector(channel.name, spec)
       touched.push({ name: outcome.name, changed: outcome.changed })
       touchedIds.add(outcome.id)
     }
@@ -88,10 +80,9 @@ export class FunnelLocalConfigSync {
   private async ensureConnector(
     channelName: string,
     spec: ConnectorSpec,
-    dotenv: Record<string, string>,
   ): Promise<EnsureOutcome> {
-    if (spec.type === "slack") return await this.ensureSlack(channelName, spec, dotenv)
-    if (spec.type === "discord") return await this.ensureDiscord(channelName, spec, dotenv)
+    if (spec.type === "slack") return await this.ensureSlack(channelName, spec)
+    if (spec.type === "discord") return await this.ensureDiscord(channelName, spec)
     if (spec.type === "gh") return this.ensureGh(channelName, spec)
 
     return this.ensureSchedule(channelName, spec)
@@ -100,22 +91,15 @@ export class FunnelLocalConfigSync {
   private async ensureSlack(
     channelName: string,
     spec: Extract<ConnectorSpec, { type: "slack" }>,
-    dotenv: Record<string, string>,
   ): Promise<EnsureOutcome> {
     const byName = this.findExistingSlack(channelName, spec.name)
 
     const bot = await this.resolveSlot({
-      literal: spec.botToken,
-      envVar: spec.env?.botToken,
-      dotenv,
       label: `${spec.name}.botToken`,
       existingLiteral: byName?.botToken,
       existingEnv: byName?.botTokenEnv,
     })
     const app = await this.resolveSlot({
-      literal: spec.appToken,
-      envVar: spec.env?.appToken,
-      dotenv,
       label: `${spec.name}.appToken`,
       existingLiteral: byName?.appToken,
       existingEnv: byName?.appTokenEnv,
@@ -157,14 +141,10 @@ export class FunnelLocalConfigSync {
   private async ensureDiscord(
     channelName: string,
     spec: Extract<ConnectorSpec, { type: "discord" }>,
-    dotenv: Record<string, string>,
   ): Promise<EnsureOutcome> {
     const byName = this.findExistingDiscord(channelName, spec.name)
 
     const bot = await this.resolveSlot({
-      literal: spec.botToken,
-      envVar: spec.env?.botToken,
-      dotenv,
       label: `${spec.name}.botToken`,
       existingLiteral: byName?.botToken,
       existingEnv: byName?.botTokenEnv,
@@ -292,45 +272,18 @@ export class FunnelLocalConfigSync {
   }
 
   /**
-   * Decides how a single token slot is stored in settings.json:
-   *
-   *   - `env.<field>` reference → `{ tokenEnv: "<VAR>" }`; the secret is NOT
-   *     resolved into settings, it stays in the environment / `.env.local` and
-   *     the listener resolves it at start. We still assert the var is set so a
-   *     typo fails loudly here instead of as a dead listener later.
-   *   - literal → `{ token: "<secret>" }`.
-   *   - neither, but a prior value exists → carry it over verbatim (whichever
-   *     form it already was), so a tokenless re-sync is a no-op.
-   *   - nothing at all → prompt for a literal (TTY only; throws otherwise).
+   * Decides how a single token slot is stored in settings.json. funnel.json
+   * never carries tokens, so the only sources are a value already in
+   * settings.json (carried over verbatim, whichever form it was — literal or an
+   * `env`-var reference set via the CLI) or, on first sync, a TTY prompt for a
+   * literal (throws when stdin is not a TTY). Either way the secret lands in the
+   * repo-scoped settings, never in the repo itself.
    */
   private async resolveSlot(input: {
-    literal: string | undefined
-    envVar: string | undefined
-    dotenv: Record<string, string>
     label: string
     existingLiteral: string | undefined
     existingEnv: string | undefined
   }): Promise<{ token: string | undefined; tokenEnv: string | undefined }> {
-    if (input.literal !== undefined && input.envVar !== undefined) {
-      throw new Error(
-        `${input.label} is set both as a literal and as env.${input.label.split(".").pop()}; pick one`,
-      )
-    }
-
-    if (input.envVar !== undefined && input.envVar !== "") {
-      if (!this.env[input.envVar] && !input.dotenv[input.envVar]) {
-        throw new Error(
-          `${input.label} references env var "${input.envVar}" but it is not set in process env or .env.local`,
-        )
-      }
-
-      return { token: undefined, tokenEnv: input.envVar }
-    }
-
-    if (input.literal !== undefined && input.literal !== "") {
-      return { token: input.literal, tokenEnv: undefined }
-    }
-
     if (input.existingEnv !== undefined) return { token: undefined, tokenEnv: input.existingEnv }
     if (input.existingLiteral !== undefined) {
       return { token: input.existingLiteral, tokenEnv: undefined }

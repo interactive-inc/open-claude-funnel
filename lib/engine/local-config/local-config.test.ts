@@ -19,6 +19,17 @@ describe("FunnelLocalConfig", () => {
     expect(config.read("/repo")).toEqual({ channels: [{ name: "ops" }] })
   })
 
+  test("parses the repo id when present", () => {
+    const fs = new MemoryFunnelFileSystem({
+      files: {
+        "/repo/funnel.json": JSON.stringify({ id: "uuid-1", channels: [{ name: "ops" }] }),
+      },
+    })
+    const config = new FunnelLocalConfig({ fs })
+
+    expect(config.read("/repo")).toEqual({ id: "uuid-1", channels: [{ name: "ops" }] })
+  })
+
   test("parses profiles bound to channels with options/env/resume", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {

@@ -1,6 +1,4 @@
-import { join } from "node:path"
 import { claudeHelp } from "@/cli/routes/claude"
-import { ensureGitignored } from "@/engine/local-config/ensure-gitignored"
 import type {
   ChannelSpec,
   LocalConfig,
@@ -8,8 +6,6 @@ import type {
 } from "@/engine/local-config/local-config-schema"
 import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
 import { Funnel } from "@/funnel"
-
-const LOCAL_FUNNEL_DIRNAME = ".funnel"
 
 export type DispatchClaudeResult = {
   stdout: string | null
@@ -20,14 +16,6 @@ export type DispatchClaudeResult = {
 type Deps = {
   funnel: Funnel
   cwd?: string
-  /**
-   * Builds a Funnel scoped to a repo-local `<repo>/.funnel` dir, used when a
-   * funnel.json launch must keep all state out of the global `~/.funnel`.
-   * Production passes `(dir) => new Funnel({ logger, dir })`; tests pass an
-   * in-memory variant so the sandbox dir is honored. When absent, the launch
-   * sets `FUNNEL_DIR` and reuses the injected funnel (whose paths read the env).
-   */
-  makeLocalFunnel?: (dir: string) => Funnel
 }
 
 const HELP_LONG = "--help"
@@ -161,33 +149,6 @@ const pickProfile = (local: LocalConfig, channelName: string): ProfileSpec | nul
 }
 
 /**
- * Loads the env vars a channel's connectors reference (`env: { botToken:
- * "SLACK_BOT_TOKEN" }`) from `.env.local` into process.env, so the gateway
- * daemon — which inherits process.env on spawn — can resolve the tokens at
- * listener start without them ever being written to settings.json. A var
- * already set in process.env is left as-is (process.env wins, as everywhere).
- */
-const loadConnectorEnv = (dotenv: Record<string, string>, channel: ChannelSpec): void => {
-  for (const connector of channel.connectors ?? []) {
-    const refs =
-      connector.type === "slack"
-        ? [connector.env?.botToken, connector.env?.appToken]
-        : connector.type === "discord"
-          ? [connector.env?.botToken]
-          : []
-
-    for (const ref of refs) {
-      if (ref === undefined || ref === "") continue
-      if (process.env[ref] !== undefined) continue
-
-      const value = dotenv[ref]
-
-      if (value !== undefined) process.env[ref] = value
-    }
-  }
-}
-
-/**
  * Entry point for `fnl claude <args>`. Pulls only funnel-specific flags
  * (--profile / -p, --channel, --help / -h) out of argv and forwards every
  * other token verbatim to claude. The launch recipe (options / env / resume)
@@ -260,36 +221,18 @@ export const dispatchClaude = async (
       return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
     }
 
-    // A funnel.json launch is repo-local: every byte of funnel state (settings,
-    // gateway pid/token, claude pids, the spawned daemon, the child claude's
-    // MCP) goes under <repo>/.funnel and the global ~/.funnel is never touched.
-    // FUNNEL_DIR is set so the spawned daemon and child claude inherit the same
-    // root; .funnel is force-gitignored as a safety net.
-    const localDir = join(cwd, LOCAL_FUNNEL_DIRNAME)
+    // funnel.json was detected at entry (cli/index.ts), which already pointed
+    // FUNNEL_DIR at ~/.funnel/projects/<id>/ — so `funnel` and the daemon it
+    // spawns read and write only that scoped root, never the global ~/.funnel.
+    // Tokens missing from settings.json are prompted for at sync (TTY) and saved
+    // there; they never live in the repo.
+    const synced = await funnel.localConfigSync.ensure(picked)
 
-    process.env.FUNNEL_DIR = localDir
-
-    ensureGitignored(funnel.fs, cwd, LOCAL_FUNNEL_DIRNAME)
-
-    // Tokens stay out of settings.json: a connector that declares `env: {...}`
-    // is stored as an env-var *reference* and resolved at listener start. The
-    // gateway daemon resolves from its own process.env, so load the referenced
-    // vars from .env.local into this process now — `detach` copies process.env
-    // into the daemon, carrying the secret across without ever writing it down.
-    // Existing process.env wins, matching funnel's env precedence elsewhere.
-    loadConnectorEnv(funnel.dotenv.read(cwd), picked)
-
-    const localFunnel = deps.makeLocalFunnel
-      ? deps.makeLocalFunnel(localDir)
-      : new Funnel({ logger: funnel.logger, dir: localDir })
-
-    const synced = await localFunnel.localConfigSync.ensure(picked, cwd)
-
-    await reconcileListeners(localFunnel, picked.name, synced)
+    await reconcileListeners(funnel, picked.name, synced)
 
     const profile = pickProfile(local, picked.name)
 
-    const exitCode = await localFunnel.claude.launch({
+    const exitCode = await funnel.claude.launch({
       channel: picked.name,
       cwd,
       userArgs: parsed.userArgs,

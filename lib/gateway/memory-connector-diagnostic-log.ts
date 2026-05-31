@@ -72,6 +72,12 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     return takeRecent(matched, query.limit)
   }
 
+  clear(): void {
+    this.raws.length = 0
+    this.processeds.length = 0
+    this.connections.length = 0
+  }
+
   close(): void {}
 }
 

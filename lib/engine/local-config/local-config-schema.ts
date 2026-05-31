@@ -6,8 +6,9 @@ import { z } from "zod"
  * `fnl claude` reads this when no global --profile preset is used. It picks one
  * of the declared channels (`--channel <name>` selects by name; otherwise the
  * first entry wins) and materializes its transport (connectors / delivery) into
- * `~/.funnel/settings.json` on launch — token fields in connectors resolve via
- * literal / `env.<field>` / TTY prompt.
+ * the repo's scoped settings (`~/.funnel/projects/<id>/settings.json`) on launch.
+ * Connectors carry no tokens here — a token absent from settings is prompted for
+ * at launch (TTY) and saved there, never in the repo.
  *
  * The launch recipe (`options` / `env` / `resume`) lives on `profiles[]`, not on
  * the channel: a channel only describes where events come from. `fnl claude`
@@ -16,34 +17,16 @@ import { z } from "zod"
  * These profiles are selected by their `channel` binding, not by name.
  */
 
-const slackEnvSchema = z
-  .object({
-    botToken: z.string().optional(),
-    appToken: z.string().optional(),
-  })
-  .optional()
-
 const slackConnectorSpecSchema = z.object({
   type: z.literal("slack"),
   name: z.string(),
-  botToken: z.string().optional(),
-  appToken: z.string().optional(),
   /** Shrink raw Slack events before fanout. Defaults to true. */
   minify: z.boolean().optional(),
-  env: slackEnvSchema,
 })
-
-const discordEnvSchema = z
-  .object({
-    botToken: z.string().optional(),
-  })
-  .optional()
 
 const discordConnectorSpecSchema = z.object({
   type: z.literal("discord"),
   name: z.string(),
-  botToken: z.string().optional(),
-  env: discordEnvSchema,
 })
 
 const ghConnectorSpecSchema = z.object({
@@ -93,6 +76,12 @@ export type ProfileSpec = z.infer<typeof profileSpecSchema>
 
 export const localConfigSchema = z.object({
   $schema: z.string().optional(),
+  /**
+   * Stable per-repo identifier. funnel writes this on first launch when absent;
+   * all funnel state for this repo lives under `~/.funnel/projects/<id>/`, so the
+   * repo itself never holds settings or tokens. Committed alongside funnel.json.
+   */
+  id: z.string().optional(),
   /** Declared channels (transport only). First entry is the default; --channel <name> selects by name. */
   channels: z.array(channelSpecSchema).min(1),
   /** Launch presets bound to a channel. First entry bound to the chosen channel is the default. */
@@ -102,5 +91,3 @@ export const localConfigSchema = z.object({
 export type LocalConfig = z.infer<typeof localConfigSchema>
 
 export const LOCAL_CONFIG_FILENAME = "funnel.json"
-
-export const LOCAL_ENV_FILENAME = ".env.local"

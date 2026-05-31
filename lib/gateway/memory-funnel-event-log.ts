@@ -56,5 +56,9 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     return max
   }
 
+  clear(): void {
+    this.events.length = 0
+  }
+
   close(): void {}
 }

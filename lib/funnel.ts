@@ -14,9 +14,9 @@ import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
-import { FunnelDotenvReader } from "@/engine/local-config/dotenv-reader"
 import { FunnelLocalConfig } from "@/engine/local-config/local-config"
 import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
+import { FunnelLocalConfigWriter } from "@/engine/local-config/local-config-writer"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { FunnelMcp } from "@/engine/mcp/mcp"
@@ -122,8 +122,8 @@ export class Funnel {
     channels?: FunnelChannels
     profiles?: FunnelProfiles
     localConfig?: FunnelLocalConfig
+    localConfigWriter?: FunnelLocalConfigWriter
     localConfigSync?: FunnelLocalConfigSync
-    dotenv?: FunnelDotenvReader
     tokenPrompter?: FunnelTokenPrompter
     mcp?: FunnelMcp
     claude?: FunnelClaude
@@ -271,11 +271,13 @@ export class Funnel {
     return this.memos.localConfig
   }
 
-  /** Parses `.env.local` from a cwd (used by sync to back $VAR references). */
-  get dotenv(): FunnelDotenvReader {
-    if (!this.memos.dotenv) this.memos.dotenv = new FunnelDotenvReader({ fs: this.fs })
+  /** Writes the stable `id` into funnel.json on first launch so state can be scoped to `~/.funnel/projects/<id>/`. */
+  get localConfigWriter(): FunnelLocalConfigWriter {
+    if (!this.memos.localConfigWriter) {
+      this.memos.localConfigWriter = new FunnelLocalConfigWriter({ fs: this.fs })
+    }
 
-    return this.memos.dotenv
+    return this.memos.localConfigWriter
   }
 
   /** Secret prompter. Defaults to a TTY-only stdin reader; tests inject MemoryFunnelTokenPrompter. */
@@ -292,7 +294,6 @@ export class Funnel {
     if (!this.memos.localConfigSync) {
       this.memos.localConfigSync = new FunnelLocalConfigSync({
         channels: this.channels,
-        dotenv: this.dotenv,
         prompter: this.tokenPrompter,
       })
     }

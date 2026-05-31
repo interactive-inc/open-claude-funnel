@@ -42,12 +42,12 @@ transport model（Channel + Connector）の外側にある launch 便宜レイ�
 リポジトリ直下の `funnel.json`。channels[]（transport）と profiles[]（launch recipe）を宣言してリポジトリと一緒に commit する。
 
 ```
-LocalConfig = { channels: ChannelSpec[], profiles?: ProfileSpec[] }
+LocalConfig = { id?, channels: ChannelSpec[], profiles?: ProfileSpec[] }
 ChannelSpec = { name, connectors? }
 ProfileSpec = { channel, options?, env?, resume? }
 ```
 
-`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。選択 channel の `connectors` は launch 時に `~/.funnel/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。token フィールドは literal / `env.<field>` 経由の env-var 参照 / TTY プロンプトで解決される。詳細は `lib/engine/local-config/` を参照。
+`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / TUI / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。recipe は「その channel に bound な profiles[] の先頭」を inline で launch に渡す（global profile への永続化はしない）。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/engine/local-config/` を参照。
 
 ### Listener Supervisor と Broadcaster
 
@@ -135,7 +135,7 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - Connector の per-instance な永続 state は `channels/<channel-id>/connectors/<connector-id>/` 配下に置く。id ベースで切るので rename しても追従する。name ベースで切らない
 - Connector の「設定」は settings.json に nested で入れる、「state」だけ上のディレクトリに分ける。設定と state を同じ場所に混ぜない。この分離は Connector のための規約で、Connector の state（lastFiredAt / poll watermark 等）は量があり頻繁に書き換わるため別ディレクトリに逃がす。一方 Profile の `sessionId` は profile に 1 個ぶら下がるだけの軽量な execution state で、profile（by id）が所有することに意味がある（rename 追従・transport 層からの隠蔽）。これは settings.json の profile に内包してよい（別ファイルに切らない）。「混ぜない」は「人手の config に大量の流動 state を流し込むな」の意であって、profile が自分の session を 1 個持つことは禁じない
 - daemon 系の揮発ファイル（pid / token 等）は `~/.funnel/` 直下に置く
-- funnel.json はリポジトリ側 commit 物。funnel 本体は絶対に書き換えない（トークンは env / `.env.local` / `~/.funnel` のいずれかで保持し、commit されない）
+- funnel.json はリポジトリ側 commit 物。funnel が書き換えるのは初回起動時の `id`(uuid) 付与のみ（state 隔離用の不変キー、`FunnelLocalConfigWriter` が担う）。token は絶対に書かない — CLI 設定か TTY prompt で `~/.funnel/projects/<id>/settings.json` に保存し、commit されない
 - Gateway ポートは 9742（`FUNNEL_PORT` で変更可）
 
 ## 設計原則

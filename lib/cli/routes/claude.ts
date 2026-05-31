@@ -93,7 +93,7 @@ export const claudeHandler = factory.createHandlers(
         })
       }
 
-      const synced = await funnel.localConfigSync.ensure(picked, cwd)
+      const synced = await funnel.localConfigSync.ensure(picked)
 
       for (const outcome of synced.touched) {
         if (outcome.changed) {

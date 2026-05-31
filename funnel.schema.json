@@ -5,6 +5,9 @@
     "$schema": {
       "type": "string"
     },
+    "id": {
+      "type": "string"
+    },
     "channels": {
       "minItems": 1,
       "type": "array",
@@ -28,26 +31,8 @@
                     "name": {
                       "type": "string"
                     },
-                    "botToken": {
-                      "type": "string"
-                    },
-                    "appToken": {
-                      "type": "string"
-                    },
                     "minify": {
                       "type": "boolean"
-                    },
-                    "env": {
-                      "type": "object",
-                      "properties": {
-                        "botToken": {
-                          "type": "string"
-                        },
-                        "appToken": {
-                          "type": "string"
-                        }
-                      },
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -65,18 +50,6 @@
                     },
                     "name": {
                       "type": "string"
-                    },
-                    "botToken": {
-                      "type": "string"
-                    },
-                    "env": {
-                      "type": "object",
-                      "properties": {
-                        "botToken": {
-                          "type": "string"
-                        }
-                      },
-                      "additionalProperties": false
                     }
                   },
                   "required": [

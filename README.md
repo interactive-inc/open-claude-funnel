@@ -102,11 +102,7 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
       "connectors": [
         {
           "type": "slack",
-          "name": "my-slack",
-          "env": {
-            "botToken": "SLACK_BOT_TOKEN",
-            "appToken": "SLACK_APP_TOKEN"
-          }
+          "name": "my-slack"
         }
       ]
     },
@@ -132,21 +128,18 @@ Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo w
 
 A channel declares only transport — its `connectors` and delivery mode. The launch recipe lives on `profiles[]`: each profile binds to a channel by name and carries `options` (prepended to the claude argv before user-supplied CLI args, which still come last — use it for flags like `--brief`, `--agent <name>`, `--model <name>`), `env` (layered under the launched claude process — `process.env` from the launching shell wins on collision), and `resume`. `fnl claude` applies the first profile bound to the chosen channel.
 
-The optional `connectors` array on a channel is the source of truth for that channel: missing connectors are created, an existing connector matched by token under a different name is renamed in place, and connectors not declared are removed on launch. An absent `connectors` field leaves `~/.funnel` alone.
+The optional `connectors` array on a channel is the source of truth for that channel: missing connectors are created and connectors not declared are removed on launch. Connectors are matched by name. An absent `connectors` field leaves existing connectors alone.
 
-On launch, the chosen channel's transport (`connectors`, delivery) is materialized into the global `~/.funnel/settings.json` Channel entry; the profile recipe is passed straight to the launcher and is not persisted there. Raw launches (`fnl claude --channel <name>` without funnel.json) bind transport only and carry no recipe.
+A repo with a `funnel.json` is scoped to itself. On first launch funnel writes a stable `id` (uuid) to the top of `funnel.json` and keeps every byte of funnel state under `~/.funnel/projects/<id>/`, never touching the global `~/.funnel` — only the event log and temp files under `/tmp/funnel/` are shared. This scoping applies to every CLI command run in the repo, not just `fnl claude`. On launch the chosen channel's transport (`connectors`, delivery) is materialized into `~/.funnel/projects/<id>/settings.json`; the profile recipe is passed straight to the launcher and is not persisted there. Raw launches (`fnl claude --channel <name>` without funnel.json) bind transport only against the global `~/.funnel` and carry no recipe.
 
 The optional top-level `$schema` points at the JSON Schema so editors can validate and autocomplete the file. The recommended reference for repos with a local install is `./node_modules/@interactive-inc/claude-funnel/funnel.schema.json` — it works without a network round-trip and editors do not need to prompt for trust. The same file is also published at `https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json` (editors usually require explicit trust on first use), and `fnl schema > funnel.schema.json` regenerates a local copy on demand.
 
-Each token field resolves in this order:
+Connectors in `funnel.json` carry no tokens. A connector's token is set out of band and stored only in the repo-scoped settings:
 
-- literal value at the field itself (e.g. `"botToken": "xoxb-..."`) — used as-is
-- env-var name at `env.<field>` (e.g. `"env": { "botToken": "SLACK_BOT_TOKEN" }`) — looked up in `process.env`, falling back to `./.env.local` in the cwd; fails with a clear error when neither is set
-- field omitted everywhere — `fnl claude` prompts on a TTY and writes the answer to `~/.funnel/settings.json`; on non-TTY stdin the launch fails so CI / agent-spawned-agent runs do not hang
+- run `fnl channels <ch> connectors set <c> --bot-token=...` (etc.) in the repo to write it to `~/.funnel/projects/<id>/settings.json`
+- or omit it — `fnl claude` prompts on a TTY at launch and saves the answer there; it carries over so later launches do not re-prompt. On non-TTY stdin the launch fails so CI / agent-spawned-agent runs do not hang
 
-Setting both a literal and an `env.<field>` for the same field is an error (pick one).
-
-`funnel.json` itself is never written to — secrets stay in env vars, `.env.local`, or `~/.funnel`, never in the committed file.
+Only the `id` is ever written back to `funnel.json`; tokens never live in the repo.
 
 Cron-driven agent runs:
 
@@ -271,21 +264,23 @@ Profile    = { id, name, path, channelId, options[], env, resume, sessionId? }
         name is the CLI handle. sessionId is execution state, not config — the claude session this
         profile last launched, written by the launcher and read back on the next resume.
 
-LocalConfig = { channels: ChannelSpec[], profiles?: ProfileSpec[] }
+LocalConfig = { id?, channels: ChannelSpec[], profiles?: ProfileSpec[] }
         per-repo file (funnel.json). channels[] required; first entry is default, --channel selects.
+        id (uuid) is written back on first launch; this repo's funnel state lives under
+        ~/.funnel/projects/<id>/ and the global ~/.funnel is never touched.
 
 ChannelSpec = { name, connectors? }
         transport declaration (no id, since funnel.json declares by name). connectors materialize into
-        the matching Channel in ~/.funnel/settings.json on launch. Connector token fields accept a
-        literal, an env-var reference at `env.<field>` resolved from process.env and ./.env.local, or
-        omission for a TTY prompt persisted to ~/.funnel.
+        the matching Channel in ~/.funnel/projects/<id>/settings.json on launch. Connectors carry no
+        tokens; a token is set via the CLI or prompted on a TTY at launch and saved to that scoped settings.
 
 ProfileSpec = { channel, options?, env?, resume? }
         launch recipe bound to a channel by name. applied inline on launch (the first spec bound to the
         chosen channel — selected by its channel binding, not by name); not persisted into the global
         profiles[] list.
 
-Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json
+Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json (global)
+                                                          or ~/.funnel/projects/<id>/settings.json (per-repo funnel.json)
 ```
 
 ## File layout
@@ -294,7 +289,10 @@ Persistent state lives under `~/.funnel/`. Volatile logs and the event log live 
 
 ```
 ~/.funnel/
-├── settings.json                                       channels[] with nested connectors, profiles[]
+├── settings.json                                       global channels[] with nested connectors, profiles[]
+├── projects/
+│   └── <id>/                                           per-repo state for a repo with funnel.json
+│       └── settings.json, gateway.token, claude/, ...  (same layout as the global root, scoped by funnel.json id)
 ├── gateway.pid                                         daemon PID
 ├── gateway.token                                       Bearer token for daemon HTTP / WS
 ├── claude/
