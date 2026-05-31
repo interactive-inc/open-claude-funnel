@@ -108,7 +108,7 @@ Slack / GitHub / Discord / Schedule の Connector 実装。型ごとに Listener
 
 ### lib/gateway
 
-`Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener supervisor、broadcaster、event log、フラットなルート群を抱える。CLI から listener 操作のために `http://localhost:9742` を叩くのは gateway 経由のみ。
+`Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener supervisor、broadcaster、event log、フラットなルート群を抱える。CLI から listener 操作のために `http://127.0.0.1:9742` を叩くのは gateway 経由のみ。
 
 ### lib/cli
 

@@ -35,7 +35,7 @@ export const renderGatewayStatus = async (c: Context<Env>) => {
     throw new HTTPException(503, { message: "funnel gateway: not running" })
   }
 
-  const res = await fetch(`http://localhost:${status.port}/health`).catch(() => null)
+  const res = await fetch(`http://127.0.0.1:${status.port}/health`).catch(() => null)
 
   if (!res) {
     return c.text(`funnel gateway: running (pid ${status.pid}) — health check failed`)

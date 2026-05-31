@@ -71,7 +71,7 @@ export const statusHandler = factory.createHandlers(
     } else {
       lines.push(`gateway: running (pid ${gatewayStatus.pid}, port ${gatewayStatus.port})`)
 
-      const res = await fetch(`http://localhost:${gatewayStatus.port}/status`).catch(() => null)
+      const res = await fetch(`http://127.0.0.1:${gatewayStatus.port}/status`).catch(() => null)
 
       if (res && res.ok) {
         const body: unknown = await res.json()

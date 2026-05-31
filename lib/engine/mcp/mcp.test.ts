@@ -15,7 +15,7 @@ describe("FunnelMcp", () => {
     new FunnelMcp({ fs }).install("/repo")
 
     const config = readJson(fs, "/repo/.mcp.json")
-    expect(config.mcpServers?.funnel).toEqual({ command: "funnel", args: ["mcp"] })
+    expect(config.mcpServers?.funnel).toEqual({ command: "bun", args: ["funnel", "mcp"] })
   })
 
   test("preserves other existing MCP entries", () => {
@@ -32,7 +32,7 @@ describe("FunnelMcp", () => {
 
     const config = readJson(fs, "/repo/.mcp.json")
     expect(config.mcpServers?.other?.command).toBe("other-bin")
-    expect(config.mcpServers?.funnel?.command).toBe("funnel")
+    expect(config.mcpServers?.funnel?.command).toBe("bun")
   })
 
   test("findInstalledName returns the key whose command is funnel", () => {
@@ -60,7 +60,7 @@ describe("FunnelMcp", () => {
     new FunnelMcp({ fs }).install("/repo")
 
     const config = readJson(fs, "/repo/.mcp.json")
-    expect(config.mcpServers?.["custom-key"]).toEqual({ command: "funnel", args: ["mcp"] })
+    expect(config.mcpServers?.["custom-key"]).toEqual({ command: "bun", args: ["funnel", "mcp"] })
     expect(config.mcpServers?.funnel).toBeUndefined()
   })
 
@@ -84,7 +84,7 @@ describe("FunnelMcp", () => {
     new FunnelMcp({ fs }).install("/repo")
 
     const config = readJson(fs, "/repo/.mcp.json")
-    expect(config.mcpServers?.funnel?.command).toBe("funnel")
+    expect(config.mcpServers?.funnel?.command).toBe("bun")
   })
 
   test("install fails when the repository does not exist", () => {

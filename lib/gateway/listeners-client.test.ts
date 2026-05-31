@@ -64,7 +64,7 @@ describe("FunnelListenersClient", () => {
     const result = await buildClient(true).start("ops", "cron")
 
     expect(result).toEqual({ state: "ok" })
-    expect(capturedUrl).toBe(`http://localhost:${PORT}/listeners/ops/cron/start`)
+    expect(capturedUrl).toBe(`http://127.0.0.1:${PORT}/listeners/ops/cron/start`)
     expect(capturedMethod).toBe("POST")
     expect(capturedAuth).toBe("Bearer secret")
   })

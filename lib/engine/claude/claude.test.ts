@@ -227,6 +227,33 @@ describe("FunnelClaude", () => {
     expect(profiles.getSessionId(devId)).toEqual(firstId)
   })
 
+  test("starts fresh when the jsonl exists but is empty (corrupt session)", async () => {
+    // Regression: an empty/whitespace-only jsonl is a session claude rejects with
+    // "No conversation found"; funnel must treat it as missing and start fresh.
+    const { claude, fs, process, profiles, addProfile } = buildClaude()
+    const env = { CLAUDE_CONFIG_DIR: "/cfg" }
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    const devId = addProfile("dev")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: true, env })
+
+    const firstId = profiles.getSessionId(devId)
+
+    fs.mkdirSync("/cfg/projects/-work", { recursive: true })
+    fs.writeFileSync(`/cfg/projects/-work/${firstId}.jsonl`, "   \n")
+
+    await claude.launch({ channel: "ops", cwd: "/work", profileId: devId, resume: true, env })
+
+    const attaches = process.calls.filter((c) => c.kind === "attach")
+
+    if (attaches[1]?.kind !== "attach") throw new Error("expected two attach calls")
+
+    expect(attaches[1].command.includes("--resume")).toBe(false)
+    expect(attaches[1].command.includes("--session-id")).toBe(true)
+  })
+
   test("mints a fresh session when the persisted id has no jsonl on disk", async () => {
     // Self-heal: a recorded id can outlive its jsonl (claude pruned it, or the
     // first launch was aborted before the file appeared). Resuming it would

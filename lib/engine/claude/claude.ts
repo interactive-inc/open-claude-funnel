@@ -279,9 +279,10 @@ export class FunnelClaude {
   /**
    * Mirrors claude's session storage path
    * (`<config-dir>/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`) to check
-   * whether a recorded session still exists. Reads the same `CLAUDE_CONFIG_DIR`
-   * the child will run under so the check matches reality; a wrong guess can
-   * only ever produce a false negative (start fresh), never a bad resume.
+   * whether a recorded session still exists AND is non-empty. Reads the same
+   * `CLAUDE_CONFIG_DIR` the child will run under so the check matches reality; a
+   * wrong guess can only ever produce a false negative (start fresh), never a
+   * bad resume.
    */
   private sessionFileExists(
     cwd: string,
@@ -293,8 +294,14 @@ export class FunnelClaude {
       globalThis.process.env.CLAUDE_CONFIG_DIR ??
       join(homedir(), ".claude")
     const projectSlug = cwd.replace(/\//g, "-")
+    const path = join(configDir, "projects", projectSlug, `${sessionId}.jsonl`)
 
-    return this.fs.existsSync(join(configDir, "projects", projectSlug, `${sessionId}.jsonl`))
+    if (!this.fs.existsSync(path)) return false
+
+    // An empty / whitespace-only jsonl is a corrupt session that claude rejects
+    // with "No conversation found"; treat it as missing so the launch resolves a
+    // fresh session instead of a doomed --resume.
+    return this.fs.readFileSync(path).trim().length > 0
   }
 
   private buildEnv(channelId: string, recipeEnv: Record<string, string>): Record<string, string> {

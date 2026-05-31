@@ -3,7 +3,11 @@ import { z } from "zod"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 
-export const FUNNEL_MCP_COMMAND = "funnel"
+// The MCP server runs the repo's OWN funnel via `bun funnel mcp` — bun resolves
+// node_modules/.bin/funnel from the launch cwd — so a repo launch never depends
+// on a globally-installed funnel (which may be absent or a different version).
+export const FUNNEL_MCP_COMMAND = "bun"
+export const FUNNEL_MCP_ARGS = ["funnel", "mcp"]
 export const FUNNEL_MCP_NAME = "funnel"
 
 const mcpEntrySchema = z.object({
@@ -50,7 +54,7 @@ export class FunnelMcp {
 
     servers[targetName] = {
       command: FUNNEL_MCP_COMMAND,
-      args: ["mcp"],
+      args: FUNNEL_MCP_ARGS,
     }
 
     this.writeConfig(repoPath, { ...config, mcpServers: servers })
@@ -84,10 +88,19 @@ export class FunnelMcp {
       const name = entry[0]
       const value = entry[1]
 
-      if (value?.command === FUNNEL_MCP_COMMAND) return name
+      if (this.isFunnelEntry(value)) return name
     }
 
     return null
+  }
+
+  // Matches the current `bun funnel mcp` form AND the legacy global `funnel mcp`
+  // form, so a re-install migrates an old entry to the repo-local one in place.
+  private isFunnelEntry(value: McpEntry | undefined): boolean {
+    if (!value) return false
+    if (value.command === "bun" && value.args?.[0] === "funnel") return true
+    if (value.command === "funnel") return true
+    return false
   }
 
   private readConfig(repoPath: string): McpConfig {

@@ -60,7 +60,7 @@ export class FunnelListenersClient {
     if (!this.isDaemonRunning()) return { state: "offline" }
 
     try {
-      const res = await fetch(`http://localhost:${this.port}/listeners`, {
+      const res = await fetch(`http://127.0.0.1:${this.port}/listeners`, {
         headers: this.authHeaders(),
       })
 
@@ -108,7 +108,7 @@ export class FunnelListenersClient {
 
   private async call(method: "POST" | "DELETE", path: string): Promise<ListenerOpResult> {
     try {
-      const res = await fetch(`http://localhost:${this.port}${path}`, {
+      const res = await fetch(`http://127.0.0.1:${this.port}${path}`, {
         method,
         headers: this.authHeaders(),
       })

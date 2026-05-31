@@ -18,7 +18,7 @@ const DEFAULT_FUNNEL_DIR = join(homedir(), ".funnel")
 export type ChannelServerOptions = {
   /** Funnel home directory (settings.json + gateway.token). Defaults to ~/.funnel. */
   dir?: string
-  /** Gateway base URL. Defaults to `$FUNNEL_GATEWAY_URL` or `http://localhost:9742`. */
+  /** Gateway base URL. Defaults to `$FUNNEL_GATEWAY_URL` or `http://127.0.0.1:<port>`. */
   gatewayUrl?: string
   /** Channel id to subscribe to. Defaults to `$FUNNEL_CHANNEL_ID`. */
   channelId?: string
@@ -31,7 +31,7 @@ export const startChannelServer = async (
 ): Promise<void> => {
   const dir = options.dir ?? DEFAULT_FUNNEL_DIR
   const gatewayBaseUrl =
-    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? `http://localhost:${resolveFunnelPort()}`
+    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? `http://127.0.0.1:${resolveFunnelPort()}`
   const gatewayWsUrl = `${gatewayBaseUrl.replace(/^http/, "ws")}/ws`
   const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
   const channel = channelId ? readChannelConnectors(dir, channelId) : null

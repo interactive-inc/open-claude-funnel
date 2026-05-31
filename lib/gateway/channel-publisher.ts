@@ -34,7 +34,7 @@ export class FunnelChannelPublisher {
     if (!this.isDaemonRunning()) return OFFLINE
 
     try {
-      const url = `http://localhost:${this.port}/channels/${encodeURIComponent(channelName)}/publish`
+      const url = `http://127.0.0.1:${this.port}/channels/${encodeURIComponent(channelName)}/publish`
       const res = await fetch(url, {
         method: "POST",
         headers: { ...this.authHeaders(), "content-type": "application/json" },

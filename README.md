@@ -320,7 +320,7 @@ Notes:
 | ---------------------- | --------------------------------------------------------------------------------------------- |
 | `FUNNEL_CHANNEL_ID`    | Injected into the child process by `fnl claude`; the funnel MCP uses it to subscribe.         |
 | `FUNNEL_PORT`          | Gateway port. Default 9743 for `funnel` CLI launches, 9742 for a programmatically hosted gateway. |
-| `FUNNEL_GATEWAY_URL`   | Daemon base URL used by MCP for both WS subscribe and HTTP reply (default `http://localhost:9742`). |
+| `FUNNEL_GATEWAY_URL`   | Daemon base URL used by MCP for both WS subscribe and HTTP reply (default `http://127.0.0.1:<port>`). |
 | `FUNNEL_GATEWAY_TOKEN` | Bearer token for the daemon HTTP / WS. Defaults to the contents of `~/.funnel/gateway.token`. |
 
 ## Discord bot setup
