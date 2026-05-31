@@ -17,6 +17,9 @@ const VERDICT_MAX_ROWS = 50_000
 const DIAGNOSTIC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 const PORT = Number(process.env.FUNNEL_PORT) || 9742
+// Loopback by default; set FUNNEL_HOST=0.0.0.0 to expose the gateway on the LAN
+// (e.g. agents on other machines). The bearer token still gates every endpoint.
+const HOST = process.env.FUNNEL_HOST || "127.0.0.1"
 // Honors a FUNNEL_DIR override (a funnel.json-scoped launch points this at
 // <repo>/.funnel), falling back to ~/.funnel.
 const funnelDir = resolveFunnelDir()
@@ -77,6 +80,6 @@ process.on("exit", () => {
 })
 
 const funnel = new Funnel({ logger, diagnosticLog, dir: funnelDir })
-const server = funnel.gatewayServer({ port: PORT })
+const server = funnel.gatewayServer({ port: PORT, hostname: HOST })
 
 await server.start()

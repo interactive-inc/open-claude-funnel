@@ -3,6 +3,7 @@ import type { Server } from "bun"
 import { Hono } from "hono"
 import { Funnel } from "@/funnel"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
+import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import type { Env } from "@/gateway/factory"
 import { MemoryFunnelEventLog } from "@/gateway/memory-funnel-event-log"
@@ -40,6 +41,26 @@ const startServerWithExtras = async (extras: Hono<Env>) => {
     token: "",
     dbPath: "/tmp/funnel-test/events.db",
     extraRoutes: extras,
+  })
+
+  const httpServer = await server.start()
+  return { server, httpServer }
+}
+
+const startServerOn = async (props: { token: string; hostname?: string; logger?: MemoryFunnelLogger }) => {
+  const fs = new MemoryFunnelFileSystem()
+  const funnel = new Funnel({
+    fs,
+    logger: props.logger ?? new NoopFunnelLogger(),
+    dir: "/funnel",
+    tmpDir: "/tmp/funnel-test",
+  })
+  const server = funnel.gatewayServer({
+    port: 0,
+    hostname: props.hostname,
+    killCompetingSlack: false,
+    token: props.token,
+    dbPath: "/tmp/funnel-test/events.db",
   })
 
   const httpServer = await server.start()
@@ -217,5 +238,31 @@ describe("FunnelGatewayServer event log", () => {
     expect(observed).toEqual(["hello", "world"])
     expect(eventLog.loadSince(0).map((event) => event.content)).toEqual(["hello", "world"])
     expect(server.getEventLog()).toBe(eventLog)
+  })
+})
+
+describe("FunnelGatewayServer bind address", () => {
+  test("binds to loopback by default", async () => {
+    active = await startServerOn({ token: "secret" })
+
+    expect(active.httpServer.hostname).toBe("127.0.0.1")
+  })
+
+  test("warns when auth is disabled on a non-loopback bind", async () => {
+    const logger = new MemoryFunnelLogger()
+
+    active = await startServerOn({ token: "", hostname: "0.0.0.0", logger })
+
+    const warned = logger.entries.some((entry) => entry.level === "warn" && entry.message.includes("non-loopback"))
+    expect(warned).toBe(true)
+  })
+
+  test("stays silent on a loopback bind even without a token", async () => {
+    const logger = new MemoryFunnelLogger()
+
+    active = await startServerOn({ token: "", logger })
+
+    const warned = logger.entries.some((entry) => entry.level === "warn")
+    expect(warned).toBe(false)
   })
 })

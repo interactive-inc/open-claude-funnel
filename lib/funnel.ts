@@ -399,6 +399,8 @@ export class Funnel {
   gatewayServer(
     options: {
       port?: number
+      /** Bind address. Defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on the network. */
+      hostname?: string
       dbPath?: string
       killCompetingSlack?: boolean
       /** Override the auth token. Defaults to the persisted gateway.token. Pass "" to disable auth (tests). */
@@ -418,6 +420,7 @@ export class Funnel {
       channels: this.channels,
       settings: this.store,
       port: options.port,
+      hostname: options.hostname,
       dbPath: options.dbPath,
       eventLog: options.eventLog,
       process: this.process,

@@ -136,7 +136,7 @@ OpenTUI ダッシュボード。`fnl`（引数なし）で起動する葉。CLI 
 - Connector の「設定」は settings.json に nested で入れる、「state」だけ上のディレクトリに分ける。設定と state を同じ場所に混ぜない。この分離は Connector のための規約で、Connector の state（lastFiredAt / poll watermark 等）は量があり頻繁に書き換わるため別ディレクトリに逃がす。一方 Profile の `sessionId` は profile に 1 個ぶら下がるだけの軽量な execution state で、profile（by id）が所有することに意味がある（rename 追従・transport 層からの隠蔽）。これは settings.json の profile に内包してよい（別ファイルに切らない）。「混ぜない」は「人手の config に大量の流動 state を流し込むな」の意であって、profile が自分の session を 1 個持つことは禁じない
 - daemon 系の揮発ファイル（pid / token 等）は `~/.funnel/` 直下に置く
 - funnel.json はリポジトリ側 commit 物。funnel が書き換えるのは初回起動時の `id`(uuid) 付与のみ（state 隔離用の不変キー、`FunnelLocalConfigWriter` が担う）。token は絶対に書かない — CLI 設定か TTY prompt で `~/.funnel/projects/<id>/settings.json` に保存し、commit されない
-- Gateway ポートは 9742（`FUNNEL_PORT` で変更可）
+- Gateway ポートは 9742（`FUNNEL_PORT` で変更可）。bind は loopback（`127.0.0.1`）固定で off-box から到達不可。`FUNNEL_HOST=0.0.0.0` で明示的に公開できる（公開しても全特権エンドポイントは bearer token 必須）
 
 ## 設計原則
 

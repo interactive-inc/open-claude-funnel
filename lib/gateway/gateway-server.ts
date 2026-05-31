@@ -20,12 +20,19 @@ import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import type { FunnelClock } from "@/engine/time/clock"
 
 const DEFAULT_PORT = 9742
+// Bind to loopback by default so the gateway is never reachable off-box. The
+// daemon honors FUNNEL_HOST to expose it deliberately; every privileged
+// endpoint still requires the bearer token regardless of the bind address.
+const DEFAULT_HOST = "127.0.0.1"
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"])
 const defaultDbPath = (): string => join(funnelTmpDir(), "events.db")
 
 type Deps = {
   channels: FunnelChannels
   settings: FunnelSettingsReader
   port?: number
+  /** Bind address for `Bun.serve`. Defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on the network. */
+  hostname?: string
   /** SQLite event store file path. Parent directory is created on demand. Defaults to `<os.tmpdir()>/funnel/events.db`. Ignored when `eventLog` is supplied. */
   dbPath?: string
   /** Durable replay log. Defaults to a `SqliteFunnelEventLog` at `dbPath`. Inject a `MemoryFunnelEventLog` (or any `FunnelEventLog`) to swap or disable persistence. */
@@ -80,6 +87,7 @@ export class FunnelGatewayServer {
   private readonly channels: FunnelChannels
   private readonly settings: FunnelSettingsReader
   private readonly port: number
+  private readonly hostname: string
   private readonly dbPath: string
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger | undefined
@@ -100,6 +108,7 @@ export class FunnelGatewayServer {
     this.channels = deps.channels
     this.settings = deps.settings
     this.port = deps.port ?? DEFAULT_PORT
+    this.hostname = deps.hostname ?? DEFAULT_HOST
     this.dbPath = deps.dbPath ?? defaultDbPath()
     this.process = deps.process
     this.logger = deps.logger
@@ -142,11 +151,18 @@ export class FunnelGatewayServer {
   async start(): Promise<Server<WsData>> {
     if (this.server) return this.server
 
+    if (!this.token && !LOOPBACK_HOSTS.has(this.hostname)) {
+      this.logger?.warn("gateway auth is disabled on a non-loopback bind — every endpoint is reachable without a token", {
+        hostname: this.hostname,
+      })
+    }
+
     const app = this.buildApp()
 
     this.startedAt = this.nowMs()
     this.server = Bun.serve<WsData>({
       port: this.port,
+      hostname: this.hostname,
       development: false,
       fetch: (request, server) => this.handleFetch(request, server, app),
       websocket: {
