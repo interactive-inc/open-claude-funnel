@@ -1,78 +1,140 @@
 [![npm](https://img.shields.io/npm/v/@interactive-inc/claude-funnel.svg)](https://www.npmjs.com/package/@interactive-inc/claude-funnel)
 [![license](https://img.shields.io/npm/l/@interactive-inc/claude-funnel.svg)](./LICENSE)
 
-A hub for AI coding agents. One long-running daemon owns all external connections; agents subscribe to named channels and react to events without you wiring up shell scripts and cron entries. Outbound replies travel back through the same connectors as MCP tools, so answering a message or commenting on an issue does not need a bash subshell.
+# Open Claude Funnel
 
-The command is `funnel` (or the shorthand `fnl`).
-
-Connectors today: Slack (Socket Mode), GitHub (poll via `gh`), Discord (Gateway), and cron schedules. Built around Claude Code; the architecture is agent-agnostic.
-
-## Why funnel
-
-A single agent session is great at one repository at one moment. The moment you want it to react to things — a chat mention, a new issue, a 9 AM standup — you end up gluing shell scripts, cron entries, and `bash -c "agent ..."` invocations together. There is no single place that says "who is listening to what, and who is allowed to reply where."
-
-funnel is that place. Declare named subscription boxes (channels), attach connectors to them, launch the agent with a channel binding, and the daemon handles the rest:
-
-- The daemon owns the external connections. Each one connects once, no matter how many agent sessions you start. A second agent does not open a second socket; both sessions subscribe to the same channel and the daemon fans events out.
-- Inbound events arrive as MCP notifications, so the agent reacts in the session it is already running in.
-- Outbound replies use MCP tools per connector — essentially synchronous (no bash, no CLI cold start).
-- Listeners are supervised with health checks and automatic restart; a flaky connection or crashed poller recovers on its own.
-- Multiple agents can share a channel (`fanout`) or compete for events as workers (`exclusive`) — the daemon decides who gets each event.
-
-## Concepts
+Slack のメンション、GitHub の Issue、毎朝 9 時の cron。こうした外部の出来事を Claude Code エージェントに届け、エージェントの返信を同じ経路で外へ返すハブ。
 
 ```
-external sources                          outbound replies
-(chat / source-control / cron)            (MCP tools per connector)
-        │                                          │
-        ▼                                          ▼
-            daemon  (port 9742)
-            routes events into channels
-            serves replies through the same connectors
-                        │
-                        ▼  WebSocket / MCP (stdio)
-                     agent  (subscribes to one channel)
+   Slack    ─┐                       ┌─→  Claude エージェント A
+   GitHub   ─┤                       │
+   Discord  ─┼──→  funnel daemon  ──→┼─→  Claude エージェント B
+   cron     ─┘                       │
+                                     └─→  Claude エージェント C
+
+   funnel daemon が外部接続を1か所に常駐保持し、購読中の各エージェントへ配信する。
+   返信は同じコネクタを逆向きに通る（エージェント → MCP tool → 外部サービス）。
 ```
 
-Two concepts make up the transport model:
+コマンドは `funnel`（短縮形 `fnl`）。Claude Code を中心に作っているが、アーキテクチャはエージェント非依存。
 
-Channel — a named subscription box (transport only). Holds one or more connectors and a delivery mode; it does not carry launch flags. An agent session subscribes to exactly one channel. Delivery is `fanout` (every subscriber sees every event, the default) or `exclusive` (one event per subscriber, round-robin — for worker pools).
+## funnel がやること
 
-Connector — a single attachment from a channel to an external source. Four types ship today: `slack`, `gh`, `discord`, `schedule`. The first three are bidirectional (events in, replies out); `schedule` is one-way (cron ticks in).
+- 外部の出来事（チャットのメンション、新しい Issue、cron の tick）を、起動中のエージェントセッションにそのまま届ける
+- エージェントの返信を受信と同じコネクタで外へ返す。bash サブシェルも CLI のコールドスタートもなく、実質同期
+- 外部接続は常駐デーモンが 1 か所で持つ。エージェントを何個起こしても接続は 1 回だけ。ヘルスチェックと自動再起動で監視する
+- 複数のエージェントで 1 つのソースを共有（fanout）するか、ワーカーとして分担（exclusive）するかを選べる
 
-Profile sits on top of that model as a launch convenience, not part of it — you never need one to run an agent (`fnl claude --channel <name>` is enough). It is a saved launch preset bundling `{ path, channelId, options, env, resume }` so `fnl claude --profile cto` reproduces a known setup: which directory to launch from, which channel to bind, and the launch recipe (args prepended to the claude argv, env layered under the process, session reuse). A profile carries a stable uuid `id` (the unit the PID file and the resumable session key off, so renaming it strands neither); `name` is just the handle you type. The first profile in the list is the default. Because a profile already binds a channel, `--profile` and `--channel` cannot be combined.
+対応コネクタは Slack（Socket Mode）、GitHub（`gh` 経由の poll）、Discord（Gateway）、cron スケジュールの 4 種類。
 
-The daemon is where all external connections live. It runs on port 9743 for `funnel` CLI launches (9742 for a gateway hosted programmatically, so the two never collide on one machine — `FUNNEL_PORT` overrides either), bound to loopback (`127.0.0.1`) only so it is never reachable off-box; set `FUNNEL_HOST=0.0.0.0` to expose it deliberately (every privileged endpoint still requires the bearer token regardless). It supervises connectors with auto-restart, broadcasts events to subscribed agent sessions over WebSocket, and serves the reply API that MCP calls. Starting or stopping an agent never starts or stops external connections.
+## 必要なもの
 
-The MCP layer is a thin bridge into the agent. It subscribes to the bound channel over WebSocket (the daemon does the work) and exposes one tool per callable connector so the agent can reply back out.
-
-## Requirements
-
-- [Bun](https://bun.sh) 1.3 or later
+- [Bun](https://bun.sh) 1.3 以降
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI
-- A token or CLI for whichever external service you connect (Slack app, `gh` auth, Discord bot, etc.)
+- 接続する外部サービスのトークンまたは CLI（Slack アプリ、`gh` 認証、Discord bot など）
 
-## Install
+## リポジトリで使う（推奨）
 
-Per-repo (recommended for getting started — no global install, version pinned by the repo's lock file):
+設定を `funnel.json` としてリポジトリに commit し、チームで共有・バージョン管理できる。グローバルに何も入れないので、リポジトリの lock ファイルでバージョンが固定される。
+
+### インストール
 
 ```bash
 bun add -D @interactive-inc/claude-funnel
-bunx funnel claude            # or `bunx funnel <any subcommand>`
 ```
 
-Global (one CLI for every repo you touch):
+これで `bunx funnel`（または `bunx fnl`）が使える。
+
+### 設定
+
+リポジトリ直下に `funnel.json` を置く。transport（`channels[]`）と起動レシピ（`profiles[]`）を宣言する。
+
+```json
+{
+  "$schema": "./node_modules/@interactive-inc/claude-funnel/funnel.schema.json",
+  "channels": [
+    {
+      "name": "ops",
+      "connectors": [
+        { "type": "slack", "name": "my-slack" }
+      ]
+    },
+    {
+      "name": "review"
+    }
+  ],
+  "profiles": [
+    {
+      "name": "pm",
+      "channel": "ops",
+      "options": ["--brief", "--agent", "pm"],
+      "env": { "ANTHROPIC_MODEL": "claude-sonnet-4-6" },
+      "resume": true
+    },
+    {
+      "name": "reviewer",
+      "channel": "review",
+      "options": ["--agent", "reviewer"]
+    }
+  ]
+}
+```
+
+channels は購読箱（transport）。各チャネルは `connectors` を持てる。`connectors` 配列はそのチャネルの真実の源で、起動時に宣言にないコネクタは削除され、足りないコネクタは作られる（名前で照合）。`connectors` フィールド自体が無ければ既存のコネクタはそのまま残る。
+
+profiles は起動レシピ。各プロファイルは一意な `name` を持ち、`channel` でチャネルを名前指定でバインドし、次を持つ。
+
+- `options` — claude の argv 先頭に積む（ユーザーが渡す CLI 引数はその後ろ。`--brief` / `--agent <name>` / `--model <name>` などに使う）
+- `env` — 起動する claude プロセスに被せる（衝突時は起動シェルの `process.env` が勝つ）
+- `resume` — claude セッションの再利用可否
+
+同じチャネルに複数のプロファイルをバインドしてよく、`name` で区別する。チャネル側がプロファイルを選ぶことはない（プロファイルがチャネルを bind する一方向）。
+
+トークンは `funnel.json` に書かない（スキーマが弾く）。リポジトリ内で次のどちらか。
+
+- `fnl channels ops connectors set my-slack --bot-token=xoxb-... --app-token=xapp-...` で設定する
+- 省略して `fnl claude` 起動時の TTY プロンプトで答える。次回以降は引き継がれ再度聞かれない
+
+いずれもトークンは `~/.funnel/projects/<id>/settings.json`（リポジトリ外）に保存され、commit されない。
+
+`funnel.json` に書けないものが 2 つある。delivery モード（fanout / exclusive）は CLI で設定する（`funnel.json` のチャネルは fanout 固定）。schedule の cron エントリも CLI で足す（`funnel.json` には schedule コネクタの存在だけ宣言できる）。
+
+セッション再開には `resume` の明示が要る。`funnel.json` の `resume` はデフォルト値を持たず、書かないと再開されない（未指定が false 扱いになる）。前回の claude セッションを引き継ぎたいなら必ず `"resume": true` を書く。再開のための session id は funnel が `~/.funnel/projects/<id>/settings.json` に自動で保存・読み出しするので、`funnel.json` には書かない。
+
+### 使い方
+
+```bash
+bunx fnl gateway start              # 常駐デーモンを起動（外部接続を持つ）
+bunx fnl claude --profile pm        # cd + チャネルのバインド + レシピを一発で
+```
+
+`--profile` なしの `bunx fnl claude` は、`funnel.json` の先頭チャネルで起動する。`--channel review` で名前指定すると、そのチャネルを transport だけバインドして起動する（レシピなし）。
+
+これでコネクタが見たイベントが、起動中のエージェントセッションに届く。エージェントは `my-slack` という MCP ツールで返信できる。
+
+cron 起動を足す（schedule コネクタを宣言したうえで、エントリは CLI で）。
+
+```bash
+bunx fnl channels ops connectors add daily --type=schedule
+bunx fnl channels ops connectors daily schedules add morning \
+    --cron="0 9 * * *" --prompt="morning standup"
+```
+
+tick ごとにプロンプトがチャネルへ発火する。9 時にデーモンが落ちていても、次回起動時に逃した枠を catch-up する（`meta.catchup = "true"`、最大 24 時間）。
+
+`funnel.json` を持つリポジトリは自分自身にスコープされる。初回起動時に funnel は `funnel.json` の先頭へ不変の `id`(uuid) を書き戻し、以降このリポジトリの funnel state を `~/.funnel/projects/<id>/` 配下に隔離する。グローバルの `~/.funnel` には一切触らない（イベントログと一時ファイルだけが `/tmp/funnel/` で共有）。このスコープはリポジトリ内で実行する全 CLI コマンドに効く。
+
+トップレベルの `$schema`（任意）は JSON Schema を指し、エディタの検証と補完が効く。ローカルインストールでは `./node_modules/@interactive-inc/claude-funnel/funnel.schema.json` を推奨する（ネットワーク往復なし）。`https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json` でも公開しており、`fnl schema > funnel.schema.json` でローカルコピーを再生成できる。
+
+## グローバルで使う
+
+触るすべてのリポジトリで 1 つの CLI を共有したいときはグローバルに入れる。設定は `funnel.json` ではなく CLI で組み、`~/.funnel/settings.json`（グローバル）に保存される。
 
 ```bash
 bun add -g @interactive-inc/claude-funnel
-funnel claude                 # or the `fnl` shorthand
 ```
 
-The published package ships the built `dist/`, so either install makes `funnel` / `fnl` available immediately — no post-install step. The rest of the README uses `fnl` for brevity; swap in `bunx funnel` if you went the per-repo route.
-
-## Quick start
-
-Wire one source to one agent:
+これで `funnel` / `fnl` がどこでも使える。ソース 1 つをエージェント 1 つにつなぐ最短手順。
 
 ```bash
 fnl channels add ops
@@ -82,156 +144,101 @@ fnl gateway start
 fnl claude --channel ops
 ```
 
-Every event the connector sees now arrives in the running agent session, and the agent can reply via the `my-slack` MCP tool.
+delivery モードはチャネル作成時に選ぶ。
 
-Save it as a profile for one-command launches — the profile carries the launch recipe:
+```bash
+fnl channels add reviews                       # fanout（デフォルト）: 全エージェントが全イベント
+fnl channels add ingest --delivery=exclusive   # exclusive: 1 イベントを 1 エージェントが round-robin
+```
+
+ワンコマンド起動のためにプロファイルとして保存する。プロファイルは起動レシピを持つ。
 
 ```bash
 fnl profiles add cto --path=/repo/myapp --channel=ops --agent=pm --options="--brief"
-fnl claude --profile cto         # cd + channel binding + recipe in one shot
+fnl claude --profile cto
 ```
 
-Or drop a `funnel.json` in the repo and `fnl claude` (no args) inside the repo will use it:
+公開パッケージはビルド済みの `dist/` を同梱しているので、どちらのインストールでも `funnel` / `fnl` がすぐ使える（post-install ステップなし）。リポジトリ単位で入れたなら、以降の `fnl` は `bunx funnel` に読み替える。
 
-```json
-{
-  "$schema": "./node_modules/@interactive-inc/claude-funnel/funnel.schema.json",
-  "channels": [
-    {
-      "name": "ops",
-      "connectors": [
-        {
-          "type": "slack",
-          "name": "my-slack"
-        }
-      ]
-    },
-    {
-      "name": "review"
-    }
-  ],
-  "profiles": [
-    {
-      "channel": "ops",
-      "options": ["--brief", "--agent", "pm"],
-      "env": { "ANTHROPIC_MODEL": "claude-sonnet-4-6" }
-    },
-    {
-      "channel": "review",
-      "options": ["--agent", "reviewer"]
-    }
-  ]
-}
+コマンドの一覧やフラグはここに並べない。`fnl --help` で全体、`fnl <command> --help`（例 `fnl channels --help`）で個別の使い方が出る。動詞だけを引数なしで打ってもヘルプが返る。
+
+## なぜ funnel なのか
+
+1 つのエージェントセッションは、1 つのリポジトリ・1 つの瞬間を扱うのは得意だ。だがそれに「何かに反応させたい」と思った瞬間 — チャットのメンション、新しい Issue、朝 9 時のスタンドアップ — シェルスクリプトと cron と `bash -c "agent ..."` をつなぎ合わせる羽目になる。「誰が何を聞いていて、誰がどこに返信していいのか」を一望できる場所がどこにもない。
+
+funnel はその場所になる。名前付きの購読箱（チャネル）を宣言し、コネクタを取り付け、チャネルをバインドしてエージェントを起動すれば、あとはデーモンが面倒を見る。使うモチベーションは次の点にある。
+
+外部接続をデーモンが 1 か所で持つ。各接続は、エージェントセッションを何個起こしても 1 回だけつながる。2 つ目のエージェントが 2 つ目のソケットを開くことはなく、両方が同じチャネルを購読し、デーモンがイベントを fanout する。
+
+受信イベントは MCP 通知として届くので、エージェントは今いるセッションのまま反応する。新しいプロセスを起こさない。
+
+送信（返信）はコネクタごとの MCP ツールを使う。bash も CLI のコールドスタートもなく、実質同期で返る。
+
+リスナーはヘルスチェックと自動再起動で監視される。接続が不安定でも poller がクラッシュしても、自分で復旧する。
+
+複数のエージェントが 1 つのチャネルを共有する（fanout）か、ワーカーとしてイベントを取り合う（exclusive）かを選べる。どのイベントを誰が受けるかはデーモンが決める。
+
+つまり、外部とのつなぎ込みという「配管」を 1 つのデーモンに集約し、エージェント側は購読と返信という単純な世界だけを見ればよくなる。これが funnel を使う理由になる。
+
+## 仕組み
+
+### 全体像
+
+```
+external sources                          outbound replies
+(chat / source-control / cron)            (MCP tools per connector)
+        │                                          │
+        ▼                                          ▼
+            daemon  (port 9743 for CLI)
+            routes events into channels
+            serves replies through the same connectors
+                        │
+                        ▼  WebSocket / MCP (stdio)
+                     agent  (subscribes to one channel)
 ```
 
-`channels[]` is required and the first entry is the default. `fnl claude --channel review` picks one by name; `fnl claude` with no `--channel` uses the first.
+### Channel と Connector と Profile
 
-A channel declares only transport — its `connectors` and delivery mode. The launch recipe lives on `profiles[]`: each profile has a unique `name`, binds to a channel by name, and carries `options` (prepended to the claude argv before user-supplied CLI args, which still come last — use it for flags like `--brief`, `--agent <name>`, `--model <name>`), `env` (layered under the launched claude process — `process.env` from the launching shell wins on collision), and `resume`. A profile is launched by name with `fnl claude --profile <name>`; the channel never selects a profile on its own. Multiple profiles may bind the same channel — they are told apart by `name`.
+transport モデルは 2 つの概念でできている。
 
-The optional `connectors` array on a channel is the source of truth for that channel: missing connectors are created and connectors not declared are removed on launch. Connectors are matched by name. An absent `connectors` field leaves existing connectors alone.
+Channel は名前付きの購読箱（transport のみ）。1 つ以上のコネクタと delivery モードを持ち、起動フラグは持たない。エージェントセッションはちょうど 1 つのチャネルを購読する。delivery は `fanout`（全 subscriber が全イベントを見る、デフォルト）か `exclusive`（1 イベントを 1 subscriber が round-robin で消費、ワーカープール向け）。
 
-A repo with a `funnel.json` is scoped to itself. On first launch funnel writes a stable `id` (uuid) to the top of `funnel.json` and keeps every byte of funnel state under `~/.funnel/projects/<id>/`, never touching the global `~/.funnel` — only the event log and temp files under `/tmp/funnel/` are shared. This scoping applies to every CLI command run in the repo, not just `fnl claude`. On launch the chosen channel's transport (`connectors`, delivery) is materialized into `~/.funnel/projects/<id>/settings.json`; the profile recipe is passed straight to the launcher and is not persisted there. Raw launches (`fnl claude --channel <name>` without funnel.json) bind transport only against the global `~/.funnel` and carry no recipe.
+Connector はチャネルから外部ソースへの 1 つの接続。`slack` / `gh` / `discord` / `schedule` の 4 型。前者 3 つは双方向（イベント入力・返信出力）、`schedule` は一方向（cron tick の入力のみ）。
 
-The optional top-level `$schema` points at the JSON Schema so editors can validate and autocomplete the file. The recommended reference for repos with a local install is `./node_modules/@interactive-inc/claude-funnel/funnel.schema.json` — it works without a network round-trip and editors do not need to prompt for trust. The same file is also published at `https://interactive-inc.github.io/open-claude-funnel/funnel.schema.json` (editors usually require explicit trust on first use), and `fnl schema > funnel.schema.json` regenerates a local copy on demand.
+Profile はその transport モデルの外側にある起動の便宜レイヤで、モデルの一部ではない。エージェントを動かすのに必須ではない（`fnl claude --channel <name>` で足りる）。`{ path, channelId, options, env, resume }` を束ねた保存済みの起動 preset で、`fnl claude --profile cto` が既知のセットアップを再現する。どのディレクトリから起動するか、どのチャネルをバインドするか、起動レシピ（claude argv の先頭に積む引数、プロセスに被せる env、セッション再利用）をまとめて持つ。プロファイルは不変の uuid `id` を持ち（PID ファイルと再開可能なセッションがこれをキーにするので、rename してもどちらも迷子にならない）、`name` は人が打つハンドル。プロファイルは既にチャネルをバインドしているので、`--profile` と `--channel` は併用できない。
 
-Connectors in `funnel.json` carry no tokens. A connector's token is set out of band and stored only in the repo-scoped settings:
+### daemon
 
-- run `fnl channels <ch> connectors set <c> --bot-token=...` (etc.) in the repo to write it to `~/.funnel/projects/<id>/settings.json`
-- or omit it — `fnl claude` prompts on a TTY at launch and saves the answer there; it carries over so later launches do not re-prompt. On non-TTY stdin the launch fails so CI / agent-spawned-agent runs do not hang
+外部接続はすべてデーモンに住む。`funnel` CLI 起動では port 9743 で動く（プログラムから起こす gateway は 9742 なので、1 マシン上で衝突しない。`FUNNEL_PORT` でどちらも上書き可）。bind は loopback（`127.0.0.1`）のみで off-box から到達不可。`FUNNEL_HOST=0.0.0.0` で意図的に公開できる（公開しても全特権エンドポイントは bearer token 必須）。デーモンはコネクタを自動再起動付きで監視し、イベントを WebSocket で購読中のエージェントセッションへ broadcast し、MCP が呼ぶ返信 API を提供する。エージェントの起動・停止が外部接続を起動・停止することはない。
 
-Only the `id` is ever written back to `funnel.json`; tokens never live in the repo.
+### MCP
 
-Cron-driven agent runs:
+MCP レイヤはエージェントへの薄いブリッジ。バインドされたチャネルを WebSocket で購読し（実作業はデーモンがやる）、呼び出し可能なコネクタごとに 1 つのツールを公開して、エージェントが外へ返信できるようにする。
 
-```bash
-fnl channels ops connectors add daily --type=schedule
-fnl channels ops connectors daily schedules add morning \
-    --cron="0 9 * * *" --prompt="morning standup"
+### イベントの旅
+
+1 つの Slack メッセージがエージェントに届くまで。
+
+```
+Slack → SlackListener.start(notify) → notify(channel, connector, content, meta)
+     → GatewayServer.notify → Broadcaster.broadcast → event store に seq 付き保存
+     → 該当 Channel を購読している WS クライアントに fanout
+     → エージェント側 MCP（channel-server）が受信してエージェントに events として渡す
 ```
 
-Each tick fires the prompt into the channel. If the daemon was down at 9 AM, the next start catches up the missed slot (`meta.catchup = "true"`) for up to 24 hours.
+逆方向（エージェント → Slack）は MCP のコネクタごとの tool 経由。Listener と Adapter は独立した一方向の通路で、Broadcaster は経由しない。
 
-Multiple agents on the same source — pick the delivery mode:
+### 外部への送信
 
-```bash
-fnl channels add reviews                       # fanout (default): every agent sees every event
-fnl channels add ingest --delivery=exclusive   # exclusive: one event per agent, round-robin
-```
-
-## CLI surface
-
-Connectors live nested inside their owning channel. Every write verb (`add` / `set` / `remove` / `rename` / `as-default` / `request`) maps to `POST` plus the verb in the URL — the same word stays visible in shell and HTTP form. Read paths stay `GET`.
-
-```text
-fnl channels                                 list
-fnl channels add <name> [--delivery=fanout|exclusive]
-fnl channels <name>                          show details
-fnl channels remove <name>
-fnl channels rename <old> <new>              (also `fnl channels <old> rename <new>`)
-fnl channels <name> set delivery <mode>
-
-fnl channels <ch> connectors                 list
-fnl channels <ch> connectors add <c> --type=slack    --bot-token=xoxb-... --app-token=xapp-...
-fnl channels <ch> connectors add <c> --type=gh       [--poll-interval=<sec>]
-fnl channels <ch> connectors add <c> --type=discord  --bot-token=<token>
-fnl channels <ch> connectors add <c> --type=schedule
-fnl channels <ch> connectors <c>             show config
-fnl channels <ch> connectors set <c> [--bot-token=...] [--app-token=...] [--poll-interval=...]
-fnl channels <ch> connectors remove <c>
-fnl channels <ch> connectors rename <c> <new>
-fnl channels <ch> connectors <c> request --method=<api.method> [--key=value ...]
-
-fnl channels <ch> connectors <c> schedules                        list cron entries
-fnl channels <ch> connectors <c> schedules add <id> --cron="<expr>" --prompt="<text>" \
-                                  [--enabled=true] [--catchup-policy=latest|all|skip]
-fnl channels <ch> connectors <c> schedules remove <id>
-
-fnl profiles                                 list (first entry is the default)
-fnl profiles add <name> --path=<dir> --channel=<channel-name> \
-                        [--agent=<name>] [--options="<argv>"] [--env="K=V,K2=V2"] [--no-resume]
-fnl profiles <name>                          launch (alias for `<name> run`)
-fnl profiles <name> run                      launch (sugar for `fnl claude --profile <name>`)
-fnl profiles <name> set [--path=...] [--channel=...] \
-                        [--agent=...] [--options="..."] [--env="..."] [--resume|--no-resume]
-fnl profiles <name> as-default               move to the front of the list
-fnl profiles rename <old> <new>
-fnl profiles remove <name>
-
-fnl claude                                   launch the first channel from ./funnel.json, or the default profile
-fnl claude --channel <name>                  with funnel.json: pick that channel; without: raw launch
-fnl claude --profile <name>                  launch a named profile (ignores funnel.json; cannot combine with --channel)
-fnl claude [...]                             positionals and any flag other than -p / --profile / --channel
-                                              (e.g. --agent, --resume, -c, --model) pass through to claude
-fnl mcp                                      run as an MCP server (invoked from .mcp.json)
-
-fnl gateway                                  status (default subcommand)
-fnl gateway {start|stop|restart}             daemon lifecycle
-fnl gateway run                              foreground daemon (developer mode)
-fnl gateway logs [-n <N>]                    tail diagnostic log
-fnl gateway listeners                        live registry (alive / dead)
-
-fnl status                                   overall status (channels / profiles / gateway / clients)
-fnl schema                                   print the JSON Schema for funnel.json (pipe to a file for editor support)
-fnl update                                   `bun i -g @interactive-inc/claude-funnel`
-fnl                                          (no args) show help
-
-fnl --version
-fnl --help                                   every subcommand has --help; verb-without-arg also returns help
-```
-
-`--channel` accepts the channel name (not the uuid). The CLI resolves it to a channel id before calling the engine.
-
-## Outbound calls (MCP tools per connector)
-
-When `fnl claude` launches the agent, the funnel MCP server connects to the daemon and reads the channel's connectors from `~/.funnel/settings.json`. For every callable connector (`slack` / `discord` / `gh`; `schedule` is one-way and skipped), MCP advertises one tool with the connector's name. The agent calls them like:
+`fnl claude` がエージェントを起動すると、funnel の MCP サーバがデーモンに接続し、チャネルのコネクタを `~/.funnel/settings.json` から読む。呼び出し可能なコネクタ（`slack` / `discord` / `gh`。`schedule` は一方向なので除外）ごとに、コネクタ名のツールを 1 つ公開する。エージェントはこう呼ぶ。
 
 ```jsonc
-// MCP: tools/list returns
+// MCP: tools/list が返す
 { "name": "discord",   "inputSchema": { ... { method, path, body } ... } }
 { "name": "ops-slack", "inputSchema": { ... } }
 { "name": "gh-main",   "inputSchema": { ... } }
 
-// agent calls
+// エージェントの呼び出し
 tools/call name="discord" arguments={
   "method": "POST",
   "path": "/channels/123/messages",
@@ -239,243 +246,160 @@ tools/call name="discord" arguments={
 }
 ```
 
-MCP forwards via HTTP `POST /channels/<channel>/connectors/<connector>/call` to the daemon, which dispatches through the connector's adapter. No bash subshell, no CLI cold start — replies are essentially synchronous.
+MCP は HTTP `POST /channels/<channel>/connectors/<connector>/call` でデーモンへ転送し、デーモンがコネクタの adapter 経由でディスパッチする。bash サブシェルもコールドスタートもなく、返信は実質同期。
 
-To invoke a connector from outside an agent, the same path is reachable as `fnl channels <ch> connectors <c> request --method=<...> [--key=value ...]`.
+エージェントの外からコネクタを呼ぶには、同じパスを `fnl channels <ch> connectors <c> request --method=<...> [--key=value ...]` で叩ける。
 
-## Data model
+### データモデル
 
 ```
 Channel    = { id, name, delivery, connectors[] }
-        subscription box (transport only). delivery is `fanout` (every WS client sees every event)
-        or `exclusive` (round-robin one client per event). carries no launch settings.
+        購読箱（transport のみ）。delivery は `fanout`（全 WS クライアントが全イベント受信）
+        か `exclusive`（round-robin で 1 イベント 1 クライアント）。起動設定は持たない。
 
 Connector  =
   | { type: "slack",    name, botToken, appToken }      Slack Socket Mode
-  | { type: "gh",       name, pollInterval? }           GitHub (gh CLI, poll-based)
+  | { type: "gh",       name, pollInterval? }           GitHub（gh CLI, poll ベース）
   | { type: "discord",  name, botToken }                Discord Gateway
-  | { type: "schedule", name, entries[] }               cron-driven; entries = { id, cron, prompt, enabled?, catchupPolicy? }
+  | { type: "schedule", name, entries[] }               cron 起動。entries = { id, cron, prompt, enabled?, catchupPolicy? }
 
 Profile    = { id, name, path, channelId, options[], env, resume, sessionId? }
-        named launch preset: where to launch (path), which channel to bind, and the launch recipe —
-        options[] prepends to the claude argv, env layers under the process (process.env wins on
-        collision), resume toggles session reuse. the first profile is the default. id is a stable
-        uuid (the key the PID file and resumable session hang off, so a rename strands neither);
-        name is the CLI handle. sessionId is execution state, not config — the claude session this
-        profile last launched, written by the launcher and read back on the next resume.
+        名前付き起動 preset: どこで起動するか（path）、どのチャネルをバインドするか、起動レシピ。
+        options[] は claude argv の先頭に積み、env はプロセスに被せ（衝突時は process.env が勝つ）、
+        resume はセッション再利用を切り替える。先頭がデフォルト。id は不変の uuid（PID ファイルと
+        再開可能セッションがぶら下がるキー。rename でどちらも迷子にしない）、name は CLI のハンドル。
+        sessionId は config ではなく実行状態で、このプロファイルが最後に起動した claude セッション。
+        launcher が書き、次回 resume で読み戻す。
 
 LocalConfig = { id?, channels: ChannelSpec[], profiles?: ProfileSpec[] }
-        per-repo file (funnel.json). channels[] required; first entry is default, --channel selects.
-        id (uuid) is written back on first launch; this repo's funnel state lives under
-        ~/.funnel/projects/<id>/ and the global ~/.funnel is never touched.
+        リポジトリ単位のファイル（funnel.json）。channels[] 必須、先頭がデフォルト、--channel で選ぶ。
+        id（uuid）は初回起動時に書き戻され、このリポジトリの funnel state は
+        ~/.funnel/projects/<id>/ 配下に住み、グローバルの ~/.funnel には一切触れない。
 
 ChannelSpec = { name, connectors? }
-        transport declaration (no id, since funnel.json declares by name). connectors materialize into
-        the matching Channel in ~/.funnel/projects/<id>/settings.json on launch. Connectors carry no
-        tokens; a token is set via the CLI or prompted on a TTY at launch and saved to that scoped settings.
+        transport 宣言（funnel.json は名前で宣言するので id はない）。connectors は起動時に
+        ~/.funnel/projects/<id>/settings.json の該当 Channel に materialize する。コネクタはトークンを
+        持たず、CLI か TTY 起動時のプロンプトで設定し、そのスコープ settings に保存される。
 
 ProfileSpec = { name, channel, options?, env?, resume? }
-        launch recipe bound to a channel by name. applied inline on launch (the first spec bound to the
-        chosen channel — selected by its channel binding, not by name); not persisted into the global
-        profiles[] list.
+        チャネルに名前でバインドする起動レシピ。`fnl claude --profile <name>` で name 解決して適用され、
+        グローバルの profiles[] リストには永続化されない。
 
-Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json (global)
-                                                          or ~/.funnel/projects/<id>/settings.json (per-repo funnel.json)
+Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.json（グローバル）
+                                                          または ~/.funnel/projects/<id>/settings.json（リポジトリ単位の funnel.json）
 ```
 
-## File layout
+### ファイルレイアウト
 
-Persistent state lives under `~/.funnel/`. Volatile logs and the event log live under `/tmp/funnel/`.
+永続データは `~/.funnel/` 配下、揮発ログとイベントログは `/tmp/funnel/` 配下に住む。
 
 ```
 ~/.funnel/
-├── settings.json                                       global channels[] with nested connectors, profiles[]
+├── settings.json                                       グローバルの channels[]（nested connectors）, profiles[]
 ├── projects/
-│   └── <id>/                                           per-repo state for a repo with funnel.json
-│       └── settings.json, gateway.token, claude/, ...  (same layout as the global root, scoped by funnel.json id)
-├── gateway.pid                                         daemon PID
-├── gateway.token                                       Bearer token for daemon HTTP / WS
+│   └── <id>/                                           funnel.json を持つリポジトリのスコープ state
+│       └── settings.json, gateway.token, claude/, ...  （グローバルと同じレイアウト、funnel.json id でスコープ）
+├── gateway.pid                                         デーモン PID
+├── gateway.token                                       デーモン HTTP / WS の Bearer token
 ├── claude/
-│   └── <profile-id>.pid                                prevents double-launch of the same profile (keyed by profile id)
+│   └── <profile-id>.pid                                同一プロファイルの二重起動を防ぐ（profile id がキー）
 └── channels/
     └── <channel-id>/
         └── connectors/
             └── <connector-id>/
-                └── state.json                          per-connector durable state (e.g. schedule lastFiredAt)
+                └── state.json                          コネクタごとの永続 state（例: schedule の lastFiredAt）
 
 /tmp/funnel/
-├── events.db                                           SQLite event log with replay-by-offset
-├── funnel.log                                          diagnostic log (daemon lifecycle, listener boot, connects)
-└── gateway.log                                         daemon stdout/stderr
+├── events.db                                           offset 再生付きの SQLite イベントログ
+├── funnel.log                                          診断ログ（デーモンの起動、listener boot、接続）
+└── gateway.log                                         デーモンの stdout/stderr
 ```
 
-Notes:
+コネクタの設定は settings.json にインライン（チャネルの下に nested）で保存され、型ごとのディレクトリには置かない。コネクタごとの永続 state（schedule catch-up の `lastFiredAt` など）は `channels/<channel-id>/connectors/<connector-id>/state.json` に id をキーに住むので、rename しても state を失わない。`fnl gateway logs` は `funnel.log` を tail して YAML として描画する。
 
-- Connector configuration is stored inline in `settings.json` (nested under the channel), not in a per-type directory. Per-connector durable state (e.g. `lastFiredAt` for schedule catch-up) lives under `channels/<channel-id>/connectors/<connector-id>/state.json` keyed by id, so renames do not lose state.
-- `fnl gateway logs` tails `funnel.log` and renders it as YAML.
+### 環境変数
 
-## Environment variables
+- `FUNNEL_CHANNEL_ID` — `fnl claude` が子プロセスに注入する。funnel MCP がこれで購読する
+- `FUNNEL_PORT` — gateway ポート。`funnel` CLI 起動はデフォルト 9743、プログラムから起こす gateway は 9742
+- `FUNNEL_GATEWAY_URL` — MCP が WS 購読と HTTP 返信の両方で使うデーモンのベース URL（デフォルト `http://127.0.0.1:<port>`）
+- `FUNNEL_GATEWAY_TOKEN` — デーモン HTTP / WS の Bearer token。デフォルトは `~/.funnel/gateway.token` の中身
 
-| Variable               | Purpose                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------------- |
-| `FUNNEL_CHANNEL_ID`    | Injected into the child process by `fnl claude`; the funnel MCP uses it to subscribe.         |
-| `FUNNEL_PORT`          | Gateway port. Default 9743 for `funnel` CLI launches, 9742 for a programmatically hosted gateway. |
-| `FUNNEL_GATEWAY_URL`   | Daemon base URL used by MCP for both WS subscribe and HTTP reply (default `http://127.0.0.1:<port>`). |
-| `FUNNEL_GATEWAY_TOKEN` | Bearer token for the daemon HTTP / WS. Defaults to the contents of `~/.funnel/gateway.token`. |
+## Discord bot のセットアップ
 
-## Discord bot setup
+- Discord Developer Portal で bot を作りトークンを取得する
+- Privileged Gateway Intents の `Message Content Intent` を有効にする
+- OAuth2 → URL Generator で `bot` スコープと `View Channels` / `Send Messages` / `Read Message History` 権限を付けて招待する
 
-- Create a bot in the Discord Developer Portal and obtain its token
-- Enable `Message Content Intent` under Privileged Gateway Intents
-- Invite the bot via OAuth2 → URL Generator with the `bot` scope and `View Channels` / `Send Messages` / `Read Message History` permissions
+## プログラマブル API（Bun）
 
-## Programmable API (Bun)
-
-`funnel` is also usable as a library — the same `Funnel` facade the CLI uses is exported from the package root. The constructor is fully lazy: `new Funnel()` records its props and freezes; no disk / process / network access happens until a method is called.
+CLI を介さず、ライブラリとして組み込める。CLI が使うのと同じ `Funnel` facade をパッケージのルートから export している。コンストラクタは lazy で、`new Funnel()` は props を記録して freeze するだけ。メソッドを呼ぶまでディスク / プロセス / ネットワークに触れない。
 
 ```ts
 import { Funnel } from "@interactive-inc/claude-funnel"
 
-const funnel = new Funnel() // defaults to ~/.funnel + /tmp/funnel on the local filesystem
-
-funnel.paths
-// → { dir: "/Users/you/.funnel", tmpDir: "/tmp/funnel", settings: "/Users/you/.funnel/settings.json" }
+const funnel = new Funnel() // ~/.funnel + /tmp/funnel がデフォルト
 
 const channel = funnel.channels.add({ name: "inbox" })
-
 funnel.channels.addConnector("inbox", {
   type: "slack",
   name: "my-slack",
   botToken: "xoxb-...",
   appToken: "xapp-...",
 })
-
-for (const c of funnel.channels.list()) console.log(c.name, c.connectors.length)
 ```
 
-Every facet — `channels` / `profiles` / `gateway` / `gatewayServer` / `gatewayToken` / `listeners` / `mcp` / `claude` / `factory` / `store` / `process` / `logger` / `paths` — is reachable from the same instance:
+`channels` / `profiles` / `gateway` / `listeners` / `mcp` / `claude` など全ファセットが同じインスタンスから辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
 
 ```ts
-funnel.gateway.getStatus()       // { running, pid, port }
-await funnel.gateway.start()     // spawns the daemon as a separate process
+await funnel.gateway.start()              // デーモンを別プロセスとして spawn
+funnel.gateway.getStatus()                // { running, pid, port }
 
-await funnel.listeners.list()    // talks to the running daemon over HTTP
 await funnel.listeners.start("inbox", "my-slack")
 await funnel.listeners.restart("inbox", "my-slack")
 
-await funnel.claude.launch({ channel: "inbox" })
-funnel.mcp.install("/path/to/repo")     // writes .mcp.json
+await funnel.claude.launch({ channel: "inbox" })   // claude を起動（.mcp.json も自動で書く）
 ```
 
-Run the gateway in-process (no daemon spawn — useful for tests or embedding):
+デーモンを spawn せず、gateway をインプロセスで動かすこともできる（テストや埋め込み向け）。`onEvent` で全 broadcast イベントをインプロセスで観測できる。
 
 ```ts
 const server = funnel.gatewayServer({ port: 9742 })
 await server.start()                       // Bun.serve (HTTP + WS) + listener supervisor
 const unsubscribe = server.onEvent(({ content, meta }) => {
-  console.log(meta?.connector, content)    // in-process observer for every broadcast event
+  console.log(meta?.connector, content)
 })
 await server.stop()
 unsubscribe()
 ```
 
-Persistence and replay live behind the `FunnelEventLog` port. The default is a `SqliteFunnelEventLog` (durable across daemon restarts: it seeds the broadcaster's offset and serves reconnect replay). Inject `MemoryFunnelEventLog` — or any `FunnelEventLog` — to swap or disable durable replay; `onEvent` is a separate, write-only observation hook and does not replace it:
+永続化と再生は `FunnelEventLog` port の裏にある。デフォルトは `SqliteFunnelEventLog`（デーモン再起動を跨いで durable。reconnect 時の再生を提供する）。`gatewayServer({ eventLog })` に `MemoryFunnelEventLog` を渡せば durable な再生を差し替え・無効化できる。`onEvent` は書き込み専用の観測フックで、再生（読み戻し）は EventLog の責務。
+
+### テスト用のサンドボックス
+
+`Funnel.inMemory()` は全 IO 境界（ディスク / プロセス / clock / UUID）を Memory 実装で配線済みの Funnel を返す。`props` の任意の部分集合で個々の seam を上書きできるので、実 FS や spawn に触れずにテストを書ける。
 
 ```ts
-import { MemoryFunnelEventLog } from "@interactive-inc/claude-funnel"
-
-const server = funnel.gatewayServer({ port: 9742, eventLog: new MemoryFunnelEventLog() })
+const funnel = Funnel.inMemory()        // 実ディスク / プロセス / clock / UUID に触れない
+funnel.channels.add({ name: "inbox" })  // インメモリ store を変更する
 ```
 
-The daemon exposes `/health`, `/status`, `/listeners*`, `/channels/:channel/connectors/:connector/call`, plus the `/ws?channel=<name>` WebSocket.
-
-### Sandboxed Funnel
-
-`Funnel.inMemory()` returns a Funnel pre-wired with Memory implementations for every IO boundary — useful for tests and ad-hoc experiments. Pass any subset of `props` to override individual seams:
-
-```ts
-import { Funnel } from "@interactive-inc/claude-funnel"
-
-const funnel = Funnel.inMemory()        // touches no real disk, processes, clock, or UUIDs
-funnel.channels.add({ name: "inbox" })  // mutates the in-memory store
-```
-
-The longhand form (for fine-grained control) is still available:
-
-```ts
-import {
-  Funnel,
-  MemoryFunnelClock,
-  MemoryFunnelFileSystem,
-  MemoryFunnelIdGenerator,
-  MemoryFunnelLogger,
-  MemoryFunnelProcessRunner,
-  MockFunnelSettingsReader,
-} from "@interactive-inc/claude-funnel"
-
-const funnel = new Funnel({
-  store: new MockFunnelSettingsReader(),
-  fs: new MemoryFunnelFileSystem(),
-  process: new MemoryFunnelProcessRunner(),
-  logger: new MemoryFunnelLogger(),
-  clock: new MemoryFunnelClock({ start: new Date("2026-01-01T00:00:00Z") }),
-  idGenerator: new MemoryFunnelIdGenerator({ prefix: "test" }),
-  dir: "/sandbox/.funnel",
-  tmpDir: "/sandbox/tmp",
-})
-```
-
-Available abstractions (each has `Funnel*` interface, `Node*` default, and `Memory*` for tests): `FunnelFileSystem`, `FunnelProcessRunner`, `FunnelLogger`, `FunnelClock`, `FunnelIdGenerator`. Plus `NoopFunnelLogger` for silent operation and `MockFunnelSettingsReader` for an in-memory settings store.
-
-### Embedding the CLI
-
-The same Hono app that backs `fnl` is published as `createCliApp(funnel)` — pass any `Funnel` instance to bind a custom store / boundaries to the routes. The pair `toRequest` (argv → request) and `queryToCliArgs` (URL search params → CLI flags) lets you drive the app programmatically:
-
-```ts
-import { Funnel, createCliApp, toRequest } from "@interactive-inc/claude-funnel"
-
-const app = createCliApp(Funnel.inMemory())
-const { method, url } = toRequest(["channels", "add", "inbox"])
-const res = await app.request(url, { method })
-console.log(await res.text())
-```
-
-`cliApp` is the same app pre-wired to `new Funnel()` for callers who just want the default. The middleware sets the chosen Funnel onto `c.var.funnel`; the matching `Env` type is exported for composing custom routes that share the same context variable.
-
-### Validating connector configs
-
-Each connector type publishes its Zod schema, so consumers can parse external configs (JSON files, API payloads, etc.) before handing them to `addConnector`. The discriminated union `connectorConfigSchema` covers the whole set.
-
-```ts
-import {
-  connectorConfigSchema,
-  slackConnectorSchema,
-  type SlackConnectorConfig,
-} from "@interactive-inc/claude-funnel"
-
-const slack: SlackConnectorConfig = slackConnectorSchema.parse(json)
-const any = connectorConfigSchema.parse(json)   // narrows by `type`
-```
-
-### Packaging
-
-The published package ships a bundled library entry (`dist/index.js`) plus generated declarations (`dist/**/*.d.ts`), so consumers do not need a matching tsconfig paths setup to resolve `@/...` imports. The `fnl` / `funnel` bin entries point to a separately bundled `dist/bin.js`. Import `@interactive-inc/claude-funnel/bin` only if you are embedding the CLI binary rather than the library.
+`fnl` を支える Hono アプリ（`createCliApp` / `toRequest`）や、各コネクタの Zod スキーマ（`connectorConfigSchema`）も export している。詳細は型定義を参照。
 
 ## Claude Code skill
 
-This repo ships a Claude Code skill at `.claude/skills/funnel/SKILL.md`. It briefs Claude on the architecture and command groups, and tells it to defer flag-level details to `funnel <command> --help`.
+このリポジトリは `.claude/skills/funnel/SKILL.md` に Claude Code skill を同梱している。アーキテクチャとコマンド群を Claude に説明し、フラグレベルの詳細は `funnel <command> --help` に委ねるよう指示する。
 
-Project-scoped (auto): if you run `claude` inside this repo, the skill is picked up automatically — no install step.
+プロジェクトスコープ（自動）: このリポジトリ内で `claude` を実行すると skill が自動で読まれる。インストール手順は不要。
 
-Global (use the skill in any project): Claude Code does not currently provide a CLI to install skills from a remote URL, so copy the file into your personal skills directory:
+グローバル（任意のプロジェクトで使う）: Claude Code はリモート URL から skill をインストールする CLI を今のところ提供していないので、ファイルを個人の skills ディレクトリへコピーする。
 
 ```bash
-# from a clone of this repo
+# このリポジトリの clone から
 mkdir -p ~/.claude/skills/funnel
 cp .claude/skills/funnel/SKILL.md ~/.claude/skills/funnel/
 ```
 
-Or fetch it directly without cloning:
+clone せず直接取得することもできる。
 
 ```bash
 mkdir -p ~/.claude/skills/funnel
@@ -483,31 +407,31 @@ curl -fsSL https://raw.githubusercontent.com/interactive-inc/open-claude-funnel/
   -o ~/.claude/skills/funnel/SKILL.md
 ```
 
-After this, Claude Code will load the skill in any session.
+これで Claude Code がどのセッションでも skill を読む。
 
-## Development
+## 開発
 
 ```bash
 git clone https://github.com/interactive-inc/open-claude-funnel.git
 cd open-claude-funnel
-bun install         # install deps (no auto-build)
-make build          # produce dist/ — run this once after install
-bun link            # symlinks fnl / funnel → dist/bin.js
-make build          # rebuild library + CLI after editing
-make build-lib      # library only (vp pack)
-make build-bin      # CLI / daemon only (bun build --minify)
-make clean          # remove dist/
-bun test            # run tests
-bunx tsc -b         # type check
-bun lib/bin.ts ...  # run the cli from source (no build) for fast iteration
+bun install         # 依存インストール（自動ビルドなし）
+make build          # dist/ を生成 — install 後に一度実行
+bun link            # fnl / funnel → dist/bin.js を symlink
+make build          # 編集後にライブラリ + CLI を再ビルド
+make build-lib      # ライブラリのみ（vp pack）
+make build-bin      # CLI / daemon のみ（bun build --minify）
+make clean          # dist/ を削除
+bun test            # テスト実行
+bunx tsc -b         # 型チェック
+bun lib/bin.ts ...  # ソースから CLI を実行（ビルド不要、高速イテレーション）
 ```
 
-## Links
+## リンク
 
 - [GitHub](https://github.com/interactive-inc/open-claude-funnel)
 - [Issues](https://github.com/interactive-inc/open-claude-funnel/issues)
-- Coding rules and design principles: [CLAUDE.md](https://github.com/interactive-inc/open-claude-funnel/blob/main/CLAUDE.md)
+- コーディング規約と設計原則: [CLAUDE.md](https://github.com/interactive-inc/open-claude-funnel/blob/main/CLAUDE.md)
 
-## License
+## ライセンス
 
 MIT © Interactive Inc.
