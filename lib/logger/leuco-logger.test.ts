@@ -14,7 +14,7 @@ type Event = z.infer<typeof eventSchema>
 describe("LeucoLogger", () => {
   it("delegates seq assignment to the primary sink", () => {
     const primary = new LeucoLoggerMemorySink<Event>()
-    const logger = new LeucoLogger({ schema: eventSchema, primary })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary })
 
     const first = logger.emit({ type: "hello", name: "ada" })
     const second = logger.emit({ type: "hello", name: "linus" })
@@ -28,7 +28,7 @@ describe("LeucoLogger", () => {
   it("resumes monotonically when the primary already has records", () => {
     const primary = new LeucoLoggerMemorySink<Event>()
     primary.write({ seq: 42, ts: 1, event: { type: "hello", name: "x" } })
-    const logger = new LeucoLogger({ schema: eventSchema, primary })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary })
 
     const next = logger.emit({ type: "bye", reason: "done" })
 
@@ -38,7 +38,7 @@ describe("LeucoLogger", () => {
 
   it("returns Error and persists nothing when validation fails", () => {
     const primary = new LeucoLoggerMemorySink<Event>()
-    const logger = new LeucoLogger({ schema: eventSchema, primary })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary })
 
     const bad = { type: "hello" } as unknown as Event
     const outcome = logger.emit(bad)
@@ -56,7 +56,7 @@ describe("LeucoLogger", () => {
       getMaxSeq: () => 0,
     }
     const relay = new LeucoLoggerMemorySink<Event>()
-    const logger = new LeucoLogger({ schema: eventSchema, primary, relays: [relay] })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary, relays: [relay] })
 
     const outcome = logger.emit({ type: "hello", name: "x" })
 
@@ -69,7 +69,7 @@ describe("LeucoLogger", () => {
     const a = new LeucoLoggerMemorySink<Event>()
     const b = new LeucoLoggerMemorySink<Event>()
     const logger = new LeucoLogger({
-      schema: eventSchema,
+      validate: (e) => eventSchema.safeParse(e),
       primary,
       relays: [a, b],
     })
@@ -92,7 +92,7 @@ describe("LeucoLogger", () => {
     const ok = new LeucoLoggerMemorySink<Event>()
     const errors: Error[] = []
     const logger = new LeucoLogger({
-      schema: eventSchema,
+      validate: (e) => eventSchema.safeParse(e),
       primary,
       relays: [failing, ok],
       onSinkError: (error) => errors.push(error),
@@ -117,7 +117,7 @@ describe("LeucoLogger", () => {
     }
     const errors: Error[] = []
     const logger = new LeucoLogger({
-      schema: eventSchema,
+      validate: (e) => eventSchema.safeParse(e),
       primary,
       relays: [failing],
       onSinkError: (error) => errors.push(error),
@@ -131,7 +131,7 @@ describe("LeucoLogger", () => {
 
   it("isolates a throwing subscriber so emission still completes", () => {
     const primary = new LeucoLoggerMemorySink<Event>()
-    const logger = new LeucoLogger({ schema: eventSchema, primary })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary })
     logger.subscribe(() => {
       throw new Error("listener boom")
     })
@@ -147,7 +147,7 @@ describe("LeucoLogger", () => {
 
   it("stops delivering to a subscriber after unsubscribe", () => {
     const primary = new LeucoLoggerMemorySink<Event>()
-    const logger = new LeucoLogger({ schema: eventSchema, primary })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary })
     const seen: number[] = []
     const off = logger.subscribe((record) => seen.push(record.seq))
 
@@ -161,7 +161,7 @@ describe("LeucoLogger", () => {
   it("uses the injected clock for ts", () => {
     const primary = new LeucoLoggerMemorySink<Event>()
     const logger = new LeucoLogger({
-      schema: eventSchema,
+      validate: (e) => eventSchema.safeParse(e),
       primary,
       now: () => 1700000000000,
     })
@@ -188,7 +188,7 @@ describe("LeucoLogger", () => {
         relayClosed = true
       },
     }
-    const logger = new LeucoLogger({ schema: eventSchema, primary, relays: [relay] })
+    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary, relays: [relay] })
     const seen: number[] = []
     logger.subscribe((r) => seen.push(r.seq))
 

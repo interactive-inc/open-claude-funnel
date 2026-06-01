@@ -1,4 +1,3 @@
-import type { ZodType } from "zod"
 import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
 import type { LeucoLoggerPrimarySink, LeucoLoggerSink } from "@/logger/leuco-logger-sink"
 
@@ -10,9 +9,13 @@ type SinkErrorHandler<E> = (
   sink: LeucoLoggerSink<E>,
 ) => void
 
+export type LeucoLoggerValidator<E> = (
+  event: unknown,
+) => { success: true; data: E } | { success: false; error: Error }
+
 type Props<E> = {
-  /** Zod schema for the event union. Validated on every `emit`. */
-  schema: ZodType<E>
+  /** Validates each event before emission. Use `schema.safeParse` from any validation library, or a plain function. */
+  validate: LeucoLoggerValidator<E>
   /** Owns seq assignment + durability. Use `LeucoLoggerSqliteSink` for multi-process safety. */
   primary: LeucoLoggerPrimarySink<E>
   /** Optional fanout for already-sequenced records (memory ring, stdout, network mirror). */
@@ -24,7 +27,7 @@ type Props<E> = {
 }
 
 /**
- * Schema-validated event log bus. Three responsibilities and nothing else:
+ * Validated event log bus. Three responsibilities and nothing else:
  * validate the event, delegate seq + persistence to the primary sink, and
  * fan the resulting record out to relays and live subscribers.
  *
@@ -44,7 +47,7 @@ type Props<E> = {
  *     completes normally.
  */
 export class LeucoLogger<E> {
-  private readonly schema: ZodType<E>
+  private readonly validate: LeucoLoggerValidator<E>
   private readonly primary: LeucoLoggerPrimarySink<E>
   private readonly relays: ReadonlyArray<LeucoLoggerSink<E>>
   private readonly now: () => number
@@ -52,7 +55,7 @@ export class LeucoLogger<E> {
   private readonly listeners = new Set<Listener<E>>()
 
   constructor(props: Props<E>) {
-    this.schema = props.schema
+    this.validate = props.validate
     this.primary = props.primary
     this.relays = props.relays ?? []
     this.now = props.now ?? (() => Date.now())
@@ -60,7 +63,7 @@ export class LeucoLogger<E> {
   }
 
   emit(event: E): LeucoLoggerRecord<E> | Error {
-    const parsed = this.schema.safeParse(event)
+    const parsed = this.validate(event)
     if (!parsed.success) return parsed.error
 
     const result = this.callPrimary(parsed.data)
