@@ -24,6 +24,14 @@ type ClientData = {
   tapAll?: boolean
   /** Routing mode resolved from channel config at upgrade time. Defaults to fanout. */
   delivery?: "fanout" | "exclusive"
+  /**
+   * Opaque per-client id declared at upgrade time (`?id=<subscriberId>`). When an
+   * event carries `meta.target`, only the client whose `subscriberId` equals it
+   * receives the event among that channel's regular subscribers. Targeted delivery
+   * is how a publisher addresses one specific instance (e.g. a single agent
+   * session) without every subscriber having to receive and discard it.
+   */
+  subscriberId?: string
 }
 
 export type BroadcastEvent = {
@@ -170,6 +178,10 @@ export class FunnelBroadcaster {
   private matchesClient(event: BroadcastEvent, data: ClientData): boolean {
     if (data.tapAll) return true
 
+    const target = event.meta?.target
+
+    if (target && target !== data.subscriberId) return false
+
     const channelId = event.meta?.channelId
 
     if (channelId && channelId !== data.channel) return false
@@ -186,6 +198,11 @@ export class FunnelBroadcaster {
    * receive (passive observation). For each per-channel group:
    *   - fanout → every matching client receives
    *   - exclusive → exactly one client receives, picked round-robin per channel
+   *
+   * `meta.target` narrows the regular (non-tap) recipient set first via
+   * `matchesClient`: only the subscriber whose `subscriberId` equals `target`
+   * stays in the running, so a targeted event reaches one named instance while
+   * still being observable by tap=all clients.
    */
   private pickRecipients(event: BroadcastEvent): ServerWebSocket<unknown>[] {
     const exclusiveByChannel = new Map<string, ServerWebSocket<unknown>[]>()

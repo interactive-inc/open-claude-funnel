@@ -30,11 +30,13 @@ export const channelsPublishHandler = factory.createHandlers(
     const param = c.req.valid("param")
     const body = c.req.valid("json")
 
+    const meta = body.target ? { ...body.meta, target: body.target } : body.meta
+
     const event = c.var.deps.emit({
       channel: param.channel,
       connector: body.connector,
       content: body.content,
-      meta: body.meta,
+      meta,
     })
 
     const response: PublishResponse = { ok: true, offset: event.offset }

@@ -353,4 +353,88 @@ describe("FunnelBroadcaster", () => {
     expect(a.sent.length).toBe(1)
     expect(b.sent.length).toBe(1)
   })
+
+  test("meta.target delivers only to the subscriber with the matching subscriberId", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const alice = new FakeWs()
+    const bob = new FakeWs()
+
+    broadcaster.addClient(asWs(alice), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "alice",
+    })
+    broadcaster.addClient(asWs(bob), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "bob",
+    })
+
+    broadcaster.broadcast("for bob", { connector: "agent", target: "bob" })
+
+    expect(bob.sent.length).toBe(1)
+    expect(alice.sent.length).toBe(0)
+  })
+
+  test("meta.target with no matching subscriber reaches no regular client", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const alice = new FakeWs()
+
+    broadcaster.addClient(asWs(alice), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "alice",
+    })
+
+    broadcaster.broadcast("for ghost", { connector: "agent", target: "ghost" })
+
+    expect(alice.sent.length).toBe(0)
+  })
+
+  test("tap=all clients still observe targeted events", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const tap = new FakeWs()
+    const alice = new FakeWs()
+    const bob = new FakeWs()
+
+    broadcaster.addClient(asWs(tap), { channel: "*tap*", connectors: [], tapAll: true })
+    broadcaster.addClient(asWs(alice), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "alice",
+    })
+    broadcaster.addClient(asWs(bob), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "bob",
+    })
+
+    broadcaster.broadcast("for bob", { connector: "agent", target: "bob" })
+
+    expect(tap.sent.length).toBe(1)
+    expect(bob.sent.length).toBe(1)
+    expect(alice.sent.length).toBe(0)
+  })
+
+  test("no meta.target preserves fanout — all matching subscribers receive", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const alice = new FakeWs()
+    const bob = new FakeWs()
+
+    broadcaster.addClient(asWs(alice), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "alice",
+    })
+    broadcaster.addClient(asWs(bob), {
+      channel: "agents",
+      connectors: ["agent"],
+      subscriberId: "bob",
+    })
+
+    broadcaster.broadcast("for everyone", { connector: "agent" })
+
+    expect(alice.sent.length).toBe(1)
+    expect(bob.sent.length).toBe(1)
+  })
 })

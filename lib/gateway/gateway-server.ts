@@ -66,6 +66,8 @@ type WsData = {
   tapAll?: boolean
   /** Routing mode for this channel; resolved at upgrade time from settings. */
   delivery: "fanout" | "exclusive"
+  /** Opaque client id from `?id=<subscriberId>`; lets publishers target this client via `meta.target`. */
+  subscriberId?: string
   /** Replay any events with offset strictly greater than this on open, then resume the live stream. */
   since?: number
 }
@@ -243,6 +245,7 @@ export class FunnelGatewayServer {
       const sinceRaw = url.searchParams.get("since")
       const sinceParsed = sinceRaw === null ? Number.NaN : Number.parseInt(sinceRaw, 10)
       const since = Number.isFinite(sinceParsed) && sinceParsed >= 0 ? sinceParsed : undefined
+      const subscriberId = url.searchParams.get("id") ?? undefined
       const upgraded = server.upgrade(request, {
         data: {
           channel: channelId,
@@ -250,6 +253,7 @@ export class FunnelGatewayServer {
           connectors,
           tapAll,
           delivery,
+          subscriberId,
           since,
         },
       })

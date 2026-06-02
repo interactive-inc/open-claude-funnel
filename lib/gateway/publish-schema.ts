@@ -10,6 +10,13 @@ export const publishRequestSchema = z.object({
   content: z.string().min(1),
   meta: z.record(z.string(), z.string()).optional(),
   connector: z.string().min(1).optional(),
+  /**
+   * Address the event to a single subscriber. When set, only the WS client that
+   * declared this id at upgrade time (`?id=<subscriberId>`) receives it among the
+   * channel's regular subscribers; tap=all observers still see it. Omit for the
+   * default fanout. The route surfaces it to subscribers as `meta.target`.
+   */
+  target: z.string().min(1).optional(),
 })
 
 export type PublishRequest = z.infer<typeof publishRequestSchema>
