@@ -1,30 +1,36 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { stringify } from "yaml"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { zValidator } from "@/cli/router/validator"
 
-export const logsHelp = `funnel gateway logs — tail diagnostic logs
+export const logsHelp = `funnel gateway logs — tail the daemon diagnostic log
 
-usage: funnel gateway logs [-n <N>]
+usage: funnel gateway logs [-n <N>] [--format <plain|json>]
 
 options:
   -n <N>                number of trailing lines to show (default: 20)
+  --format <plain|json> output format (default: plain)
 
-Tails ${join(funnelTmpDir(), "funnel.log")} (the daemon's diagnostic stream — gateway
-lifecycle, channel connect/disconnect, listener boot). Exit with SIGINT.
-Output is formatted as YAML.
+Streams ${join(funnelTmpDir(), "funnel.log")} — the daemon's diagnostic stream covering
+gateway lifecycle, listener start/stop/error, and WebSocket connect/disconnect.
+Exit with Ctrl-C.
 
-Domain events fanned out to WebSocket clients live in the SQLite event
-store (${join(funnelTmpDir(), "events.db")}); they are not shown here. Subscribe via
-the WS endpoint or query the store directly.
+plain format:  HH:MM:SS LEVEL  message               key=value ...
+json format:   raw JSON lines (pipe to jq for filtering)
+
+This log does NOT contain inbound Slack/connector events. For those, use:
+  fnl gateway sql --preset recent      last 20 processed events
+  fnl debug --channel <name>           per-channel diagnosis with outcome summary
 
 examples:
   funnel gateway logs
-  funnel gateway logs -n 100`
+  funnel gateway logs -n 100
+  funnel gateway logs --format json | jq 'select(.level == "error")'
+
+see also: fnl debug, fnl gateway sql`
 
 const logger = new NodeFunnelLogger()
 
@@ -52,11 +58,37 @@ const isLogEntry = (value: unknown): value is LogEntry => {
   return true
 }
 
+const formatMetaValue = (value: unknown): string => {
+  const str = typeof value === "string" ? value : JSON.stringify(value)
+
+  return str.includes(" ") ? `"${str}"` : str
+}
+
+const formatMeta = (meta: unknown): string => {
+  if (meta === null || typeof meta !== "object") return ""
+
+  const pairs = Object.entries(meta as Record<string, unknown>)
+    .map(([k, v]) => `${k}=${formatMetaValue(v)}`)
+    .join(" ")
+
+  return pairs ? ` ${pairs}` : ""
+}
+
+const formatPlain = (entry: LogEntry): string => {
+  const time = entry.time.slice(11, 19)
+  const level = entry.level.toUpperCase().padEnd(5)
+  const message = entry.message.padEnd(30)
+  const meta = formatMeta(entry.meta)
+
+  return `${time} ${level} ${message}${meta}\n`
+}
+
 export const gatewayLogsHandler = factory.createHandlers(
   zValidator(
     "query",
     z.object({
       n: z.string().optional(),
+      format: z.enum(["plain", "json"]).optional(),
     }),
     logsHelp,
   ),
@@ -69,6 +101,7 @@ export const gatewayLogsHandler = factory.createHandlers(
     }
 
     const lineCount = query.n ? Number(query.n) : 20
+    const format = query.format ?? "plain"
 
     const tail = Bun.spawn(["tail", "-f", "-n", String(lineCount), path], {
       stdout: "pipe",
@@ -85,8 +118,6 @@ export const gatewayLogsHandler = factory.createHandlers(
     const reader = tail.stdout.getReader()
     const decoder = new TextDecoder()
     let buffer = ""
-
-    logger.info("gateway.logs tail start", { file: path })
 
     while (true) {
       const result = await reader.read()
@@ -108,14 +139,11 @@ export const gatewayLogsHandler = factory.createHandlers(
           continue
         }
 
-        const output = {
-          time: parsed.time,
-          level: parsed.level,
-          message: parsed.message,
-          ...(parsed.meta ? { meta: parsed.meta } : {}),
+        if (format === "json") {
+          process.stdout.write(`${JSON.stringify(parsed)}\n`)
+        } else {
+          process.stdout.write(formatPlain(parsed))
         }
-
-        process.stdout.write(`---\n${stringify(output)}`)
       }
     }
 

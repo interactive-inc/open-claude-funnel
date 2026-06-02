@@ -58,7 +58,7 @@ export class ConnectorDiagnosticSqlReader {
    * than throwing) for a non-SELECT statement or a SQL error, so the caller
    * can surface the message without a stack trace.
    */
-  query(sql: string): Row[] | Error {
+  query(sql: string, params: (string | number | null)[] = []): Row[] | Error {
     const trimmed = sql.trim().replace(/;$/, "").trim()
 
     if (!/^select\b/i.test(trimmed)) {
@@ -70,7 +70,7 @@ export class ConnectorDiagnosticSqlReader {
     }
 
     try {
-      return this.db.prepare<Row, []>(trimmed).all()
+      return this.db.prepare<Row, (string | number | null)[]>(trimmed).all(...params)
     } catch (error) {
       return error instanceof Error ? error : new Error(String(error))
     }

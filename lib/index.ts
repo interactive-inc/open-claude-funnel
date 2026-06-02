@@ -59,6 +59,7 @@ export * from "@/connectors/slack-connector-schema"
 export * from "@/connectors/slack-event-processor"
 
 // Gateway
+export type { FunnelDebugReport } from "@/gateway/funnel-debug"
 export * from "@/gateway/gateway"
 export * from "@/gateway/gateway-server"
 export * from "@/gateway/gateway-token"

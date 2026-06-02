@@ -41,6 +41,7 @@ import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
+import { buildFunnelDebugReport, type FunnelDebugReport } from "@/gateway/funnel-debug"
 
 const SANDBOX_DIR = "/sandbox/.funnel"
 const SANDBOX_TMP_DIR = "/sandbox/tmp"
@@ -432,5 +433,12 @@ export class Funnel {
       token: options.token ?? this.gatewayToken.ensure(),
       extraRoutes: options.extraRoutes,
     })
+  }
+
+  async debug(channelName?: string): Promise<FunnelDebugReport> {
+    return buildFunnelDebugReport(
+      { gateway: this.gateway, channels: this.channels, tmpDir: this.paths.tmpDir },
+      channelName ?? null,
+    )
   }
 }

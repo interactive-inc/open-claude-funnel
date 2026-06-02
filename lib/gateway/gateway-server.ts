@@ -342,6 +342,7 @@ export class FunnelGatewayServer {
     if (this.token) {
       base.use("/listeners/*", requireBearerToken({ expected: this.token }))
       base.use("/status", requireBearerToken({ expected: this.token }))
+      base.use("/debug", requireBearerToken({ expected: this.token }))
       base.use("/channels/*", requireBearerToken({ expected: this.token }))
     }
 

@@ -50,12 +50,12 @@ const HELP = `funnel — Open Claude Funnel
 usage: funnel [command]
 
 commands:
-  (none)                show help
   claude                launch Claude Code (default profile or --profile)
-  channels              manage subscription boxes (and their nested connectors)
-  profiles              manage launch profiles
-  gateway               manage the gateway daemon (HTTP + WS)
-  status                show overall connection status
+  channels              manage channels and their nested connectors
+  profiles              manage named launch presets
+  gateway               manage the gateway daemon (HTTP + WebSocket)
+  status                overall health: gateway, listeners, Claude connections
+  debug                 channel diagnosis with next-action hint (--json for Claude)
   schema                print the JSON Schema for funnel.json
   update                update funnel to the latest version
   mcp                   run as an MCP server (invoked from .mcp.json)
@@ -63,6 +63,13 @@ commands:
 options:
   --help, -h            show help
   --version, -v         show version
+
+debugging flow:
+  1. fnl status                          is the gateway running? is Claude connected?
+  2. fnl debug --channel <name>          what is wrong and what to do next
+  3. fnl debug --channel <name> --json   same, structured JSON for Claude to parse
+  4. fnl gateway logs                    raw daemon log stream
+  5. fnl gateway sql --preset recent     raw inbound event queries
 
 more: funnel <command> --help`
 

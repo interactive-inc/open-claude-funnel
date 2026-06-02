@@ -1,6 +1,7 @@
 import { factory } from "@/gateway/factory"
 import { channelsConnectorsCallHandler } from "@/gateway/routes/channels.connectors.call"
 import { channelsPublishHandler } from "@/gateway/routes/channels.publish"
+import { debugHandler } from "@/gateway/routes/debug"
 import { healthHandler } from "@/gateway/routes/health"
 import { listenersListHandler } from "@/gateway/routes/listeners.list"
 import { listenersRestartHandler } from "@/gateway/routes/listeners.restart"
@@ -18,6 +19,7 @@ export const gatewayRoutes = factory
   .createApp()
   .get("/health", ...healthHandler)
   .get("/status", ...statusHandler)
+  .get("/debug", ...debugHandler)
   .get("/listeners", ...listenersListHandler)
   .post("/listeners/:channel/:connector/start", ...listenersStartHandler)
   .delete("/listeners/:channel/:connector", ...listenersStopHandler)

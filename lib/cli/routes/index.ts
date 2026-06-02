@@ -48,6 +48,11 @@ import { channelsSetDeliveryHandler } from "@/cli/routes/channels.$channel.set.d
 import { channelsShowHandler } from "@/cli/routes/channels.$channel"
 import { channelsGroupHandler } from "@/cli/routes/channels"
 import { claudeHandler } from "@/cli/routes/claude"
+import { debugHandler, debugEventsHandler, debugDroppedHandler, debugErrorsHandler, debugReplayHandler } from "@/cli/routes/debug"
+import {
+  channelsValidateHandler,
+  validateHelp as channelsValidateHelp,
+} from "@/cli/routes/channels.$channel.validate"
 import { gatewayGroupHandler } from "@/cli/routes/gateway"
 import { gatewayListenersHandler } from "@/cli/routes/gateway.listeners"
 import { gatewayLogsHandler } from "@/cli/routes/gateway.logs"
@@ -124,6 +129,8 @@ export const createCliApp = (funnel: Funnel) => {
   .post("/channels/:channel/set/delivery/:mode", ...channelsSetDeliveryHandler)
   .post("/channels/publish", ...helpRoute(channelsPublishHelp))
   .post("/channels/:channel/publish", ...channelsPublishHandler)
+  .get("/channels/:channel/validate", ...channelsValidateHandler)
+  .get("/channels/validate", ...helpRoute(channelsValidateHelp))
   .get("/channels/:channel", ...channelsShowHandler)
   .get("/channels/:channel/connectors", ...channelsConnectorsGroupHandler)
   .post(
@@ -214,6 +221,11 @@ export const createCliApp = (funnel: Funnel) => {
   .get("/gateway/logs", ...gatewayLogsHandler)
   .get("/gateway/sql", ...gatewaySqlHandler)
   .get("/gateway/listeners", ...gatewayListenersHandler)
+  .get("/debug", ...debugHandler)
+  .get("/debug/events", ...debugEventsHandler)
+  .get("/debug/dropped", ...debugDroppedHandler)
+  .get("/debug/errors", ...debugErrorsHandler)
+  .get("/debug/replay", ...debugReplayHandler)
   .get("/schema", ...schemaHandler)
   .get("/status", ...statusHandler)
   .get("/update", ...updateHandler)
