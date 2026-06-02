@@ -2,8 +2,16 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import type { DebugConnectionError, DebugEvent } from "@/cli/routes/debug-row"
+import {
+  previewOf,
+  queryRows,
+  toDebugConnectionError,
+  toDebugEvent,
+} from "@/cli/routes/debug-row"
 import { zValidator } from "@/cli/router/validator"
 import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
+import type { ChannelConfig } from "@/engine/settings/settings-schema"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
 export const debugHelp = `funnel debug — diagnose why Claude is not receiving events
@@ -104,21 +112,6 @@ type GatewayStatusResponse = {
   listeners: ListenerStatus[]
 }
 
-type ProcessedRow = {
-  seq: unknown
-  ts: unknown
-  type: unknown
-  outcome: unknown
-  payload: unknown
-}
-
-type ConnectionError = {
-  ts: number | null
-  type: string
-  status: string
-  detail: string | null
-}
-
 type DebugReport = {
   channel: string
   gateway: {
@@ -137,16 +130,8 @@ type DebugReport = {
   }>
   claudeClients: number
   channelId: string
-  recentEvents: Array<{
-    seq: number | null
-    ts: number | null
-    type: string
-    outcome: string
-    payload: string | null
-    payloadParsed: Record<string, unknown> | null
-    preview: string | null
-  }>
-  connectionErrors: ConnectionError[]
+  recentEvents: DebugEvent[]
+  connectionErrors: DebugConnectionError[]
   diagnosis: {
     status: "ok" | "warn" | "error"
     message: string
@@ -177,25 +162,6 @@ const formatTs = (epochMs: unknown): string => {
   if (typeof epochMs !== "number") return "?"
 
   return new Date(epochMs).toISOString().slice(11, 19)
-}
-
-const truncate = (text: string, max: number): string =>
-  text.length <= max ? text : `${text.slice(0, max)}…`
-
-const extractPreview = (payload: unknown): string | null => {
-  if (typeof payload !== "string" || payload.length === 0) return null
-
-  try {
-    const parsed = JSON.parse(payload) as unknown
-
-    if (parsed !== null && typeof parsed === "object" && "text" in parsed) {
-      return truncate(String((parsed as Record<string, unknown>).text), 60)
-    }
-  } catch {
-    return truncate(payload, 60)
-  }
-
-  return truncate(payload, 60)
 }
 
 const buildDiagnosis = (
@@ -358,23 +324,6 @@ const renderText = (report: DebugReport): string => {
   return lines.join("\n")
 }
 
-type EventRow = {
-  seq: unknown
-  ts: unknown
-  type: unknown
-  outcome: unknown
-  payload: unknown
-  event_id: unknown
-}
-
-type ConnectionRow = {
-  seq: unknown
-  ts: unknown
-  type: unknown
-  status: unknown
-  detail: unknown
-}
-
 const resolveStoreOrNull = (): { rawPath: string; processedPath: string; connectionPath: string } | null => {
   const tmpDir = funnelTmpDir()
   const rawPath = join(tmpDir, "connector-raw.db")
@@ -389,13 +338,25 @@ const resolveStoreOrNull = (): { rawPath: string; processedPath: string; connect
 }
 
 type ResolvedChannel =
-  | { found: true; channel: { id: string; name: string } }
+  | { found: true; channel: ChannelConfig }
   | { found: false; reason: "not-found"; name: string }
   | { found: false; reason: "ambiguous"; names: string[] }
   | { found: false; reason: "none" }
 
+/**
+ * Resolve the connector name for a connector id on a channel, used to attribute
+ * a replayed event back to its source connector. Returns undefined when the id
+ * is null or no longer present (connectors can be removed after an event was
+ * logged).
+ */
+const connectorOf = (channel: ChannelConfig, connectorId: string | null): string | undefined => {
+  if (connectorId === null) return undefined
+
+  return channel.connectors?.find((connector) => connector.id === connectorId)?.name
+}
+
 const resolveChannelId = (
-  channels: { id: string; name: string }[],
+  channels: ChannelConfig[],
   channelName: string | undefined,
 ): ResolvedChannel => {
   if (channelName) {
@@ -462,52 +423,21 @@ export const debugEventsHandler = factory.createHandlers(
 
     const reader = new ConnectorDiagnosticSqlReader(store)
 
-    const rows = (() => {
-      try {
-        if (channel) {
-          return reader.query(
-            "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT ?",
-            [channel.id, limit],
-          )
-        }
-
-        return reader.query(
+    const rows = channel
+      ? queryRows(
+          reader,
+          "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT ?",
+          [channel.id, limit],
+        )
+      : queryRows(
+          reader,
           "SELECT seq, ts, type, outcome, payload FROM processed ORDER BY seq DESC LIMIT ?",
           [limit],
         )
-      } finally {
-        reader.close()
-      }
-    })()
 
     if (rows instanceof Error) return c.text(`error: ${rows.message}`)
 
-    const events = ([...rows] as EventRow[]).reverse().map((row) => {
-      const rawPayload = typeof row.payload === "string" ? row.payload : null
-      let payloadParsed: Record<string, unknown> | null = null
-
-      if (rawPayload) {
-        try {
-          const parsed = JSON.parse(rawPayload) as unknown
-
-          if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-            payloadParsed = parsed as Record<string, unknown>
-          }
-        } catch {
-          payloadParsed = null
-        }
-      }
-
-      return {
-        seq: typeof row.seq === "number" ? row.seq : null,
-        ts: typeof row.ts === "number" ? row.ts : null,
-        type: typeof row.type === "string" ? row.type : "?",
-        outcome: typeof row.outcome === "string" ? row.outcome : "?",
-        payload: rawPayload,
-        payloadParsed,
-        preview: extractPreview(row.payload),
-      }
-    })
+    const events = rows.reverse().map(toDebugEvent)
 
     if (isJson) return c.json(events)
 
@@ -576,53 +506,21 @@ export const debugDroppedHandler = factory.createHandlers(
 
     const reader = new ConnectorDiagnosticSqlReader(store)
 
-    const rows = (() => {
-      try {
-        if (channel) {
-          return reader.query(
-            "SELECT p.seq, p.ts, p.type, p.outcome, p.payload, p.event_id FROM processed p WHERE p.channel_id = ? AND p.outcome LIKE 'skip:%' ORDER BY p.seq DESC LIMIT ?",
-            [channel.id, limit],
-          )
-        }
-
-        return reader.query(
+    const rows = channel
+      ? queryRows(
+          reader,
+          "SELECT p.seq, p.ts, p.type, p.outcome, p.payload, p.event_id FROM processed p WHERE p.channel_id = ? AND p.outcome LIKE 'skip:%' ORDER BY p.seq DESC LIMIT ?",
+          [channel.id, limit],
+        )
+      : queryRows(
+          reader,
           "SELECT seq, ts, type, outcome, payload, event_id FROM processed WHERE outcome LIKE 'skip:%' ORDER BY seq DESC LIMIT ?",
           [limit],
         )
-      } finally {
-        reader.close()
-      }
-    })()
 
     if (rows instanceof Error) return c.text(`error: ${rows.message}`)
 
-    const events = ([...rows] as EventRow[]).reverse().map((row) => {
-      const rawPayload = typeof row.payload === "string" ? row.payload : null
-      let payloadParsed: Record<string, unknown> | null = null
-
-      if (rawPayload) {
-        try {
-          const parsed = JSON.parse(rawPayload) as unknown
-
-          if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-            payloadParsed = parsed as Record<string, unknown>
-          }
-        } catch {
-          payloadParsed = null
-        }
-      }
-
-      return {
-        seq: typeof row.seq === "number" ? row.seq : null,
-        ts: typeof row.ts === "number" ? row.ts : null,
-        type: typeof row.type === "string" ? row.type : "?",
-        outcome: typeof row.outcome === "string" ? row.outcome : "?",
-        event_id: typeof row.event_id === "string" ? row.event_id : null,
-        payload: rawPayload,
-        payloadParsed,
-        preview: extractPreview(row.payload),
-      }
-    })
+    const events = rows.reverse().map(toDebugEvent)
 
     if (isJson) return c.json(events)
 
@@ -633,7 +531,7 @@ export const debugDroppedHandler = factory.createHandlers(
       const type = ev.type.padEnd(8)
       const outcome = ev.outcome.padEnd(20)
       const seq = ev.seq !== null ? `  seq=${ev.seq}` : ""
-      const eid = ev.event_id ? `  event_id=${ev.event_id.slice(0, 8)}` : ""
+      const eid = ev.eventId ? `  event_id=${ev.eventId.slice(0, 8)}` : ""
       const preview = ev.preview ? `  "${ev.preview}"` : ""
 
       return `${time}  ${type}  ${outcome}${seq}${eid}${preview}`
@@ -692,33 +590,21 @@ export const debugErrorsHandler = factory.createHandlers(
 
     const reader = new ConnectorDiagnosticSqlReader(store)
 
-    const rows = (() => {
-      try {
-        if (channel) {
-          return reader.query(
-            "SELECT seq, ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT ?",
-            [channel.id, limit],
-          )
-        }
-
-        return reader.query(
+    const rows = channel
+      ? queryRows(
+          reader,
+          "SELECT seq, ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT ?",
+          [channel.id, limit],
+        )
+      : queryRows(
+          reader,
           "SELECT seq, ts, type, status, detail FROM connection WHERE status IN ('auth-failed','error') ORDER BY seq DESC LIMIT ?",
           [limit],
         )
-      } finally {
-        reader.close()
-      }
-    })()
 
     if (rows instanceof Error) return c.text(`error: ${rows.message}`)
 
-    const errors = ([...rows] as ConnectionRow[]).reverse().map((row) => ({
-      seq: typeof row.seq === "number" ? row.seq : null,
-      ts: typeof row.ts === "number" ? row.ts : null,
-      type: typeof row.type === "string" ? row.type : "?",
-      status: typeof row.status === "string" ? row.status : "?",
-      detail: typeof row.detail === "string" && row.detail.length > 0 ? row.detail : null,
-    }))
+    const errors = rows.reverse().map(toDebugConnectionError)
 
     if (isJson) return c.json(errors)
 
@@ -779,72 +665,28 @@ const buildChannelReport = async (
   }
 
   if (store) {
-    const reader = new ConnectorDiagnosticSqlReader(store)
-
-    const evRows = (() => {
-      try {
-        return reader.query(
-          "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT ?",
-          [targetChannel.id, limit],
-        )
-      } finally {
-        reader.close()
-      }
-    })()
+    const evRows = queryRows(
+      new ConnectorDiagnosticSqlReader(store),
+      "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT ?",
+      [targetChannel.id, limit],
+    )
 
     if (!(evRows instanceof Error)) {
-      baseReport.recentEvents = (evRows as ProcessedRow[]).reverse().map((row) => {
-        const rawPayload = typeof row.payload === "string" ? row.payload : null
-        let payloadParsed: Record<string, unknown> | null = null
-
-        if (rawPayload) {
-          try {
-            const parsed = JSON.parse(rawPayload) as unknown
-
-            if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-              payloadParsed = parsed as Record<string, unknown>
-            }
-          } catch {
-            payloadParsed = null
-          }
-        }
-
-        return {
-          seq: typeof row.seq === "number" ? row.seq : null,
-          ts: typeof row.ts === "number" ? row.ts : null,
-          type: typeof row.type === "string" ? row.type : "?",
-          outcome: typeof row.outcome === "string" ? row.outcome : "?",
-          payload: rawPayload,
-          payloadParsed,
-          preview: extractPreview(row.payload),
-        }
-      })
+      baseReport.recentEvents = evRows.reverse().map(toDebugEvent)
     }
 
     const hasDeadListeners = baseReport.listeners.some((l) => !l.alive)
     const hasListenerErrors = baseReport.listeners.some((l) => l.errors > 0)
 
     if (hasDeadListeners || hasListenerErrors) {
-      const errReader = new ConnectorDiagnosticSqlReader(store)
-
-      const errRows = (() => {
-        try {
-          return errReader.query(
-            "SELECT ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 3",
-            [targetChannel.id],
-          )
-        } finally {
-          errReader.close()
-        }
-      })()
+      const errRows = queryRows(
+        new ConnectorDiagnosticSqlReader(store),
+        "SELECT ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 3",
+        [targetChannel.id],
+      )
 
       if (!(errRows instanceof Error)) {
-        baseReport.connectionErrors = (errRows as ConnectionRow[]).reverse().map((row) => ({
-          ts: typeof row.ts === "number" ? row.ts : null,
-          type: typeof row.type === "string" ? row.type : "?",
-          status: typeof row.status === "string" ? row.status : "?",
-          detail: typeof row.detail === "string" && row.detail.length > 0 ? row.detail : null,
-        }))
+        baseReport.connectionErrors = errRows.reverse().map(toDebugConnectionError)
       }
     }
   }
@@ -980,20 +822,6 @@ examples:
   fnl debug replay --channel open-karte --seq 412
   fnl debug replay --channel open-karte --json`
 
-type RawRow = {
-  event_id: unknown
-  payload: unknown
-}
-
-type ProcessedSeqRow = {
-  seq: unknown
-  event_id: unknown
-  type: unknown
-  payload: unknown
-  connector_id: unknown
-  channel_id: unknown
-}
-
 export const debugReplayHandler = factory.createHandlers(
   zValidator(
     "query",
@@ -1040,25 +868,17 @@ export const debugReplayHandler = factory.createHandlers(
       return c.text("no diagnostic store yet (start the gateway first)")
     }
 
-    const reader = new ConnectorDiagnosticSqlReader(store)
-
-    const rows = (() => {
-      try {
-        if (query.seq) {
-          return reader.query(
-            "SELECT seq, event_id, type, payload, connector_id, channel_id FROM processed WHERE channel_id = ? AND seq = ? LIMIT 1",
-            [targetChannel.id, Number(query.seq)],
-          )
-        }
-
-        return reader.query(
+    const rows = query.seq
+      ? queryRows(
+          new ConnectorDiagnosticSqlReader(store),
+          "SELECT seq, event_id, type, payload, connector_id, channel_id FROM processed WHERE channel_id = ? AND seq = ? LIMIT 1",
+          [targetChannel.id, Number(query.seq)],
+        )
+      : queryRows(
+          new ConnectorDiagnosticSqlReader(store),
           "SELECT seq, event_id, type, payload, connector_id, channel_id FROM processed WHERE channel_id = ? AND outcome LIKE 'emitted%' ORDER BY seq DESC LIMIT 1",
           [targetChannel.id],
         )
-      } finally {
-        reader.close()
-      }
-    })()
 
     if (rows instanceof Error) {
       if (isJson) return c.json({ error: rows.message })
@@ -1066,7 +886,7 @@ export const debugReplayHandler = factory.createHandlers(
       return c.text(`error: ${rows.message}`)
     }
 
-    const firstRow = rows[0] as ProcessedSeqRow | undefined
+    const firstRow = rows[0]
 
     if (!firstRow) {
       if (isJson) return c.json({ error: "no matching event found" })
@@ -1081,22 +901,15 @@ export const debugReplayHandler = factory.createHandlers(
     let content = typeof firstRow.payload === "string" ? firstRow.payload : null
 
     if ((!content || content.length === 0) && eventId) {
-      const rawReader = new ConnectorDiagnosticSqlReader(store)
+      const rawRows = queryRows(
+        new ConnectorDiagnosticSqlReader(store),
+        "SELECT payload FROM raw WHERE event_id = ? LIMIT 1",
+        [eventId],
+      )
 
-      const rawRows = (() => {
-        try {
-          return rawReader.query(
-            "SELECT payload FROM raw WHERE event_id = ? LIMIT 1",
-            [eventId],
-          )
-        } finally {
-          rawReader.close()
-        }
-      })()
+      const rawRow = rawRows instanceof Error ? null : rawRows[0]
 
-      if (!(rawRows instanceof Error) && rawRows[0]) {
-        const rawRow = rawRows[0] as RawRow
-
+      if (rawRow) {
         content = typeof rawRow.payload === "string" ? rawRow.payload : null
       }
     }
@@ -1107,9 +920,7 @@ export const debugReplayHandler = factory.createHandlers(
       return c.text("event has no payload to replay")
     }
 
-    const connectorName = connectorId
-      ? (targetChannel as unknown as { connectors?: { id: string; name: string }[] }).connectors?.find((c) => c.id === connectorId)?.name
-      : undefined
+    const connectorName = connectorOf(targetChannel, connectorId)
 
     const result = await funnel.publisher.publish(targetChannel.name, {
       content,
@@ -1128,7 +939,7 @@ export const debugReplayHandler = factory.createHandlers(
       return c.text(`error: ${result.reason}`)
     }
 
-    const preview = extractPreview(content)
+    const preview = previewOf(content)
 
     if (isJson) {
       return c.json({ replayed: true, seq, offset: result.offset, preview })
