@@ -20,7 +20,6 @@ type Deps = {
   diagnosticLog?: ConnectorDiagnosticLog
 }
 
-
 export class FunnelDiscordListener extends FunnelConnectorListener {
   private readonly config: DiscordConnectorConfig
   private readonly channelId: string | null

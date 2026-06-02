@@ -3,7 +3,7 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { funnelJsonSchema } from "@/engine/local-config/local-config-json-schema"
 
-export const schemaHelp = `funnel schema — print the JSON Schema for funnel.json
+const schemaHelp = `funnel schema — print the JSON Schema for funnel.json
 
 usage: funnel schema
 

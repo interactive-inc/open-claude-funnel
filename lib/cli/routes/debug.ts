@@ -3,18 +3,13 @@ import { join } from "node:path"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import type { DebugConnectionError, DebugEvent } from "@/cli/routes/debug-row"
-import {
-  previewOf,
-  queryRows,
-  toDebugConnectionError,
-  toDebugEvent,
-} from "@/cli/routes/debug-row"
+import { previewOf, queryRows, toDebugConnectionError, toDebugEvent } from "@/cli/routes/debug-row"
 import { zValidator } from "@/cli/router/validator"
 import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
-export const debugHelp = `funnel debug — diagnose why Claude is not receiving events
+const debugHelp = `funnel debug — diagnose why Claude is not receiving events
 
 usage: funnel debug [subcommand] [--channel <name>] [--all] [--json]
 
@@ -164,9 +159,7 @@ const formatTs = (epochMs: unknown): string => {
   return new Date(epochMs).toISOString().slice(11, 19)
 }
 
-const buildDiagnosis = (
-  report: Omit<DebugReport, "diagnosis">,
-): DebugReport["diagnosis"] => {
+const buildDiagnosis = (report: Omit<DebugReport, "diagnosis">): DebugReport["diagnosis"] => {
   const latestError = report.connectionErrors[report.connectionErrors.length - 1] ?? null
   const rootCause = latestError?.detail ?? null
 
@@ -281,7 +274,9 @@ const renderText = (report: DebugReport): string => {
   if (report.recentEvents.length === 0) {
     lines.push("[events]     no events recorded")
   } else {
-    lines.push(`[events]     last ${report.recentEvents.length} event${report.recentEvents.length > 1 ? "s" : ""}:`)
+    lines.push(
+      `[events]     last ${report.recentEvents.length} event${report.recentEvents.length > 1 ? "s" : ""}:`,
+    )
 
     for (const event of report.recentEvents) {
       const time = formatTs(event.ts)
@@ -324,7 +319,11 @@ const renderText = (report: DebugReport): string => {
   return lines.join("\n")
 }
 
-const resolveStoreOrNull = (): { rawPath: string; processedPath: string; connectionPath: string } | null => {
+const resolveStoreOrNull = (): {
+  rawPath: string
+  processedPath: string
+  connectionPath: string
+} | null => {
   const tmpDir = funnelTmpDir()
   const rawPath = join(tmpDir, "connector-raw.db")
   const processedPath = join(tmpDir, "connector-processed.db")
@@ -386,7 +385,7 @@ export const debugEventsHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channels = funnel.channels.list()
     const isJson = query.json === "true" || query.json === ""
     const limit = query.limit ? Math.max(1, Number(query.limit)) : 20
@@ -403,15 +402,25 @@ export const debugEventsHandler = factory.createHandlers(
 
     if (!resolved.found) {
       if (resolved.reason === "not-found") {
-        if (isJson) return c.json({ error: `channel not found: ${resolved.name}`, availableChannels: channels.map((ch) => ch.name) })
+        if (isJson)
+          return c.json({
+            error: `channel not found: ${resolved.name}`,
+            availableChannels: channels.map((ch) => ch.name),
+          })
 
         return c.text(`channel not found: ${resolved.name}`)
       }
 
       if (resolved.reason === "ambiguous") {
-        if (isJson) return c.json({ error: "multiple channels — specify one with --channel", channels: resolved.names })
+        if (isJson)
+          return c.json({
+            error: "multiple channels — specify one with --channel",
+            channels: resolved.names,
+          })
 
-        return c.text(`multiple channels — specify one with --channel:\n${resolved.names.map((n) => `  - ${n}`).join("\n")}`)
+        return c.text(
+          `multiple channels — specify one with --channel:\n${resolved.names.map((n) => `  - ${n}`).join("\n")}`,
+        )
       }
 
       if (isJson) return c.json([])
@@ -469,7 +478,7 @@ export const debugDroppedHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channels = funnel.channels.list()
     const isJson = query.json === "true" || query.json === ""
     const limit = query.limit ? Math.max(1, Number(query.limit)) : 20
@@ -486,15 +495,25 @@ export const debugDroppedHandler = factory.createHandlers(
 
     if (!resolvedDropped.found) {
       if (resolvedDropped.reason === "not-found") {
-        if (isJson) return c.json({ error: `channel not found: ${resolvedDropped.name}`, availableChannels: channels.map((ch) => ch.name) })
+        if (isJson)
+          return c.json({
+            error: `channel not found: ${resolvedDropped.name}`,
+            availableChannels: channels.map((ch) => ch.name),
+          })
 
         return c.text(`channel not found: ${resolvedDropped.name}`)
       }
 
       if (resolvedDropped.reason === "ambiguous") {
-        if (isJson) return c.json({ error: "multiple channels — specify one with --channel", channels: resolvedDropped.names })
+        if (isJson)
+          return c.json({
+            error: "multiple channels — specify one with --channel",
+            channels: resolvedDropped.names,
+          })
 
-        return c.text(`multiple channels — specify one with --channel:\n${resolvedDropped.names.map((n) => `  - ${n}`).join("\n")}`)
+        return c.text(
+          `multiple channels — specify one with --channel:\n${resolvedDropped.names.map((n) => `  - ${n}`).join("\n")}`,
+        )
       }
 
       if (isJson) return c.json([])
@@ -553,7 +572,7 @@ export const debugErrorsHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channels = funnel.channels.list()
     const isJson = query.json === "true" || query.json === ""
     const limit = query.limit ? Math.max(1, Number(query.limit)) : 20
@@ -570,15 +589,25 @@ export const debugErrorsHandler = factory.createHandlers(
 
     if (!resolvedErrors.found) {
       if (resolvedErrors.reason === "not-found") {
-        if (isJson) return c.json({ error: `channel not found: ${resolvedErrors.name}`, availableChannels: channels.map((ch) => ch.name) })
+        if (isJson)
+          return c.json({
+            error: `channel not found: ${resolvedErrors.name}`,
+            availableChannels: channels.map((ch) => ch.name),
+          })
 
         return c.text(`channel not found: ${resolvedErrors.name}`)
       }
 
       if (resolvedErrors.reason === "ambiguous") {
-        if (isJson) return c.json({ error: "multiple channels — specify one with --channel", channels: resolvedErrors.names })
+        if (isJson)
+          return c.json({
+            error: "multiple channels — specify one with --channel",
+            channels: resolvedErrors.names,
+          })
 
-        return c.text(`multiple channels — specify one with --channel:\n${resolvedErrors.names.map((n) => `  - ${n}`).join("\n")}`)
+        return c.text(
+          `multiple channels — specify one with --channel:\n${resolvedErrors.names.map((n) => `  - ${n}`).join("\n")}`,
+        )
       }
 
       if (isJson) return c.json([])
@@ -707,7 +736,7 @@ export const debugHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channels = funnel.channels.list()
     const gatewayStatus = funnel.gateway.getStatus()
     const isJson = query.json === "true" || query.json === ""
@@ -715,7 +744,8 @@ export const debugHandler = factory.createHandlers(
     const eventLimit = query.limit ? Math.max(1, Number(query.limit)) : 5
 
     if (channels.length === 0) {
-      if (isJson) return c.json({ error: "no channels configured", nextAction: "fnl channels add <name>" })
+      if (isJson)
+        return c.json({ error: "no channels configured", nextAction: "fnl channels add <name>" })
 
       return c.text("no channels configured — run: fnl channels add <name>")
     }
@@ -726,10 +756,9 @@ export const debugHandler = factory.createHandlers(
     let gatewayBodyOrNull: GatewayStatusResponse | null = null
 
     if (gatewayStatus.running) {
-      const res = await fetch(
-        `http://127.0.0.1:${gatewayStatus.port}/status`,
-        { headers },
-      ).catch(() => null)
+      const res = await fetch(`http://127.0.0.1:${gatewayStatus.port}/status`, { headers }).catch(
+        () => null,
+      )
 
       if (res && res.ok) {
         const body: unknown = await res.json()
@@ -744,11 +773,17 @@ export const debugHandler = factory.createHandlers(
 
     if (isAll) {
       const reports = await Promise.all(
-        channels.map((ch) => buildChannelReport(ch, gatewayStatus, gatewayBodyOrNull, store, eventLimit)),
+        channels.map((ch) =>
+          buildChannelReport(ch, gatewayStatus, gatewayBodyOrNull, store, eventLimit),
+        ),
       )
 
-      const errorChannels = reports.filter((r) => r.diagnosis.status === "error").map((r) => r.channel)
-      const warnChannels = reports.filter((r) => r.diagnosis.status === "warn").map((r) => r.channel)
+      const errorChannels = reports
+        .filter((r) => r.diagnosis.status === "error")
+        .map((r) => r.channel)
+      const warnChannels = reports
+        .filter((r) => r.diagnosis.status === "warn")
+        .map((r) => r.channel)
       const okChannels = reports.filter((r) => r.diagnosis.status === "ok").map((r) => r.channel)
       const uniqueActions = [...new Set(reports.flatMap((r) => r.diagnosis.nextActions))]
 
@@ -772,7 +807,11 @@ export const debugHandler = factory.createHandlers(
       targetChannel = channels.find((ch) => ch.name === query.channel) ?? null
 
       if (!targetChannel) {
-        if (isJson) return c.json({ error: `channel not found: ${query.channel}`, availableChannels: channels.map((ch) => ch.name) })
+        if (isJson)
+          return c.json({
+            error: `channel not found: ${query.channel}`,
+            availableChannels: channels.map((ch) => ch.name),
+          })
 
         return c.text(`channel not found: ${query.channel}`)
       }
@@ -789,10 +828,18 @@ export const debugHandler = factory.createHandlers(
         })
       }
 
-      return c.text(`multiple channels — specify one with --channel or use --all:\n${names.map((n) => `  - ${n}`).join("\n")}`)
+      return c.text(
+        `multiple channels — specify one with --channel or use --all:\n${names.map((n) => `  - ${n}`).join("\n")}`,
+      )
     }
 
-    const report = await buildChannelReport(targetChannel, gatewayStatus, gatewayBodyOrNull, store, eventLimit)
+    const report = await buildChannelReport(
+      targetChannel,
+      gatewayStatus,
+      gatewayBodyOrNull,
+      store,
+      eventLimit,
+    )
 
     if (isJson) {
       return c.json(report)
@@ -834,7 +881,7 @@ export const debugReplayHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channels = funnel.channels.list()
     const isJson = query.json === "true" || query.json === ""
 
@@ -842,15 +889,25 @@ export const debugReplayHandler = factory.createHandlers(
 
     if (!resolved.found) {
       if (resolved.reason === "not-found") {
-        if (isJson) return c.json({ error: `channel not found: ${resolved.name}`, availableChannels: channels.map((ch) => ch.name) })
+        if (isJson)
+          return c.json({
+            error: `channel not found: ${resolved.name}`,
+            availableChannels: channels.map((ch) => ch.name),
+          })
 
         return c.text(`channel not found: ${resolved.name}`)
       }
 
       if (resolved.reason === "ambiguous") {
-        if (isJson) return c.json({ error: "multiple channels — specify one with --channel", channels: resolved.names })
+        if (isJson)
+          return c.json({
+            error: "multiple channels — specify one with --channel",
+            channels: resolved.names,
+          })
 
-        return c.text(`multiple channels — specify one with --channel:\n${resolved.names.map((n) => `  - ${n}`).join("\n")}`)
+        return c.text(
+          `multiple channels — specify one with --channel:\n${resolved.names.map((n) => `  - ${n}`).join("\n")}`,
+        )
       }
 
       if (isJson) return c.json({ error: "no channels configured" })
@@ -928,7 +985,8 @@ export const debugReplayHandler = factory.createHandlers(
     })
 
     if (result.state === "offline") {
-      if (isJson) return c.json({ error: "gateway daemon is not running", nextAction: "fnl gateway start" })
+      if (isJson)
+        return c.json({ error: "gateway daemon is not running", nextAction: "fnl gateway start" })
 
       return c.text("error: gateway daemon is not running — run: fnl gateway start")
     }
@@ -945,6 +1003,8 @@ export const debugReplayHandler = factory.createHandlers(
       return c.json({ replayed: true, seq, offset: result.offset, preview })
     }
 
-    return c.text(`replayed seq=${seq ?? "?"} → offset=${result.offset}${preview ? `  "${preview}"` : ""}`)
+    return c.text(
+      `replayed seq=${seq ?? "?"} → offset=${result.offset}${preview ? `  "${preview}"` : ""}`,
+    )
   },
 )

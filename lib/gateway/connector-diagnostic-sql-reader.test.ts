@@ -93,7 +93,9 @@ describe("ConnectorDiagnosticSqlReader", () => {
   test("supports aggregation over outcomes", () => {
     const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
 
-    const rows = reader.query("SELECT outcome, COUNT(*) AS n FROM processed GROUP BY outcome ORDER BY outcome")
+    const rows = reader.query(
+      "SELECT outcome, COUNT(*) AS n FROM processed GROUP BY outcome ORDER BY outcome",
+    )
 
     reader.close()
 
@@ -151,9 +153,7 @@ describe("ConnectorDiagnosticSqlReader", () => {
   test("surfaces connection lifecycle (auth-failed) via the connection view", () => {
     const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
 
-    const rows = reader.query(
-      "SELECT status, detail FROM connection WHERE status = 'auth-failed'",
-    )
+    const rows = reader.query("SELECT status, detail FROM connection WHERE status = 'auth-failed'")
 
     reader.close()
 

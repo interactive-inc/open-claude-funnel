@@ -1,8 +1,5 @@
 import { claudeHelp } from "@/cli/routes/claude"
-import type {
-  ChannelSpec,
-  LocalConfig,
-} from "@/engine/local-config/local-config-schema"
+import type { ChannelSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
 import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
 import { Funnel } from "@/funnel"
 
@@ -32,7 +29,12 @@ type Parsed = {
 
 type FlagMatch = { value: string | null; consumed: number }
 
-const takeFlag = (args: string[], i: number, longForm: string, shortForm: string | null): FlagMatch | null => {
+const takeFlag = (
+  args: string[],
+  i: number,
+  longForm: string,
+  shortForm: string | null,
+): FlagMatch | null => {
   const arg = args[i]
 
   if (arg === undefined) return null
@@ -163,10 +165,7 @@ const pickChannel = (local: LocalConfig, requestedName: string | null): ChannelS
  *   6. default global profile → launch
  *   7. nothing matched → print help
  */
-export const dispatchClaude = async (
-  deps: Deps,
-  args: string[],
-): Promise<DispatchClaudeResult> => {
+export const dispatchClaude = async (deps: Deps, args: string[]): Promise<DispatchClaudeResult> => {
   const parsed = parse(args)
 
   if (parsed.wantsHelp) {

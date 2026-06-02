@@ -4,7 +4,7 @@ import { dispatchClaude } from "@/cli/dispatch-claude"
 import { resolveRepoDir } from "@/cli/resolve-repo-dir"
 import { startChannelServer } from "@/engine/mcp/channel-server"
 import { toRequest } from "@/cli/router/to-request"
-import { createCliApp } from "@/cli/routes"
+import { routes } from "@/cli/routes"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelLocalConfig } from "@/engine/local-config/local-config"
@@ -43,7 +43,7 @@ if (repoDir) process.env.FUNNEL_DIR = repoDir
 
 const funnel = new Funnel({ logger: new NodeFunnelLogger() })
 
-const app = createCliApp(funnel)
+const env = { funnel }
 
 const HELP = `funnel — Open Claude Funnel
 
@@ -102,7 +102,7 @@ if (args[0] !== "mcp" && args[0] !== "claude") {
   const { method, url } = toRequest(args)
 
   const parsed = new URL(url)
-  
+
   const wantsHelp = parsed.searchParams.has("help")
 
   if (wantsHelp && parsed.pathname === "/") {
@@ -110,7 +110,7 @@ if (args[0] !== "mcp" && args[0] !== "claude") {
     process.exit(0)
   }
 
-  const res = await app.request(url, { method })
+  const res = await routes.request(url, { method }, env)
 
   if (res.ok) {
     const body = await res.text()
@@ -122,7 +122,7 @@ if (args[0] !== "mcp" && args[0] !== "claude") {
     const segments = parsed.pathname.split("/").filter(Boolean)
     const group = segments[0]
     const fallback = group
-      ? await app.request(`http://localhost/${group}?help=true`, { method: "GET" })
+      ? await routes.request(`http://localhost/${group}?help=true`, { method: "GET" }, env)
       : null
 
     const text = fallback?.ok ? await fallback.text() : HELP

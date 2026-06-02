@@ -1,5 +1,7 @@
 import { join } from "node:path"
 import type { Hono } from "hono"
+import { hc } from "hono/client"
+import type { GatewayApp } from "@/gateway/routes"
 import {
   FunnelConnectorFactory,
   type ScheduleListenerOptions,
@@ -173,7 +175,8 @@ export class Funnel {
 
   /** Process runner boundary. Defaults to NodeFunnelProcessRunner. */
   get process(): FunnelProcessRunner {
-    if (!this.memos.process) this.memos.process = this.props.process ?? new NodeFunnelProcessRunner()
+    if (!this.memos.process)
+      this.memos.process = this.props.process ?? new NodeFunnelProcessRunner()
 
     return this.memos.process
   }
@@ -440,5 +443,11 @@ export class Funnel {
       { gateway: this.gateway, channels: this.channels, tmpDir: this.paths.tmpDir },
       channelName ?? null,
     )
+  }
+
+  gatewayClient(): ReturnType<typeof hc<GatewayApp>> {
+    const { port } = this.gateway.getStatus()
+
+    return hc<GatewayApp>(`http://127.0.0.1:${port}`)
   }
 }

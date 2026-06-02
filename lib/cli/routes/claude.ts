@@ -44,7 +44,7 @@ export const claudeHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const userArgs = queryToCliArgs(c.req.url, RESERVED_KEYS)
 
     if (query.channel && !query.profile) {

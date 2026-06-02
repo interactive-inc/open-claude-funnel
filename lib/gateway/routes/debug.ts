@@ -192,11 +192,14 @@ export const debugHandler = factory.createHandlers(async (c) => {
         }
       }
 
-      const needsConnErrors =
-        (listener && (!listener.alive || listener.errors > 0)) || !listener
+      const needsConnErrors = (listener && (!listener.alive || listener.errors > 0)) || !listener
 
       if (needsConnErrors) {
-        const errReader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
+        const errReader = new ConnectorDiagnosticSqlReader({
+          rawPath,
+          processedPath,
+          connectionPath,
+        })
 
         const errRows = (() => {
           try {
@@ -215,8 +218,7 @@ export const debugHandler = factory.createHandlers(async (c) => {
               ts: typeof row.ts === "number" ? row.ts : null,
               type: typeof row.type === "string" ? row.type : "?",
               status: typeof row.status === "string" ? row.status : "?",
-              detail:
-                typeof row.detail === "string" && row.detail.length > 0 ? row.detail : null,
+              detail: typeof row.detail === "string" && row.detail.length > 0 ? row.detail : null,
             })
           }
         }

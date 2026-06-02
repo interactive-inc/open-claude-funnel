@@ -317,7 +317,14 @@ describe("FunnelSlackListener: backwards compatibility", () => {
 
     // Just exercising the path; absence of a throw is the assertion.
     await hoisted.middlewareHandlers[0]?.({
-      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hi",
+      },
     })
   })
 })
@@ -333,7 +340,14 @@ describe("FunnelSlackListener: diagnostic log", () => {
 
     await listener.start(async () => {})
     await hoisted.middlewareHandlers[0]?.({
-      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hi",
+      },
     })
 
     const raws = diagnosticLog.queryRaw({})
@@ -369,7 +383,14 @@ describe("FunnelSlackListener: diagnostic log", () => {
     const diagnosticLog = new MemoryConnectorDiagnosticLog()
     const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
     const event = {
-      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hi",
+      },
     }
 
     await listener.start(async () => {})
@@ -391,7 +412,14 @@ describe("FunnelSlackListener: diagnostic log", () => {
     await listener.start(notify)
     await expect(
       hoisted.middlewareHandlers[0]?.({
-        event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+        event: {
+          type: "message",
+          channel: "C1",
+          ts: "1.0",
+          event_ts: "1.0",
+          user: "U_REAL",
+          text: "hi",
+        },
       }),
     ).rejects.toThrow("delivery failed")
 
@@ -410,7 +438,14 @@ describe("FunnelSlackListener: diagnostic log", () => {
 
     await listener.start(async () => {})
     await hoisted.middlewareHandlers[0]?.({
-      event: { type: "message", channel: "C1", ts: "1.0", event_ts: "1.0", user: "U_REAL", text: "hi" },
+      event: {
+        type: "message",
+        channel: "C1",
+        ts: "1.0",
+        event_ts: "1.0",
+        user: "U_REAL",
+        text: "hi",
+      },
     })
 
     // Raw is captured before preprocessing, so it survives the drop.
@@ -474,7 +509,12 @@ describe("FunnelSlackListener: connection lifecycle", () => {
     await listener.start(async () => {})
     await listener.stop()
 
-    expect(orderedStatuses(diagnosticLog)).toEqual(["started", "connected", "disconnected", "stopped"])
+    expect(orderedStatuses(diagnosticLog)).toEqual([
+      "started",
+      "connected",
+      "disconnected",
+      "stopped",
+    ])
   })
 
   test("records error then stopped when app.stop rejects", async () => {

@@ -135,14 +135,7 @@ export class NodeFunnelProcessRunner extends FunnelProcessRunner {
   }
 
   private isAliveWindows(pid: number): boolean {
-    const result = this.runSync([
-      "tasklist",
-      "/FI",
-      `PID eq ${pid}`,
-      "/NH",
-      "/FO",
-      "CSV",
-    ])
+    const result = this.runSync(["tasklist", "/FI", `PID eq ${pid}`, "/NH", "/FO", "CSV"])
 
     if (result.exitCode !== 0) return false
 

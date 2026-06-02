@@ -47,7 +47,11 @@ const startServerWithExtras = async (extras: Hono<Env>) => {
   return { server, httpServer }
 }
 
-const startServerOn = async (props: { token: string; hostname?: string; logger?: MemoryFunnelLogger }) => {
+const startServerOn = async (props: {
+  token: string
+  hostname?: string
+  logger?: MemoryFunnelLogger
+}) => {
   const fs = new MemoryFunnelFileSystem()
   const funnel = new Funnel({
     fs,
@@ -253,7 +257,9 @@ describe("FunnelGatewayServer bind address", () => {
 
     active = await startServerOn({ token: "", hostname: "0.0.0.0", logger })
 
-    const warned = logger.entries.some((entry) => entry.level === "warn" && entry.message.includes("non-loopback"))
+    const warned = logger.entries.some(
+      (entry) => entry.level === "warn" && entry.message.includes("non-loopback"),
+    )
     expect(warned).toBe(true)
   })
 

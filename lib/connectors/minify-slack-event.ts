@@ -22,10 +22,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-const pickDefined = (
-  source: Record<string, unknown>,
-  keys: string[],
-): Record<string, unknown> => {
+const pickDefined = (source: Record<string, unknown>, keys: string[]): Record<string, unknown> => {
   const picked: Record<string, unknown> = {}
 
   for (const key of keys) {

@@ -121,12 +121,7 @@ export class FunnelClaude {
     const resume = options.resume ?? false
     const session =
       resume && options.profileId
-        ? this.resolveSession(
-            options.profileId,
-            cwd,
-            options.userArgs ?? [],
-            options.env ?? {},
-          )
+        ? this.resolveSession(options.profileId, cwd, options.userArgs ?? [], options.env ?? {})
         : null
     const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
     const env = this.buildEnv(channel.id, options.env ?? {})

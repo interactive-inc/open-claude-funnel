@@ -2,7 +2,7 @@ import { createFactory } from "hono/factory"
 import type { Funnel } from "@/funnel"
 
 export type Env = {
-  Variables: {
+  Bindings: {
     funnel: Funnel
   }
 }

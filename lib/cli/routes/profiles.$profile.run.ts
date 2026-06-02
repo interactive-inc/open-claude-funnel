@@ -4,7 +4,7 @@ import { factory } from "@/cli/factory"
 import { queryToCliArgs } from "@/cli/router/query-to-cli-args"
 import { zValidator } from "@/cli/router/validator"
 
-export const launchHelp = `funnel profiles <name> run — launch a profile (sugar for fnl claude)
+const launchHelp = `funnel profiles <name> run — launch a profile (sugar for fnl claude)
 
 usage: funnel profiles <name> run [additional claude args...]
        funnel profiles <name>     (alias)`
@@ -16,7 +16,7 @@ export const profilesLaunchHandler = factory.createHandlers(
   zValidator("query", z.object({}).passthrough(), launchHelp),
   async (c) => {
     const param = c.req.valid("param")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const profile = funnel.profiles.get(param.profile)
 
     if (!profile) {

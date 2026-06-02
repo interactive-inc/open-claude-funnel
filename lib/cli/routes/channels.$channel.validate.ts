@@ -3,20 +3,6 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { HTTPException } from "hono/http-exception"
 
-export const validateHelp = `funnel channels <channel> validate — check connector configuration
-
-usage: funnel channels <channel> validate [--json]
-
-options:
-  --json   output as JSON
-
-Checks that each connector has the required tokens and fields set.
-Does not make any network calls — static config check only.
-
-examples:
-  funnel channels open-karte validate
-  funnel channels open-karte validate --json`
-
 type ConnectorIssue = {
   connector: string
   field: string
@@ -49,7 +35,11 @@ const validateConnector = (
       })
     }
 
-    if (connector.botToken && typeof connector.botToken === "string" && !connector.botToken.startsWith("xoxb-")) {
+    if (
+      connector.botToken &&
+      typeof connector.botToken === "string" &&
+      !connector.botToken.startsWith("xoxb-")
+    ) {
       issues.push({
         connector: connector.name,
         field: "botToken",
@@ -57,7 +47,11 @@ const validateConnector = (
       })
     }
 
-    if (connector.appToken && typeof connector.appToken === "string" && !connector.appToken.startsWith("xapp-")) {
+    if (
+      connector.appToken &&
+      typeof connector.appToken === "string" &&
+      !connector.appToken.startsWith("xapp-")
+    ) {
       issues.push({
         connector: connector.name,
         field: "appToken",
@@ -110,12 +104,11 @@ export const channelsValidateHandler = factory.createHandlers(
     z.object({
       json: z.enum(["true", "false", ""]).optional(),
     }),
-    validateHelp,
   ),
   (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const isJson = query.json === "true" || query.json === ""
 
     const channel = funnel.channels.get(param.channel)
@@ -129,7 +122,9 @@ export const channelsValidateHandler = factory.createHandlers(
         return c.json({
           channel: channel.name,
           valid: false,
-          issues: [{ connector: "(none)", field: "connectors", message: "no connectors configured" }],
+          issues: [
+            { connector: "(none)", field: "connectors", message: "no connectors configured" },
+          ],
         })
       }
 
@@ -139,7 +134,9 @@ export const channelsValidateHandler = factory.createHandlers(
     const allIssues: ConnectorIssue[] = []
 
     for (const connector of channel.connectors) {
-      const issues = validateConnector(connector as { name: string; type: string } & Record<string, unknown>)
+      const issues = validateConnector(
+        connector as { name: string; type: string } & Record<string, unknown>,
+      )
 
       allIssues.push(...issues)
     }

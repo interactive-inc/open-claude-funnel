@@ -29,8 +29,7 @@ export type DebugConnectionError = {
 const stringOrNull = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null
 
-const numberOrNull = (value: unknown): number | null =>
-  typeof value === "number" ? value : null
+const numberOrNull = (value: unknown): number | null => (typeof value === "number" ? value : null)
 
 const stringOr = (value: unknown, fallback: string): string =>
   typeof value === "string" ? value : fallback

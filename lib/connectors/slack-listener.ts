@@ -2,10 +2,7 @@ import { App, LogLevel } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
 import { resolveConnectorToken } from "@/connectors/resolve-connector-token"
-import {
-  FunnelSlackEventProcessor,
-  type SlackRawEvent,
-} from "@/connectors/slack-event-processor"
+import { FunnelSlackEventProcessor, type SlackRawEvent } from "@/connectors/slack-event-processor"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type {
   ConnectorConnectionStatus,
@@ -40,7 +37,6 @@ type Deps = {
    */
   preprocessEvent?: SlackPreprocessEvent
 }
-
 
 export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly config: SlackConnectorConfig

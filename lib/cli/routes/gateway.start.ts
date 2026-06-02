@@ -5,7 +5,7 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
-export const startHelp = `funnel gateway start — start the gateway in background
+const startHelp = `funnel gateway start — start the gateway in background
 
 usage: funnel gateway start [--no-caffeine]
 
@@ -31,7 +31,7 @@ export const gatewayStartHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     if (funnel.gateway.isRunning()) {
       const status = funnel.gateway.getStatus()

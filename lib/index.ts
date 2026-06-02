@@ -60,6 +60,7 @@ export * from "@/connectors/slack-event-processor"
 
 // Gateway
 export type { FunnelDebugReport } from "@/gateway/funnel-debug"
+export type { GatewayApp } from "@/gateway/routes"
 export * from "@/gateway/gateway"
 export * from "@/gateway/gateway-server"
 export * from "@/gateway/gateway-token"
@@ -82,4 +83,5 @@ export type { GatewayEmitInput, GatewayRouteDeps } from "@/gateway/routes/route-
 export * from "@/cli/factory"
 export * from "@/cli/router/to-request"
 export * from "@/cli/router/query-to-cli-args"
-export { app as cliApp, createCliApp } from "@/cli/routes"
+export { routes as cliRoutes } from "@/cli/routes"
+export type { CliApp } from "@/cli/routes"

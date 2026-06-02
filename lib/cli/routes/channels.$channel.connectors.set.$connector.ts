@@ -3,13 +3,6 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const setHelp = `funnel channels <channel> connectors set <connector> — update connector fields
-
-usage:
-  funnel channels <ch> connectors set <conn> [--bot-token=...] [--app-token=...]   # slack
-  funnel channels <ch> connectors set <conn> [--bot-token=...]                    # discord
-  funnel channels <ch> connectors set <conn> [--poll-interval=N]                  # gh`
-
 export const channelsConnectorsSetHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
   zValidator(
@@ -21,12 +14,11 @@ export const channelsConnectorsSetHandler = factory.createHandlers(
         "poll-interval": z.coerce.number().int().positive().optional(),
       })
       .passthrough(),
-    setHelp,
   ),
   async (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const existing = funnel.channels.getConnector(param.channel, param.connector)
 
     if (!existing) {

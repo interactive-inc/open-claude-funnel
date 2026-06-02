@@ -4,7 +4,7 @@ import { factory } from "@/cli/factory"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { zValidator } from "@/cli/router/validator"
 
-export const updateHelp = `funnel update — update funnel to the latest version
+const updateHelp = `funnel update — update funnel to the latest version
 
 usage: funnel update
 

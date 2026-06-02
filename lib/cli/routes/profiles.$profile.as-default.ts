@@ -2,7 +2,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const asDefaultHelp = `funnel profiles <name> as-default — move profile to the front of the list
+const asDefaultHelp = `funnel profiles <name> as-default — move profile to the front of the list
 
 usage: funnel profiles <name> as-default
 
@@ -13,7 +13,7 @@ export const profilesAsDefaultHandler = factory.createHandlers(
   zValidator("query", z.object({}), asDefaultHelp),
   (c) => {
     const param = c.req.valid("param")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     funnel.profiles.asDefault(param.profile)
 

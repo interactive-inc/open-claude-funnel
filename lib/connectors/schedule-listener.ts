@@ -27,7 +27,6 @@ type Deps = {
   onFired?: ScheduleOnFired
 }
 
-
 const MAX_CATCHUP_MINUTES = 60 * 24
 
 export class FunnelScheduleListener extends FunnelConnectorListener {
@@ -257,12 +256,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     return copy
   }
 
-  private recordRaw(
-    eventId: string,
-    entry: ScheduleEntry,
-    firedAt: Date,
-    catchup: boolean,
-  ): void {
+  private recordRaw(eventId: string, entry: ScheduleEntry, firedAt: Date, catchup: boolean): void {
     this.diagnosticLog?.recordRaw({
       eventId,
       type: "schedule",

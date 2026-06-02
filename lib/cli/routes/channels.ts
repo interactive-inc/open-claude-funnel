@@ -2,7 +2,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const groupHelp = `funnel channels — manage subscription boxes
+const groupHelp = `funnel channels — manage subscription boxes
 
 usage: funnel channels [--json]
 
@@ -28,7 +28,7 @@ export const channelsGroupHandler = factory.createHandlers(
   zValidator("query", z.object({ json: z.enum(["true", "false", ""]).optional() }), groupHelp),
   (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channels = funnel.channels.list()
     const isJson = query.json === "true" || query.json === ""
 

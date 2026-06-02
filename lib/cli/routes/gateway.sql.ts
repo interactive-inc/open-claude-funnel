@@ -7,19 +7,17 @@ import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
 
 const PRESETS: Record<string, string> = {
-  recent:
-    "SELECT seq, ts, type, outcome FROM processed ORDER BY seq DESC LIMIT 20",
+  recent: "SELECT seq, ts, type, outcome FROM processed ORDER BY seq DESC LIMIT 20",
   skipped:
     "SELECT seq, ts, type, outcome, payload FROM processed WHERE outcome LIKE 'skip:%' ORDER BY seq DESC LIMIT 20",
   errors:
     "SELECT ts, status, detail FROM connection WHERE status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 20",
-  summary:
-    "SELECT outcome, COUNT(*) AS count FROM processed GROUP BY outcome ORDER BY count DESC",
+  summary: "SELECT outcome, COUNT(*) AS count FROM processed GROUP BY outcome ORDER BY count DESC",
   "trace-dedup":
     "SELECT r.seq, r.ts, r.event_id, r.payload FROM raw r JOIN processed p USING(event_id) WHERE p.outcome='skip:dedup' ORDER BY r.seq DESC LIMIT 20",
 }
 
-export const sqlHelp = `funnel gateway sql — query inbound connector traffic with SQL
+const sqlHelp = `funnel gateway sql — query inbound connector traffic with SQL
 
 usage: funnel gateway sql --preset <name> [--channel <name|id>] [--limit <N>]
        funnel gateway sql --query "<SELECT ...>"
@@ -73,7 +71,7 @@ export const gatewaySqlHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     let sql: string | null = null
     let params: (string | number | null)[] = []
@@ -82,9 +80,7 @@ export const gatewaySqlHandler = factory.createHandlers(
 
     if (query.channel) {
       const channels = funnel.channels.list()
-      const match = channels.find(
-        (ch) => ch.id === query.channel || ch.name === query.channel,
-      )
+      const match = channels.find((ch) => ch.id === query.channel || ch.name === query.channel)
 
       resolvedChannelId = match?.id ?? query.channel
     }
@@ -103,10 +99,7 @@ export const gatewaySqlHandler = factory.createHandlers(
       }
 
       if (resolvedChannelId) {
-        sql = applied.replace(
-          /FROM (raw|processed|connection)\b/,
-          "FROM $1 WHERE channel_id = ?",
-        )
+        sql = applied.replace(/FROM (raw|processed|connection)\b/, "FROM $1 WHERE channel_id = ?")
         params = [resolvedChannelId]
       } else {
         sql = applied

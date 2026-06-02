@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  previewOf,
-  toDebugConnectionError,
-  toDebugEvent,
-} from "@/cli/routes/debug-row"
+import { previewOf, toDebugConnectionError, toDebugEvent } from "@/cli/routes/debug-row"
 
 describe("toDebugEvent", () => {
   test("narrows a well-formed processed row", () => {

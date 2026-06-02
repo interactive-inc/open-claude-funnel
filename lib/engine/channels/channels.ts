@@ -120,10 +120,7 @@ export class FunnelChannels {
     return this.list().find((c) => c.id === id) ?? null
   }
 
-  add(input: {
-    name: string
-    delivery?: ChannelDeliveryMode
-  }): ChannelConfig {
+  add(input: { name: string; delivery?: ChannelDeliveryMode }): ChannelConfig {
     const settings = this.store.read()
 
     if (settings.channels.some((c) => c.name === input.name)) {

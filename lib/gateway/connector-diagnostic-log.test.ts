@@ -32,7 +32,9 @@ const raw = (over: Partial<Parameters<ConnectorDiagnosticLog["recordRaw"]>[0]> =
   ...over,
 })
 
-const processed = (over: Partial<Parameters<ConnectorDiagnosticLog["recordProcessed"]>[0]> = {}) => ({
+const processed = (
+  over: Partial<Parameters<ConnectorDiagnosticLog["recordProcessed"]>[0]> = {},
+) => ({
   eventId: "ev-1",
   type: "slack",
   connectorId: "co-1",
@@ -398,7 +400,9 @@ describe("SqliteConnectorDiagnosticLog forward-compat", () => {
       status: "quantum-entangled",
       detail: "",
     })
-    writer.prepare("INSERT INTO leuco_log (ts, type, event) VALUES (?, ?, ?)").run(1, "slack", event)
+    writer
+      .prepare("INSERT INTO leuco_log (ts, type, event) VALUES (?, ?, ?)")
+      .run(1, "slack", event)
     writer.close()
 
     const reopened = new SqliteConnectorDiagnosticLog({ rawPath, processedPath, connectionPath })

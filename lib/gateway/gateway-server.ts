@@ -151,9 +151,12 @@ export class FunnelGatewayServer {
     if (this.server) return this.server
 
     if (!this.token && !LOOPBACK_HOSTS.has(this.hostname)) {
-      this.logger?.warn("gateway auth is disabled on a non-loopback bind — every endpoint is reachable without a token", {
-        hostname: this.hostname,
-      })
+      this.logger?.warn(
+        "gateway auth is disabled on a non-loopback bind — every endpoint is reachable without a token",
+        {
+          hostname: this.hostname,
+        },
+      )
     }
 
     const app = this.buildApp()

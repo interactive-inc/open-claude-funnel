@@ -3,14 +3,14 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const showHelp = `funnel channels <name> — show channel details`
+const showHelp = `funnel channels <name> — show channel details`
 
 export const channelsShowHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string() })),
   zValidator("query", z.object({}), showHelp),
   (c) => {
     const param = c.req.valid("param")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const channel = funnel.channels.get(param.channel)
 
     if (!channel) {

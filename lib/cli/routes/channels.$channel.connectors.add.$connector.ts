@@ -2,16 +2,6 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const addHelp = `funnel channels <channel> connectors add <connector> — add a connector to a channel
-
-usage:
-  funnel channels <channel> connectors add <connector> --type=slack --bot-token=xoxb-... --app-token=xapp-...
-  funnel channels <channel> connectors add <connector> --type=gh [--poll-interval=60]
-  funnel channels <channel> connectors add <connector> --type=discord --bot-token=...
-  funnel channels <channel> connectors add <connector> --type=schedule
-
-Token uniqueness is enforced across all channels.`
-
 const slackBody = z.object({
   type: z.literal("slack"),
   "bot-token": z.string().startsWith("xoxb-"),
@@ -36,11 +26,11 @@ const addBody = z.discriminatedUnion("type", [slackBody, ghBody, discordBody, sc
 
 export const channelsConnectorsAddHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
-  zValidator("query", addBody, addHelp),
+  zValidator("query", addBody),
   async (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     if (query.type === "slack") {
       const created = funnel.channels.addConnector(param.channel, {

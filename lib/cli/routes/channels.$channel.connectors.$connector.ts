@@ -3,7 +3,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const showHelp = `funnel channels <channel> connectors show <connector> — show connector config
+const showHelp = `funnel channels <channel> connectors show <connector> — show connector config
 
 usage: funnel channels <channel> connectors show <connector>`
 
@@ -12,7 +12,7 @@ export const channelsConnectorsShowHandler = factory.createHandlers(
   zValidator("query", z.object({}), showHelp),
   (c) => {
     const param = c.req.valid("param")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const connector = funnel.channels.getConnector(param.channel, param.connector)
 
     if (!connector) {

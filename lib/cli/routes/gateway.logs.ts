@@ -6,7 +6,7 @@ import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { zValidator } from "@/cli/router/validator"
 
-export const logsHelp = `funnel gateway logs — tail the daemon diagnostic log
+const logsHelp = `funnel gateway logs — tail the daemon diagnostic log
 
 usage: funnel gateway logs [-n <N>] [--format <plain|json>]
 

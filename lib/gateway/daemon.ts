@@ -95,10 +95,7 @@ const shutdown = async (code: number): Promise<void> => {
   shuttingDown = true
 
   try {
-    await Promise.race([
-      server.stop(),
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ])
+    await Promise.race([server.stop(), new Promise((resolve) => setTimeout(resolve, 3000))])
   } catch {
     // exit regardless of a failed stop
   }

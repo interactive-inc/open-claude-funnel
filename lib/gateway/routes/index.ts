@@ -15,7 +15,10 @@ import { statusHandler } from "@/gateway/routes/status"
  * from the `deps` variable set by `FunnelGatewayServer`'s middleware — same
  * shape as CLI's `c.var.funnel`.
  */
-export const gatewayRoutes = factory
+export type GatewayApp = ReturnType<typeof buildGatewayRoutes>
+
+function buildGatewayRoutes() {
+  return factory
   .createApp()
   .get("/health", ...healthHandler)
   .get("/status", ...statusHandler)
@@ -26,3 +29,7 @@ export const gatewayRoutes = factory
   .post("/listeners/:channel/:connector/restart", ...listenersRestartHandler)
   .post("/channels/:channel/connectors/:connector/call", ...channelsConnectorsCallHandler)
   .post("/channels/:channel/publish", ...channelsPublishHandler)
+
+}
+
+export const gatewayRoutes = buildGatewayRoutes()

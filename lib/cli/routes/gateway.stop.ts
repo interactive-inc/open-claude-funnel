@@ -3,7 +3,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const stopHelp = `funnel gateway stop — stop the gateway
+const stopHelp = `funnel gateway stop — stop the gateway
 
 usage: funnel gateway stop
 
@@ -15,7 +15,7 @@ examples:
 export const gatewayStopHandler = factory.createHandlers(
   zValidator("query", z.object({}), stopHelp),
   async (c) => {
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     if (!funnel.gateway.isRunning()) {
       return c.text("funnel gateway: no running process")

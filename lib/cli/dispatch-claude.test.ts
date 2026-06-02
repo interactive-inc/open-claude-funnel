@@ -12,9 +12,7 @@ type Setup = {
 
 const FAKE_GATEWAY_PID = "12345"
 
-const buildSetup = (
-  opts: { files?: Record<string, string>; dirs?: string[] } = {},
-): Setup => {
+const buildSetup = (opts: { files?: Record<string, string>; dirs?: string[] } = {}): Setup => {
   const fs = new MemoryFunnelFileSystem({
     files: {
       "/sandbox/.funnel/gateway.pid": FAKE_GATEWAY_PID,
@@ -55,9 +53,7 @@ describe("dispatchClaude — argv parsing", () => {
 
     const attach = lastAttach(process)
 
-    expect(attach?.command).toEqual(
-      expect.arrayContaining(["claude", "resume", "abc123"]),
-    )
+    expect(attach?.command).toEqual(expect.arrayContaining(["claude", "resume", "abc123"]))
   })
 
   test("forwards unknown short flags verbatim to claude", async () => {
@@ -75,18 +71,11 @@ describe("dispatchClaude — argv parsing", () => {
     const { funnel, process } = buildSetup()
     funnel.channels.add({ name: "ops" })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, [
-      "--channel",
-      "ops",
-      "--agent",
-      "developer",
-    ])
+    await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "ops", "--agent", "developer"])
 
     const attach = lastAttach(process)
 
-    expect(attach?.command).toEqual(
-      expect.arrayContaining(["claude", "--agent", "developer"]),
-    )
+    expect(attach?.command).toEqual(expect.arrayContaining(["claude", "--agent", "developer"]))
   })
 
   test("supports --profile=<name> equals form", async () => {
@@ -213,10 +202,7 @@ describe("dispatchClaude — argv parsing", () => {
       },
     })
 
-    const result = await dispatchClaude({ funnel, cwd: "/repo" }, [
-      "--channel",
-      "missing",
-    ])
+    const result = await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "missing"])
 
     expect(result.exitCode).toEqual(1)
     expect(result.stderr).toContain("missing")

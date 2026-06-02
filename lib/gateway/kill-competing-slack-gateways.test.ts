@@ -5,12 +5,11 @@ import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runne
 const HIRACT_DIR = "/Users/me/.funnel"
 const INTA_DIR = "/Users/me/.inta/funnel"
 
-const snapshotsFor = (
-  dir: string,
-): { pid: number; command: string }[] => [
-  { pid: 100, command: `bun /home/me/dist/gateway/daemon.js funnel-gateway[${HIRACT_DIR}]` },
-  { pid: 300, command: `bun /home/me/dist/gateway/daemon.js funnel-gateway[${HIRACT_DIR}]` },
-].filter((snap) => snap.command.includes(`funnel-gateway[${dir}]`))
+const snapshotsFor = (dir: string): { pid: number; command: string }[] =>
+  [
+    { pid: 100, command: `bun /home/me/dist/gateway/daemon.js funnel-gateway[${HIRACT_DIR}]` },
+    { pid: 300, command: `bun /home/me/dist/gateway/daemon.js funnel-gateway[${HIRACT_DIR}]` },
+  ].filter((snap) => snap.command.includes(`funnel-gateway[${dir}]`))
 
 describe("killCompetingSlackGateways", () => {
   test("kills daemons sharing the same dir (excluding self)", async () => {

@@ -3,7 +3,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const restartHelp = `funnel gateway restart — restart the gateway
+const restartHelp = `funnel gateway restart — restart the gateway
 
 usage: funnel gateway restart [--no-caffeine]
 
@@ -24,7 +24,7 @@ export const gatewayRestartHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     const result = await funnel.gateway.restart({
       caffeinate: query["no-caffeine"] !== "true",

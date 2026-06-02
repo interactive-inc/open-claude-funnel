@@ -3,7 +3,7 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { channelDeliveryModeSchema } from "@/engine/settings/settings-schema"
 
-export const setDeliveryHelp = `funnel channels <name> set delivery <mode> — change a channel's routing mode
+const setDeliveryHelp = `funnel channels <name> set delivery <mode> — change a channel's routing mode
 
 usage: funnel channels <name> set delivery fanout | exclusive
 
@@ -25,7 +25,7 @@ export const channelsSetDeliveryHandler = factory.createHandlers(
   ),
   (c) => {
     const param = c.req.valid("param")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     funnel.channels.setDelivery(param.channel, param.mode)
 

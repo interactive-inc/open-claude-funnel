@@ -3,15 +3,6 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { channelDeliveryModeSchema } from "@/engine/settings/settings-schema"
 
-export const addHelp = `funnel channels add — add a channel
-
-usage: funnel channels add <name> [--delivery fanout|exclusive]
-
-options:
-  --delivery    routing mode (default fanout):
-                  fanout      every connected client receives every event
-                  exclusive   each event delivered to exactly one client (round-robin)`
-
 export const channelsAddHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string() })),
   zValidator(
@@ -19,12 +10,11 @@ export const channelsAddHandler = factory.createHandlers(
     z.object({
       delivery: channelDeliveryModeSchema.optional(),
     }),
-    addHelp,
   ),
   (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     const created = funnel.channels.add({ name: param.channel, delivery: query.delivery })
 

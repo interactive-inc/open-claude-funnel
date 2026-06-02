@@ -3,7 +3,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const listenersHelp = `funnel gateway listeners — show running connector listeners
+const listenersHelp = `funnel gateway listeners — show running connector listeners
 
 usage: funnel gateway listeners
 
@@ -15,7 +15,7 @@ examples:
 export const gatewayListenersHandler = factory.createHandlers(
   zValidator("query", z.object({}), listenersHelp),
   async (c) => {
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const result = await funnel.listeners.list()
 
     if (result.state === "offline") {

@@ -2,19 +2,15 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const renameHelp = `funnel channels <channel> connectors rename <connector> <new-name>
-
-usage: funnel channels <channel> connectors rename <connector> <new-name>`
-
 export const channelsConnectorsRenameHandler = factory.createHandlers(
   zValidator(
     "param",
     z.object({ channel: z.string(), connector: z.string(), newName: z.string() }),
   ),
-  zValidator("query", z.object({}), renameHelp),
+  zValidator("query", z.object({})),
   async (c) => {
     const param = c.req.valid("param")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     await funnel.listeners.stop(param.channel, param.connector)
 

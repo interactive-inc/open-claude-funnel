@@ -3,10 +3,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js"
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { FunnelChannelSubscriber } from "@/engine/mcp/channel-subscriber"
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
 import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
@@ -54,12 +51,12 @@ const readAllChannels = (dir: string): ChannelSummary[] => {
   }
 }
 
-export const startChannelServer = async (
-  options: ChannelServerOptions = {},
-): Promise<void> => {
+export const startChannelServer = async (options: ChannelServerOptions = {}): Promise<void> => {
   const dir = options.dir ?? DEFAULT_FUNNEL_DIR
   const gatewayBaseUrl =
-    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? `http://127.0.0.1:${resolveFunnelPort()}`
+    options.gatewayUrl ??
+    process.env.FUNNEL_GATEWAY_URL ??
+    `http://127.0.0.1:${resolveFunnelPort()}`
   const gatewayWsUrl = `${gatewayBaseUrl.replace(/^http/, "ws")}/ws`
   const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
   const channel = channelId ? readChannelConnectors(dir, channelId) : null
@@ -67,13 +64,16 @@ export const startChannelServer = async (
   const allChannels = readAllChannels(dir)
   const currentChannelName = channel?.channelName ?? null
 
-  const channelContext = allChannels.length > 0
-    ? [
-        "",
-        "Configured channels (use as the `channel` argument to fnl_debug):",
-        ...allChannels.map((ch) => `  ${ch.name}${ch.name === currentChannelName ? " ← this session" : ""}`),
-      ].join("\n")
-    : ""
+  const channelContext =
+    allChannels.length > 0
+      ? [
+          "",
+          "Configured channels (use as the `channel` argument to fnl_debug):",
+          ...allChannels.map(
+            (ch) => `  ${ch.name}${ch.name === currentChannelName ? " ← this session" : ""}`,
+          ),
+        ].join("\n")
+      : ""
 
   const server = new Server(
     { name: FUNNEL_MCP_NAME, version: "1.0.0" },
@@ -119,7 +119,10 @@ export const startChannelServer = async (
       inputSchema: {
         type: "object" as const,
         properties: {
-          method: { type: "string", description: "HTTP verb or API method (e.g. POST, chat.postMessage)" },
+          method: {
+            type: "string",
+            description: "HTTP verb or API method (e.g. POST, chat.postMessage)",
+          },
           path: { type: "string", description: "API path or method name (adapter-specific)" },
           body: { type: "object", description: "Request body / params (adapter-specific)" },
         },
@@ -127,9 +130,7 @@ export const startChannelServer = async (
       },
     }))
 
-    const channelEnum = allChannels.length > 0
-      ? allChannels.map((ch) => ch.name)
-      : undefined
+    const channelEnum = allChannels.length > 0 ? allChannels.map((ch) => ch.name) : undefined
 
     const builtinTools = [
       {
@@ -170,7 +171,13 @@ export const startChannelServer = async (
     const toolName = request.params.name
 
     if (isBuiltinTool(toolName)) {
-      return handleBuiltinTool(toolName, request.params.arguments, gatewayBaseUrl, token, allChannels)
+      return handleBuiltinTool(
+        toolName,
+        request.params.arguments,
+        gatewayBaseUrl,
+        token,
+        allChannels,
+      )
     }
 
     if (!channel) {

@@ -3,7 +3,7 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { resolveDaemonScript } from "@/gateway/resolve-daemon-script"
 
-export const runHelp = `funnel gateway run — run the gateway in foreground
+const runHelp = `funnel gateway run — run the gateway in foreground
 
 usage: funnel gateway run [--no-caffeine]
 
@@ -26,7 +26,7 @@ export const gatewayRunHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     const gatewayScript = resolveDaemonScript()
     const useCaffeinate = query["no-caffeine"] !== "true" && process.platform === "darwin"

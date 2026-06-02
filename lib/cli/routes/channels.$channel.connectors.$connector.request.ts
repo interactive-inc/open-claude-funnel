@@ -2,7 +2,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const requestHelp = `funnel channels <channel> connectors <connector> request — call a connector's outbound API
+const requestHelp = `funnel channels <channel> connectors <connector> request — call a connector's outbound API
 
 usage: funnel channels <channel> connectors <connector> request --method=<api.method> [--key=value ...]`
 
@@ -20,7 +20,7 @@ export const channelsConnectorsRequestHandler = factory.createHandlers(
   async (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     const passthrough: Record<string, string> = {}
 

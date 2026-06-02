@@ -77,10 +77,7 @@ export class FunnelLocalConfigSync {
     return { touched, removed }
   }
 
-  private async ensureConnector(
-    channelName: string,
-    spec: ConnectorSpec,
-  ): Promise<EnsureOutcome> {
+  private async ensureConnector(channelName: string, spec: ConnectorSpec): Promise<EnsureOutcome> {
     if (spec.type === "slack") return await this.ensureSlack(channelName, spec)
     if (spec.type === "discord") return await this.ensureDiscord(channelName, spec)
     if (spec.type === "gh") return this.ensureGh(channelName, spec)

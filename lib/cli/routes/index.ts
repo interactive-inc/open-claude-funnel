@@ -1,58 +1,44 @@
 import { HTTPException } from "hono/http-exception"
 import { factory } from "@/cli/factory"
-import {
-  addHelp as channelsAddHelp,
-  channelsAddHandler,
-} from "@/cli/routes/channels.add.$channel"
+import { channelsAddHelpHandler } from "@/cli/routes/channels.add"
+import { channelsAddHandler } from "@/cli/routes/channels.add.$channel"
 import { channelsConnectorsGroupHandler } from "@/cli/routes/channels.$channel.connectors"
-import {
-  addHelp as channelsConnectorsAddHelp,
-  channelsConnectorsAddHandler,
-} from "@/cli/routes/channels.$channel.connectors.add.$connector"
-import {
-  channelsConnectorsRemoveHandler,
-  removeHelp as channelsConnectorsRemoveHelp,
-} from "@/cli/routes/channels.$channel.connectors.remove.$connector"
-import {
-  channelsConnectorsSetHandler,
-  setHelp as channelsConnectorsSetHelp,
-} from "@/cli/routes/channels.$channel.connectors.set.$connector"
+import { channelsConnectorsAddHelpHandler } from "@/cli/routes/channels.$channel.connectors.add"
+import { channelsConnectorsAddHandler } from "@/cli/routes/channels.$channel.connectors.add.$connector"
+import { channelsConnectorsRemoveHelpHandler } from "@/cli/routes/channels.$channel.connectors.remove"
+import { channelsConnectorsRemoveHandler } from "@/cli/routes/channels.$channel.connectors.remove.$connector"
+import { channelsConnectorsSetHelpHandler } from "@/cli/routes/channels.$channel.connectors.set"
+import { channelsConnectorsSetHandler } from "@/cli/routes/channels.$channel.connectors.set.$connector"
 import { channelsConnectorsShowHandler } from "@/cli/routes/channels.$channel.connectors.$connector"
-import {
-  channelsConnectorsRenameHandler,
-  renameHelp as channelsConnectorsRenameHelp,
-} from "@/cli/routes/channels.$channel.connectors.$connector.rename.$newName"
+import { channelsConnectorsRenameHelpHandler } from "@/cli/routes/channels.$channel.connectors.rename"
+import { channelsConnectorsRenameHandler } from "@/cli/routes/channels.$channel.connectors.$connector.rename.$newName"
+import { channelsConnectorRenameHelpHandler } from "@/cli/routes/channels.$channel.connectors.$connector.rename"
 import { channelsConnectorsRequestHandler } from "@/cli/routes/channels.$channel.connectors.$connector.request"
 import { channelsConnectorsSchedulesGroupHandler } from "@/cli/routes/channels.$channel.connectors.$connector.schedules"
-import {
-  addHelp as channelsConnectorsSchedulesAddHelp,
-  channelsConnectorsSchedulesAddHandler,
-} from "@/cli/routes/channels.$channel.connectors.$connector.schedules.add.$id"
-import {
-  channelsConnectorsSchedulesRemoveHandler,
-  removeHelp as channelsConnectorsSchedulesRemoveHelp,
-} from "@/cli/routes/channels.$channel.connectors.$connector.schedules.remove.$id"
-import {
-  channelsPublishHandler,
-  publishHelp as channelsPublishHelp,
-} from "@/cli/routes/channels.$channel.publish"
-import {
-  channelsRemoveHandler,
-  removeHelp as channelsRemoveHelp,
-} from "@/cli/routes/channels.remove.$channel"
-import {
-  channelsRenameHandler,
-  renameHelp as channelsRenameHelp,
-} from "@/cli/routes/channels.$channel.rename.$newName"
+import { channelsConnectorSchedulesAddHelpHandler } from "@/cli/routes/channels.$channel.connectors.$connector.schedules.add"
+import { channelsConnectorsSchedulesAddHandler } from "@/cli/routes/channels.$channel.connectors.$connector.schedules.add.$id"
+import { channelsConnectorSchedulesRemoveHelpHandler } from "@/cli/routes/channels.$channel.connectors.$connector.schedules.remove"
+import { channelsConnectorsSchedulesRemoveHandler } from "@/cli/routes/channels.$channel.connectors.$connector.schedules.remove.$id"
+import { channelsPublishHelpHandler } from "@/cli/routes/channels.publish"
+import { channelsPublishHandler } from "@/cli/routes/channels.$channel.publish"
+import { channelsRemoveHelpHandler } from "@/cli/routes/channels.remove"
+import { channelsRemoveHandler } from "@/cli/routes/channels.remove.$channel"
+import { channelsRenameHelpHandler } from "@/cli/routes/channels.rename"
+import { channelsChannelRenameHelpHandler } from "@/cli/routes/channels.$channel.rename"
+import { channelsRenameHandler } from "@/cli/routes/channels.$channel.rename.$newName"
 import { channelsSetDeliveryHandler } from "@/cli/routes/channels.$channel.set.delivery.$mode"
 import { channelsShowHandler } from "@/cli/routes/channels.$channel"
 import { channelsGroupHandler } from "@/cli/routes/channels"
+import { channelsValidateHelpHandler } from "@/cli/routes/channels.validate"
+import { channelsValidateHandler } from "@/cli/routes/channels.$channel.validate"
 import { claudeHandler } from "@/cli/routes/claude"
-import { debugHandler, debugEventsHandler, debugDroppedHandler, debugErrorsHandler, debugReplayHandler } from "@/cli/routes/debug"
 import {
-  channelsValidateHandler,
-  validateHelp as channelsValidateHelp,
-} from "@/cli/routes/channels.$channel.validate"
+  debugHandler,
+  debugEventsHandler,
+  debugDroppedHandler,
+  debugErrorsHandler,
+  debugReplayHandler,
+} from "@/cli/routes/debug"
 import { gatewayGroupHandler } from "@/cli/routes/gateway"
 import { gatewayListenersHandler } from "@/cli/routes/gateway.listeners"
 import { gatewayLogsHandler } from "@/cli/routes/gateway.logs"
@@ -62,101 +48,54 @@ import { gatewayRunHandler } from "@/cli/routes/gateway.run"
 import { gatewayStartHandler } from "@/cli/routes/gateway.start"
 import { gatewayStatusHandler } from "@/cli/routes/gateway.status"
 import { gatewayStopHandler } from "@/cli/routes/gateway.stop"
-import {
-  addHelp as profilesAddHelp,
-  profilesAddHandler,
-} from "@/cli/routes/profiles.add.$profile"
+import { profilesAddHelpHandler } from "@/cli/routes/profiles.add"
+import { profilesAddHandler } from "@/cli/routes/profiles.add.$profile"
 import { profilesAsDefaultHandler } from "@/cli/routes/profiles.$profile.as-default"
-import {
-  profilesRenameHandler,
-  renameHelp as profilesRenameHelp,
-} from "@/cli/routes/profiles.$profile.rename.$newName"
+import { profilesRenameHelpHandler } from "@/cli/routes/profiles.rename"
+import { profilesProfileRenameHelpHandler } from "@/cli/routes/profiles.$profile.rename"
+import { profilesRenameHandler } from "@/cli/routes/profiles.$profile.rename.$newName"
 import { profilesLaunchHandler } from "@/cli/routes/profiles.$profile.run"
-import {
-  profilesRemoveHandler,
-  removeHelp as profilesRemoveHelp,
-} from "@/cli/routes/profiles.remove.$profile"
-import {
-  profilesSetHandler,
-  setHelp as profilesSetHelp,
-} from "@/cli/routes/profiles.set.$profile"
+import { profilesRemoveHelpHandler } from "@/cli/routes/profiles.remove"
+import { profilesRemoveHandler } from "@/cli/routes/profiles.remove.$profile"
+import { profilesSetHelpHandler } from "@/cli/routes/profiles.set"
+import { profilesSetHandler } from "@/cli/routes/profiles.set.$profile"
 import { profilesGroupHandler } from "@/cli/routes/profiles"
 import { schemaHandler } from "@/cli/routes/schema"
 import { statusHandler } from "@/cli/routes/status"
 import { updateHandler } from "@/cli/routes/update"
-import { Funnel } from "@/funnel"
 
-const helpRoute = (text: string) => factory.createHandlers((c) => c.text(text))
-
-/**
- * Build the CLI Hono app wired to a specific Funnel instance.
- * Exposed so library consumers can mount the same routes their `fnl` CLI
- * uses against a custom Funnel (e.g. one with sandboxed boundaries).
- *
- * All CLI verbs (`add` / `remove` / `set` / `rename` / `as-default` / `request`) map to POST in
- * to-request.ts and stay in the URL as a literal segment. Read paths (list / show / launch) keep GET.
- * Help shortcuts at parameterless URLs return the help text directly so `funnel <verb>` (no args) is
- * informative instead of 404.
- */
-export const createCliApp = (funnel: Funnel) => {
-  const base = factory.createApp()
-
-  base.use((c, next) => {
-    c.set("funnel", funnel)
-
-    return next()
-  })
-
-  base.onError((error, c) => {
+export const routes = factory
+  .createApp()
+  .onError((error, c) => {
     if (error instanceof HTTPException) {
       return c.text(`error: ${error.message}`, error.status)
     }
 
     return c.text(`error: ${error instanceof Error ? error.message : String(error)}`, 400)
   })
-
-  return base
-    .get("/claude", ...claudeHandler)
+  .get("/claude", ...claudeHandler)
   .get("/channels", ...channelsGroupHandler)
-  .post("/channels/add", ...helpRoute(channelsAddHelp))
+  .post("/channels/add", ...channelsAddHelpHandler)
   .post("/channels/add/:channel", ...channelsAddHandler)
-  .post("/channels/remove", ...helpRoute(channelsRemoveHelp))
+  .post("/channels/remove", ...channelsRemoveHelpHandler)
   .post("/channels/remove/:channel", ...channelsRemoveHandler)
   .post("/channels/rename/:channel/:newName", ...channelsRenameHandler)
   .post("/channels/:channel/rename/:newName", ...channelsRenameHandler)
-  .post("/channels/rename", ...helpRoute(channelsRenameHelp))
-  .post("/channels/:channel/rename", ...helpRoute(channelsRenameHelp))
+  .post("/channels/rename", ...channelsRenameHelpHandler)
+  .post("/channels/:channel/rename", ...channelsChannelRenameHelpHandler)
   .post("/channels/:channel/set/delivery/:mode", ...channelsSetDeliveryHandler)
-  .post("/channels/publish", ...helpRoute(channelsPublishHelp))
+  .post("/channels/publish", ...channelsPublishHelpHandler)
   .post("/channels/:channel/publish", ...channelsPublishHandler)
   .get("/channels/:channel/validate", ...channelsValidateHandler)
-  .get("/channels/validate", ...helpRoute(channelsValidateHelp))
+  .get("/channels/validate", ...channelsValidateHelpHandler)
   .get("/channels/:channel", ...channelsShowHandler)
   .get("/channels/:channel/connectors", ...channelsConnectorsGroupHandler)
-  .post(
-    "/channels/:channel/connectors/add",
-    ...helpRoute(channelsConnectorsAddHelp),
-  )
-  .post(
-    "/channels/:channel/connectors/add/:connector",
-    ...channelsConnectorsAddHandler,
-  )
-  .post(
-    "/channels/:channel/connectors/remove",
-    ...helpRoute(channelsConnectorsRemoveHelp),
-  )
-  .post(
-    "/channels/:channel/connectors/remove/:connector",
-    ...channelsConnectorsRemoveHandler,
-  )
-  .post(
-    "/channels/:channel/connectors/set",
-    ...helpRoute(channelsConnectorsSetHelp),
-  )
-  .post(
-    "/channels/:channel/connectors/set/:connector",
-    ...channelsConnectorsSetHandler,
-  )
+  .post("/channels/:channel/connectors/add", ...channelsConnectorsAddHelpHandler)
+  .post("/channels/:channel/connectors/add/:connector", ...channelsConnectorsAddHandler)
+  .post("/channels/:channel/connectors/remove", ...channelsConnectorsRemoveHelpHandler)
+  .post("/channels/:channel/connectors/remove/:connector", ...channelsConnectorsRemoveHandler)
+  .post("/channels/:channel/connectors/set", ...channelsConnectorsSetHelpHandler)
+  .post("/channels/:channel/connectors/set/:connector", ...channelsConnectorsSetHandler)
   .post(
     "/channels/:channel/connectors/rename/:connector/:newName",
     ...channelsConnectorsRenameHandler,
@@ -165,18 +104,12 @@ export const createCliApp = (funnel: Funnel) => {
     "/channels/:channel/connectors/:connector/rename/:newName",
     ...channelsConnectorsRenameHandler,
   )
-  .post(
-    "/channels/:channel/connectors/rename",
-    ...helpRoute(channelsConnectorsRenameHelp),
-  )
+  .post("/channels/:channel/connectors/rename", ...channelsConnectorsRenameHelpHandler)
   .post(
     "/channels/:channel/connectors/:connector/rename",
-    ...helpRoute(channelsConnectorsRenameHelp),
+    ...channelsConnectorRenameHelpHandler,
   )
-  .post(
-    "/channels/:channel/connectors/:connector/request",
-    ...channelsConnectorsRequestHandler,
-  )
+  .post("/channels/:channel/connectors/:connector/request", ...channelsConnectorsRequestHandler)
   .get("/channels/:channel/connectors/:connector", ...channelsConnectorsShowHandler)
   .get(
     "/channels/:channel/connectors/:connector/schedules",
@@ -184,7 +117,7 @@ export const createCliApp = (funnel: Funnel) => {
   )
   .post(
     "/channels/:channel/connectors/:connector/schedules/add",
-    ...helpRoute(channelsConnectorsSchedulesAddHelp),
+    ...channelsConnectorSchedulesAddHelpHandler,
   )
   .post(
     "/channels/:channel/connectors/:connector/schedules/add/:id",
@@ -192,23 +125,23 @@ export const createCliApp = (funnel: Funnel) => {
   )
   .post(
     "/channels/:channel/connectors/:connector/schedules/remove",
-    ...helpRoute(channelsConnectorsSchedulesRemoveHelp),
+    ...channelsConnectorSchedulesRemoveHelpHandler,
   )
   .post(
     "/channels/:channel/connectors/:connector/schedules/remove/:id",
     ...channelsConnectorsSchedulesRemoveHandler,
   )
   .get("/profiles", ...profilesGroupHandler)
-  .post("/profiles/add", ...helpRoute(profilesAddHelp))
+  .post("/profiles/add", ...profilesAddHelpHandler)
   .post("/profiles/add/:profile", ...profilesAddHandler)
-  .post("/profiles/set", ...helpRoute(profilesSetHelp))
+  .post("/profiles/set", ...profilesSetHelpHandler)
   .post("/profiles/set/:profile", ...profilesSetHandler)
-  .post("/profiles/remove", ...helpRoute(profilesRemoveHelp))
+  .post("/profiles/remove", ...profilesRemoveHelpHandler)
   .post("/profiles/remove/:profile", ...profilesRemoveHandler)
   .post("/profiles/rename/:profile/:newName", ...profilesRenameHandler)
   .post("/profiles/:profile/rename/:newName", ...profilesRenameHandler)
-  .post("/profiles/rename", ...helpRoute(profilesRenameHelp))
-  .post("/profiles/:profile/rename", ...helpRoute(profilesRenameHelp))
+  .post("/profiles/rename", ...profilesRenameHelpHandler)
+  .post("/profiles/:profile/rename", ...profilesProfileRenameHelpHandler)
   .post("/profiles/:profile/as-default", ...profilesAsDefaultHandler)
   .get("/profiles/:profile/run", ...profilesLaunchHandler)
   .get("/profiles/:profile", ...profilesLaunchHandler)
@@ -229,7 +162,5 @@ export const createCliApp = (funnel: Funnel) => {
   .get("/schema", ...schemaHandler)
   .get("/status", ...statusHandler)
   .get("/update", ...updateHandler)
-}
 
-/** CLI Hono app wired to a default `new Funnel()`. For embedding with a custom Funnel use `createCliApp`. */
-export const app = createCliApp(new Funnel())
+export type CliApp = typeof routes

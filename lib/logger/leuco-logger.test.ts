@@ -56,7 +56,11 @@ describe("LeucoLogger", () => {
       getMaxSeq: () => 0,
     }
     const relay = new LeucoLoggerMemorySink<Event>()
-    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary, relays: [relay] })
+    const logger = new LeucoLogger({
+      validate: (e) => eventSchema.safeParse(e),
+      primary,
+      relays: [relay],
+    })
 
     const outcome = logger.emit({ type: "hello", name: "x" })
 
@@ -188,7 +192,11 @@ describe("LeucoLogger", () => {
         relayClosed = true
       },
     }
-    const logger = new LeucoLogger({ validate: (e) => eventSchema.safeParse(e), primary, relays: [relay] })
+    const logger = new LeucoLogger({
+      validate: (e) => eventSchema.safeParse(e),
+      primary,
+      relays: [relay],
+    })
     const seen: number[] = []
     logger.subscribe((r) => seen.push(r.seq))
 

@@ -210,4 +210,3 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - recipe（options/env/resume）は解決された profile から `LaunchOptions` 経由で渡す。argv の組立順は `[profile.options] [user CLI args] [MCP server flag]`。env は `profile.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
 - 同一 profile 名の二重起動は PID ファイルで拒否する
 - `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `public/schema.json` を再生成
-

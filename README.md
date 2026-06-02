@@ -55,9 +55,7 @@ bun add -D @interactive-inc/claude-funnel
   "channels": [
     {
       "name": "ops",
-      "connectors": [
-        { "type": "slack", "name": "my-slack" }
-      ]
+      "connectors": [{ "type": "slack", "name": "my-slack" }]
     },
     {
       "name": "review"
@@ -351,20 +349,20 @@ funnel.channels.addConnector("inbox", {
 `channels` / `profiles` / `gateway` / `listeners` / `mcp` / `claude` など全ファセットが同じインスタンスから辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
 
 ```ts
-await funnel.gateway.start()              // デーモンを別プロセスとして spawn
-funnel.gateway.getStatus()                // { running, pid, port }
+await funnel.gateway.start() // デーモンを別プロセスとして spawn
+funnel.gateway.getStatus() // { running, pid, port }
 
 await funnel.listeners.start("inbox", "my-slack")
 await funnel.listeners.restart("inbox", "my-slack")
 
-await funnel.claude.launch({ channel: "inbox" })   // claude を起動（.mcp.json も自動で書く）
+await funnel.claude.launch({ channel: "inbox" }) // claude を起動（.mcp.json も自動で書く）
 ```
 
 デーモンを spawn せず、gateway をインプロセスで動かすこともできる（テストや埋め込み向け）。`onEvent` で全 broadcast イベントをインプロセスで観測できる。
 
 ```ts
 const server = funnel.gatewayServer({ port: 9742 })
-await server.start()                       // Bun.serve (HTTP + WS) + listener supervisor
+await server.start() // Bun.serve (HTTP + WS) + listener supervisor
 const unsubscribe = server.onEvent(({ content, meta }) => {
   console.log(meta?.connector, content)
 })
@@ -379,8 +377,8 @@ unsubscribe()
 `Funnel.inMemory()` は全 IO 境界（ディスク / プロセス / clock / UUID）を Memory 実装で配線済みの Funnel を返す。`props` の任意の部分集合で個々の seam を上書きできるので、実 FS や spawn に触れずにテストを書ける。
 
 ```ts
-const funnel = Funnel.inMemory()        // 実ディスク / プロセス / clock / UUID に触れない
-funnel.channels.add({ name: "inbox" })  // インメモリ store を変更する
+const funnel = Funnel.inMemory() // 実ディスク / プロセス / clock / UUID に触れない
+funnel.channels.add({ name: "inbox" }) // インメモリ store を変更する
 ```
 
 `fnl` を支える Hono アプリ（`createCliApp` / `toRequest`）や、各コネクタの Zod スキーマ（`connectorConfigSchema`）も export している。詳細は型定義を参照。

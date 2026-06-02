@@ -4,7 +4,7 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { renderGatewayStatus } from "@/cli/routes/gateway"
 
-export const statusHelp = `funnel gateway status — show gateway running status
+const statusHelp = `funnel gateway status — show gateway running status
 
 usage: funnel gateway status [--json]
 
@@ -26,7 +26,7 @@ export const gatewayStatusHandler = factory.createHandlers(
 
     if (!isJson) return renderGatewayStatus(c)
 
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const status = funnel.gateway.getStatus()
 
     if (!status.running) {
@@ -36,7 +36,12 @@ export const gatewayStatusHandler = factory.createHandlers(
     const res = await fetch(`http://127.0.0.1:${status.port}/status`).catch(() => null)
 
     if (!res) {
-      return c.json({ running: true, pid: status.pid, port: status.port, error: "health check failed" })
+      return c.json({
+        running: true,
+        pid: status.pid,
+        port: status.port,
+        error: "health check failed",
+      })
     }
 
     const data = await res.json()

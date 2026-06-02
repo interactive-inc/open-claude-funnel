@@ -43,9 +43,7 @@ export class FunnelChannelSubscriber {
     ws.addEventListener("message", (event) => this.handleMessage(event))
 
     ws.addEventListener("close", () => {
-      process.stderr.write(
-        `funnel: disconnected, reconnecting in ${this.state.reconnectDelay}ms\n`,
-      )
+      process.stderr.write(`funnel: disconnected, reconnecting in ${this.state.reconnectDelay}ms\n`)
       setTimeout(() => this.connect(), this.state.reconnectDelay)
       this.state.reconnectDelay = Math.min(this.state.reconnectDelay * 2, MAX_RECONNECT_DELAY)
     })

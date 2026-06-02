@@ -5,7 +5,7 @@ import { factory } from "@/cli/factory"
 import type { Env } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const groupHelp = `funnel gateway — manage the funnel daemon
+const groupHelp = `funnel gateway — manage the funnel daemon
 
 The gateway daemon hosts the WebSocket /ws (used by Claude MCP) and the
 listener supervisor that runs every connector. One daemon, one port (9743
@@ -60,7 +60,7 @@ type GatewayStatusResponse = {
 }
 
 export const renderGatewayStatus = async (c: Context<Env>) => {
-  const funnel = c.var.funnel
+  const funnel = c.env.funnel
   const status = funnel.gateway.getStatus()
 
   if (!status.running) {

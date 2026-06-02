@@ -3,7 +3,7 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import type { Funnel } from "@/funnel"
 
-export const statusHelp = `funnel status — overall health at a glance
+const statusHelp = `funnel status — overall health at a glance
 
 usage: funnel status [--watch] [--interval <N>]
 
@@ -88,7 +88,9 @@ const buildStatusLines = async (funnel: Funnel): Promise<string[]> => {
       }
     }
 
-    lines.push(`gateway: running (pid ${gatewayStatus.pid}, port ${gatewayStatus.port})${uptimeStr}`)
+    lines.push(
+      `gateway: running (pid ${gatewayStatus.pid}, port ${gatewayStatus.port})${uptimeStr}`,
+    )
   }
 
   lines.push("")
@@ -123,7 +125,8 @@ const buildStatusLines = async (funnel: Funnel): Promise<string[]> => {
       ch.connectors.length > 0 ? ch.connectors.map((conn) => conn.type).join(", ") : "no connectors"
 
     const isAlive = listenerAliveByChannel.get(ch.name)
-    const indicator = gatewayData === null ? "-" : isAlive === true ? "●" : isAlive === false ? "○" : "-"
+    const indicator =
+      gatewayData === null ? "-" : isAlive === true ? "●" : isAlive === false ? "○" : "-"
 
     const claudeCount = clientsByChannel.get(ch.name) ?? 0
     const claudeLabel =
@@ -149,9 +152,7 @@ const buildStatusLines = async (funnel: Funnel): Promise<string[]> => {
     const channel = funnel.channels.getById(profile.channelId)
     const channelLabel = channel ? channel.name : `id:${profile.channelId}`
 
-    lines.push(
-      `  - ${profile.name}${tag} [path=${profile.path}, channel=${channelLabel}]`,
-    )
+    lines.push(`  - ${profile.name}${tag} [path=${profile.path}, channel=${channelLabel}]`)
   }
 
   return lines
@@ -168,7 +169,7 @@ export const statusHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
     const isWatch = query.watch === "true" || query.watch === ""
     const intervalSec = Math.min(60, Math.max(1, query.interval ? Number(query.interval) : 3))
 

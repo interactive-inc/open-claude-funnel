@@ -3,15 +3,6 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-export const publishHelp = `funnel channels <channel> publish — push arbitrary content into a channel
-
-usage: funnel channels <channel> publish --content="<text>" [--connector=<name>] [--meta-<key>=<value> ...]
-
-options:
-  --content       Required. The event body delivered to subscribers.
-  --connector     Optional. Stamp the event with a connector name (resolved to id when found).
-  --meta-<key>    Optional. Repeatable. Added to meta. Example: --meta-source=cron`
-
 const querySchema = z
   .object({
     content: z.string().min(1, { message: "--content is required" }),
@@ -21,11 +12,11 @@ const querySchema = z
 
 export const channelsPublishHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string() })),
-  zValidator("query", querySchema, publishHelp),
+  zValidator("query", querySchema),
   async (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
-    const funnel = c.var.funnel
+    const funnel = c.env.funnel
 
     const meta: Record<string, string> = {}
 
@@ -40,7 +31,9 @@ export const channelsPublishHandler = factory.createHandlers(
     })
 
     if (result.state === "offline") {
-      throw new HTTPException(503, { message: "gateway daemon is not running — start it with `fnl gateway start`" })
+      throw new HTTPException(503, {
+        message: "gateway daemon is not running — start it with `fnl gateway start`",
+      })
     }
 
     if (result.state === "error") {

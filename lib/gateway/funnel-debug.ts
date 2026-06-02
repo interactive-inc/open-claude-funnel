@@ -7,8 +7,21 @@ import type { FunnelChannels } from "@/engine/channels/channels"
 type GatewayStatusResponse = {
   pid: number
   uptimeMs: number
-  clients: { channel: string; channelName: string | null; connectors: string[]; tapAll: boolean | null }[]
-  listeners: { channelName: string; name: string; type: string; alive: boolean; events: number; errors: number; lastEventAt: string | null }[]
+  clients: {
+    channel: string
+    channelName: string | null
+    connectors: string[]
+    tapAll: boolean | null
+  }[]
+  listeners: {
+    channelName: string
+    name: string
+    type: string
+    alive: boolean
+    events: number
+    errors: number
+    lastEventAt: string | null
+  }[]
 }
 
 export type FunnelDebugReport = {
