@@ -22,7 +22,7 @@ import type {
 type Deps = {
   store: FunnelSettingsReader
   factory: FunnelConnectorFactory
-  profileChecker: ProfileChannelChecker
+  profileChecker?: ProfileChannelChecker
   clock?: FunnelClock
   idGenerator?: FunnelIdGenerator
 }
@@ -95,14 +95,14 @@ const defaultIdGenerator = new NodeFunnelIdGenerator()
 export class FunnelChannels {
   private readonly store: FunnelSettingsReader
   private readonly factory: FunnelConnectorFactory
-  private readonly profileChecker: ProfileChannelChecker
+  private readonly profileChecker: ProfileChannelChecker | null
   private readonly clock: FunnelClock
   private readonly idGenerator: FunnelIdGenerator
 
   constructor(deps: Deps) {
     this.store = deps.store
     this.factory = deps.factory
-    this.profileChecker = deps.profileChecker
+    this.profileChecker = deps.profileChecker ?? null
     this.clock = deps.clock ?? defaultClock
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     Object.freeze(this)
@@ -157,7 +157,7 @@ export class FunnelChannels {
 
     const channel = settings.channels[index]
 
-    if (channel && this.profileChecker.hasChannelRef(channel.id)) {
+    if (channel && this.profileChecker?.hasChannelRef(channel.id)) {
       throw new Error(`channel "${name}" is referenced by a profile`)
     }
 

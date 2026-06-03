@@ -14,8 +14,9 @@ export const profilesAsDefaultHandler = factory.createHandlers(
   (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel
+    const { profiles, claude } = c.env
 
-    funnel.profiles.asDefault(param.profile)
+    profiles.asDefault(param.profile)
 
     return c.text(`profile "${param.profile}" is now the default`)
   },

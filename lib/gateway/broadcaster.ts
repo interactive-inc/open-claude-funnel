@@ -19,9 +19,8 @@ type ClientData = {
   channel: string
   /** Human-facing channel name resolved at upgrade time, kept for log readability. */
   channelName?: string | null
-  /** Connector names belonging to that channel; used by tap-all replay filtering. */
+  /** Connector names belonging to that channel. */
   connectors: string[]
-  tapAll?: boolean
   /** Routing mode resolved from channel config at upgrade time. Defaults to fanout. */
   delivery?: "fanout" | "exclusive"
   /**
@@ -176,8 +175,6 @@ export class FunnelBroadcaster {
   }
 
   private matchesClient(event: BroadcastEvent, data: ClientData): boolean {
-    if (data.tapAll) return true
-
     const target = event.meta?.target
 
     if (target && target !== data.subscriberId) return false
@@ -194,15 +191,12 @@ export class FunnelBroadcaster {
   }
 
   /**
-   * Returns the list of WS clients that should receive `event`. Tap=all clients always
-   * receive (passive observation). For each per-channel group:
+   * Returns the list of WS clients that should receive `event`. For each per-channel group:
    *   - fanout → every matching client receives
    *   - exclusive → exactly one client receives, picked round-robin per channel
    *
-   * `meta.target` narrows the regular (non-tap) recipient set first via
-   * `matchesClient`: only the subscriber whose `subscriberId` equals `target`
-   * stays in the running, so a targeted event reaches one named instance while
-   * still being observable by tap=all clients.
+   * `meta.target` narrows the recipient set via `matchesClient`: only the subscriber
+   * whose `subscriberId` equals `target` receives a targeted event.
    */
   private pickRecipients(event: BroadcastEvent): ServerWebSocket<unknown>[] {
     const exclusiveByChannel = new Map<string, ServerWebSocket<unknown>[]>()
@@ -210,11 +204,6 @@ export class FunnelBroadcaster {
 
     for (const [ws, data] of this.clients) {
       if (!this.matchesClient(event, data)) continue
-
-      if (data.tapAll) {
-        recipients.push(ws)
-        continue
-      }
 
       if (data.delivery === "exclusive") {
         const list = exclusiveByChannel.get(data.channel) ?? []

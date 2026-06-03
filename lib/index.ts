@@ -1,20 +1,18 @@
 // Public API surface for the @interactive-inc/claude-funnel package.
-// Organized by layer so consumers can find what they need at a glance.
+//
+// Sub-entries for targeted imports:
+//   "@interactive-inc/claude-funnel/gateway"      in-process gateway building blocks
+//   "@interactive-inc/claude-funnel/profiles"     named launch profiles
+//   "@interactive-inc/claude-funnel/local-config" funnel.json reader / writer / syncer
+//
+// Claude Code integration (FunnelClaude, FunnelMcp) is intentionally not
+// exposed as a sub-entry — use the Funnel facade's .claude getter instead.
 
 // Facade
 export * from "@/funnel"
 
 // Engine — domain
 export * from "@/engine/channels/channels"
-export * from "@/engine/claude/claude"
-export * from "@/engine/mcp/mcp"
-export * from "@/engine/mcp/channel-server"
-export * from "@/engine/local-config/local-config"
-export * from "@/engine/local-config/local-config-json-schema"
-export * from "@/engine/local-config/local-config-schema"
-export * from "@/engine/local-config/local-config-sync"
-export * from "@/engine/local-config/local-config-writer"
-export * from "@/engine/profiles/profiles"
 export * from "@/engine/settings/settings-reader"
 export * from "@/engine/settings/settings-store"
 export * from "@/engine/settings/mock-settings-reader"
@@ -41,10 +39,6 @@ export * from "@/engine/time/memory-clock"
 export * from "@/engine/id/id-generator"
 export * from "@/engine/id/node-id-generator"
 export * from "@/engine/id/memory-id-generator"
-
-export * from "@/engine/token-prompter/token-prompter"
-export * from "@/engine/token-prompter/node-token-prompter"
-export * from "@/engine/token-prompter/memory-token-prompter"
 
 export * from "@/engine/error/on-funnel-error"
 

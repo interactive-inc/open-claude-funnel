@@ -22,6 +22,7 @@ export const profilesAddHandler = factory.createHandlers(
     const param = c.req.valid("param")
     const query = c.req.valid("query")
     const funnel = c.env.funnel
+    const { profiles, claude } = c.env
 
     const channel = funnel.channels.get(query.channel)
 
@@ -31,7 +32,7 @@ export const profilesAddHandler = factory.createHandlers(
 
     const recipe = parseProfileRecipe(query)
 
-    funnel.profiles.add({
+    profiles.add({
       name: param.profile,
       path: query.path,
       channelId: channel.id,

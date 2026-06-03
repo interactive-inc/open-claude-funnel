@@ -8,7 +8,6 @@ import {
   type SlackListenerOptions,
 } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
-import { FunnelClaude } from "@/engine/claude/claude"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
@@ -16,18 +15,11 @@ import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
-import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
-import { FunnelLocalConfigWriter } from "@/engine/local-config/local-config-writer"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
-import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
-import { FunnelProfiles } from "@/engine/profiles/profiles"
-import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prompter"
-import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FunnelSettingsStore, resolveFunnelDir } from "@/engine/settings/settings-store"
@@ -63,8 +55,6 @@ type Props = {
   clock?: FunnelClock
   /** ID generator for channel and connector ids. Use MemoryFunnelIdGenerator for deterministic tests. */
   idGenerator?: FunnelIdGenerator
-  /** Prompter used by FunnelLocalConfigSync when funnel.json omits a token. Defaults to a TTY-only stdin prompter. */
-  tokenPrompter?: FunnelTokenPrompter
   /** Funnel home directory (settings.json + per-channel/per-connector dirs). Defaults to ~/.funnel. */
   dir?: string
   /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to `<os.tmpdir()>/funnel`. */
@@ -93,6 +83,11 @@ type Props = {
    * `Sentry.captureException` from the host to surface these. Defaults to no-op.
    */
   onError?: OnFunnelError
+  /**
+   * Gateway daemon port. Passed directly to FunnelGateway so hosts can override
+   * the default (9742) without setting FUNNEL_PORT in the environment.
+   */
+  port?: number
 }
 
 /**
@@ -123,13 +118,6 @@ export class Funnel {
     store?: FunnelSettingsReader
     factory?: FunnelConnectorFactory
     channels?: FunnelChannels
-    profiles?: FunnelProfiles
-    localConfig?: FunnelLocalConfig
-    localConfigWriter?: FunnelLocalConfigWriter
-    localConfigSync?: FunnelLocalConfigSync
-    tokenPrompter?: FunnelTokenPrompter
-    mcp?: FunnelMcp
-    claude?: FunnelClaude
     gateway?: FunnelGateway
     gatewayToken?: FunnelGatewayToken
     publisher?: FunnelChannelPublisher
@@ -248,87 +236,12 @@ export class Funnel {
       this.memos.channels = new FunnelChannels({
         store: this.store,
         factory: this.factory,
-        profileChecker: this.profiles,
         clock: this.clock,
         idGenerator: this.idGenerator,
       })
     }
 
     return this.memos.channels
-  }
-
-  /** Launch profiles (named presets for `fnl claude`: path + sub-agent + channel id). */
-  get profiles(): FunnelProfiles {
-    if (!this.memos.profiles) {
-      this.memos.profiles = new FunnelProfiles({ store: this.store, idGenerator: this.idGenerator })
-    }
-
-    return this.memos.profiles
-  }
-
-  /** Reads `funnel.json` from a cwd. `fnl claude` consults it before falling back to the default profile. */
-  get localConfig(): FunnelLocalConfig {
-    if (!this.memos.localConfig) {
-      this.memos.localConfig = new FunnelLocalConfig({ fs: this.fs })
-    }
-
-    return this.memos.localConfig
-  }
-
-  /** Writes the stable `id` into funnel.json on first launch so state can be scoped to `~/.funnel/projects/<id>/`. */
-  get localConfigWriter(): FunnelLocalConfigWriter {
-    if (!this.memos.localConfigWriter) {
-      this.memos.localConfigWriter = new FunnelLocalConfigWriter({ fs: this.fs })
-    }
-
-    return this.memos.localConfigWriter
-  }
-
-  /** Secret prompter. Defaults to a TTY-only stdin reader; tests inject MemoryFunnelTokenPrompter. */
-  get tokenPrompter(): FunnelTokenPrompter {
-    if (!this.memos.tokenPrompter) {
-      this.memos.tokenPrompter = this.props.tokenPrompter ?? new NodeFunnelTokenPrompter()
-    }
-
-    return this.memos.tokenPrompter
-  }
-
-  /** Reconciles funnel.json's channel + connectors with `~/.funnel/settings.json` on launch. */
-  get localConfigSync(): FunnelLocalConfigSync {
-    if (!this.memos.localConfigSync) {
-      this.memos.localConfigSync = new FunnelLocalConfigSync({
-        channels: this.channels,
-        prompter: this.tokenPrompter,
-      })
-    }
-
-    return this.memos.localConfigSync
-  }
-
-  /** funnel MCP installer (writes/removes `.mcp.json` entries in target repos). */
-  get mcp(): FunnelMcp {
-    if (!this.memos.mcp) this.memos.mcp = new FunnelMcp({ fs: this.fs })
-
-    return this.memos.mcp
-  }
-
-  /** Launch Claude Code with a channel injected via env, MCP installed, gateway ensured. */
-  get claude(): FunnelClaude {
-    if (!this.memos.claude) {
-      this.memos.claude = new FunnelClaude({
-        channels: this.channels,
-        mcp: this.mcp,
-        gateway: this.gateway,
-        profiles: this.profiles,
-        fs: this.fs,
-        process: this.process,
-        idGenerator: this.idGenerator,
-        logger: this.logger,
-        dir: this.paths.dir,
-      })
-    }
-
-    return this.memos.claude
   }
 
   /** Gateway daemon controller (PID-file, start/stop the separate `bun daemon.ts` process). */
@@ -340,6 +253,7 @@ export class Funnel {
         clock: this.clock,
         dir: this.paths.dir,
         tmpDir: this.paths.tmpDir,
+        port: this.props.port,
       })
     }
 
@@ -422,7 +336,6 @@ export class Funnel {
   ): FunnelGatewayServer {
     return new FunnelGatewayServer({
       channels: this.channels,
-      settings: this.store,
       port: options.port,
       hostname: options.hostname,
       dbPath: options.dbPath,

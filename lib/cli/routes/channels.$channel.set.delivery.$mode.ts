@@ -11,7 +11,6 @@ modes:
   fanout      every connected WS client receives every event (default)
   exclusive   each event is delivered to exactly one connected client (round-robin)
 
-tap=all clients (TUI dashboard, debugging) always receive regardless of mode.
 `
 
 export const channelsSetDeliveryHandler = factory.createHandlers(

@@ -11,7 +11,6 @@ type GatewayStatusResponse = {
     channel: string
     channelName: string | null
     connectors: string[]
-    tapAll: boolean | null
   }[]
   listeners: {
     channelName: string
@@ -110,7 +109,7 @@ export const buildFunnelDebugReport = async (
       : null
 
     const claudeClients = (gatewayData?.clients ?? []).filter(
-      (cl) => !cl.tapAll && (cl.channelName === ch.name || cl.channel === ch.name),
+      (cl) => cl.channelName === ch.name || cl.channel === ch.name,
     )
 
     report.channels.push({

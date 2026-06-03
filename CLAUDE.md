@@ -23,7 +23,6 @@ CLI とプログラマブル API (`new Funnel(...)`) を 1 つの core から共
 
 - `fanout` — 全 subscriber が全 event を受信する。各 subscriber が独立した仕事を持つ場合（複数 Profile が同じ source を別々に処理する、観察用クライアントが覗くなど）
 - `exclusive` — 1 event を 1 subscriber が round-robin で消費する。subscriber が交換可能な worker で、各 event を 1 回だけ処理させたい場合
-- `tap=all`（観察用クライアント）は delivery mode に関係なく常に全部受信する
 
 ### Connector
 
@@ -97,6 +96,93 @@ bun lib/bin.ts <args> # 開発用直接実行（build 不要、起動 ~2s）
 engine ← connectors ← gateway ← cli
                                 ↖ bin.ts → funnel.ts (facade)
 ```
+
+### クラス依存図
+
+```mermaid
+graph TD
+  subgraph boundaries["境界インターフェース（抽象）"]
+    FS[FileSystem]
+    PR[ProcessRunner]
+    CL[Clock]
+    IG[IdGenerator]
+    LG[Logger]
+    SR[SettingsReader]
+    EL[EventLog]
+    TP[TokenPrompter]
+  end
+
+  subgraph storage["ストレージ層"]
+    SS[SettingsStore]
+    GT[GatewayToken]
+  end
+
+  subgraph engine["エンジン層"]
+    CF[ConnectorFactory]
+    CH[Channels]
+    PR2[Profiles]
+    LC[LocalConfig + Sync + Writer]
+    MC[Mcp]
+  end
+
+  subgraph gateway["ゲートウェイ層"]
+    BC[Broadcaster]
+    LS[ListenerSupervisor]
+    GS[GatewayServer]
+    GW[Gateway]
+    CP[ChannelPublisher]
+    LC2[ListenersClient]
+  end
+
+  subgraph facade["ファサード"]
+    FN[Funnel]
+    FC[FunnelClaude]
+  end
+
+  subgraph interfaces["FunnelClaude の narrow interfaces"]
+    CR[ChannelResolver]
+    MI[McpInstaller]
+    GC[GatewayController]
+    SS2[SessionStore]
+  end
+
+  boundaries --> storage
+  boundaries --> engine
+  boundaries --> gateway
+  SS --> CH
+  SS --> PR2
+  CF --> CH
+  CH -.implements.-> CR
+  MC -.implements.-> MI
+  GW -.implements.-> GC
+  PR2 -.implements.-> SS2
+  CR --> FC
+  MI --> FC
+  GC --> FC
+  SS2 --> FC
+  CH --> LS
+  CH --> GS
+  BC --> GS
+  LS --> GS
+  GS --> GW
+  GW --> FN
+  CH --> FN
+  FC --> FN
+```
+
+**矢印の読み方：**
+- `A --> B` は「B が A を使う（A に依存する）」。依存は常に下から上の一方向
+- `A -.implements.-> B` は「A が B のインターフェースを満たす」。`FunnelClaude` は具体クラスでなく narrow interface に依存するため、テスト時にスタブで差し替えられる
+
+**サブエントリとの対応：**
+
+| import | 対応するレイヤ |
+|--------|---------------|
+| `"."` | ファサード（Funnel）全体 |
+| `"./gateway"` | ゲートウェイ層のブロック単品 |
+| `"./profiles"` | エンジン層の Profiles 単品 |
+| `"./local-config"` | エンジン層の LocalConfig 群単品 |
+| `"./connectors/*"` | コネクタ層の各コネクタ単品 |
 
 ### lib/engine
 

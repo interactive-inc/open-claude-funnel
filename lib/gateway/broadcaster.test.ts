@@ -140,7 +140,7 @@ describe("FunnelBroadcaster", () => {
     broadcaster.broadcast("b")
     broadcaster.broadcast("c")
 
-    const replay = broadcaster.replaySince(1, { channel: "x", connectors: [], tapAll: true })
+    const replay = broadcaster.replaySince(1, { channel: "x", connectors: [] })
 
     expect(replay.map((e) => e.content)).toEqual(["b", "c"])
     expect(replay.map((e) => e.offset)).toEqual([2, 3])
@@ -156,7 +156,6 @@ describe("FunnelBroadcaster", () => {
     const replay = broadcaster.replaySince(0, {
       channel: "ops",
       connectors: ["slack-a"],
-      tapAll: false,
     })
 
     expect(replay.map((e) => e.content)).toEqual(["a", "c"])
@@ -169,7 +168,7 @@ describe("FunnelBroadcaster", () => {
     broadcaster.broadcast("b")
     broadcaster.broadcast("c")
 
-    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [], tapAll: true })
+    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [] })
 
     expect(replay.map((e) => e.content)).toEqual(["b", "c"])
     expect(broadcaster.getMetrics().oldestReplayableOffset).toBe(2)
@@ -180,7 +179,7 @@ describe("FunnelBroadcaster", () => {
 
     broadcaster.broadcast("a")
 
-    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [], tapAll: true })
+    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [] })
 
     expect(replay).toEqual([])
     expect(broadcaster.getMetrics().latestOffset).toBe(1)
@@ -203,7 +202,7 @@ describe("FunnelBroadcaster", () => {
     broadcaster.broadcast("live-4")
     broadcaster.broadcast("live-5")
 
-    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [], tapAll: true })
+    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [] })
 
     expect(replay.map((e) => e.content)).toEqual(["old-1", "old-2", "old-3", "live-4", "live-5"])
     expect(replay.map((e) => e.offset)).toEqual([1, 2, 3, 4, 5])
@@ -223,7 +222,7 @@ describe("FunnelBroadcaster", () => {
     broadcaster.broadcast("a")
     broadcaster.broadcast("b")
 
-    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [], tapAll: true })
+    const replay = broadcaster.replaySince(0, { channel: "x", connectors: [] })
 
     expect(replay.map((e) => e.content)).toEqual(["a", "b"])
   })
@@ -307,31 +306,6 @@ describe("FunnelBroadcaster", () => {
     expect(opsA.sent.length + opsB.sent.length).toBe(2)
   })
 
-  test("tap=all clients receive every event regardless of channel mode", () => {
-    const broadcaster = new FunnelBroadcaster()
-    const tap = new FakeWs()
-    const exclusive1 = new FakeWs()
-    const exclusive2 = new FakeWs()
-
-    broadcaster.addClient(asWs(tap), { channel: "*tap*", connectors: [], tapAll: true })
-    broadcaster.addClient(asWs(exclusive1), {
-      channel: "ops",
-      connectors: ["slack-x"],
-      delivery: "exclusive",
-    })
-    broadcaster.addClient(asWs(exclusive2), {
-      channel: "ops",
-      connectors: ["slack-x"],
-      delivery: "exclusive",
-    })
-
-    broadcaster.broadcast("e1", { connector: "slack-x" })
-    broadcaster.broadcast("e2", { connector: "slack-x" })
-
-    expect(tap.sent.length).toBe(2)
-    expect(exclusive1.sent.length + exclusive2.sent.length).toBe(2)
-  })
-
   test("fanout (default) preserves prior behavior — every matching client receives", () => {
     const broadcaster = new FunnelBroadcaster()
     const a = new FakeWs()
@@ -388,31 +362,6 @@ describe("FunnelBroadcaster", () => {
 
     broadcaster.broadcast("for ghost", { connector: "agent", target: "ghost" })
 
-    expect(alice.sent.length).toBe(0)
-  })
-
-  test("tap=all clients still observe targeted events", () => {
-    const broadcaster = new FunnelBroadcaster()
-    const tap = new FakeWs()
-    const alice = new FakeWs()
-    const bob = new FakeWs()
-
-    broadcaster.addClient(asWs(tap), { channel: "*tap*", connectors: [], tapAll: true })
-    broadcaster.addClient(asWs(alice), {
-      channel: "agents",
-      connectors: ["agent"],
-      subscriberId: "alice",
-    })
-    broadcaster.addClient(asWs(bob), {
-      channel: "agents",
-      connectors: ["agent"],
-      subscriberId: "bob",
-    })
-
-    broadcaster.broadcast("for bob", { connector: "agent", target: "bob" })
-
-    expect(tap.sent.length).toBe(1)
-    expect(bob.sent.length).toBe(1)
     expect(alice.sent.length).toBe(0)
   })
 

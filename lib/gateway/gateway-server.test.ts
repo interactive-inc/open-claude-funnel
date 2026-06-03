@@ -142,7 +142,7 @@ describe("FunnelGatewayServer auth integration", () => {
 
   test("/ws upgrade succeeds with the funnel.token sub-protocol", async () => {
     active = await startServer("secret-7")
-    const url = `ws://localhost:${active.httpServer.port}/ws?tap=all`
+    const url = `ws://localhost:${active.httpServer.port}/ws`
 
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url, ["funnel.token.secret-7"])

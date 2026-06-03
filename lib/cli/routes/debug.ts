@@ -97,7 +97,6 @@ type ChannelClient = {
   channel: string
   channelName: string | null
   connectors: string[]
-  tapAll: boolean | null
 }
 
 type GatewayStatusResponse = {
@@ -689,7 +688,7 @@ const buildChannelReport = async (
       }))
 
     baseReport.claudeClients = gatewayBodyOrNull.clients.filter(
-      (cl) => !cl.tapAll && cl.channelName === targetChannelName,
+      (cl) => cl.channelName === targetChannelName,
     ).length
   }
 

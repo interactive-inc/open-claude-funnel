@@ -29,11 +29,12 @@ export const profilesGroupHandler = factory.createHandlers(
   zValidator("query", z.object({}), groupHelp),
   (c) => {
     const funnel = c.env.funnel
-    const profiles = funnel.profiles.list()
+    const { profiles } = c.env
+    const profileList = profiles.list()
 
-    if (profiles.length === 0) return c.text("no profiles")
+    if (profileList.length === 0) return c.text("no profiles")
 
-    const lines = profiles.map((profile, index) => {
+    const lines = profileList.map((profile, index) => {
       const tag = index === 0 ? " (default)" : ""
       const recipe = profile.options.length > 0 ? `, options=${profile.options.join(" ")}` : ""
       const session = profile.resume ? "" : ", resume=false"

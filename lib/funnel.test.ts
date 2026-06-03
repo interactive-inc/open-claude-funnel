@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
+import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
@@ -7,7 +8,7 @@ import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runne
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 
-const buildFunnel = (): Funnel =>
+const buildCore = (): Funnel =>
   new Funnel({
     store: new MockFunnelSettingsReader(),
     fs: new MemoryFunnelFileSystem(),
@@ -19,7 +20,7 @@ const buildFunnel = (): Funnel =>
 
 describe("Funnel facade", () => {
   test("exposes channels with the channel-scoped connector API wired", () => {
-    const funnel = buildFunnel()
+    const funnel = buildCore()
 
     funnel.channels.add({ name: "ops" })
     funnel.channels.addConnector("ops", { type: "schedule", name: "cron" })
@@ -28,30 +29,33 @@ describe("Funnel facade", () => {
   })
 
   test("profiles see the same store as channels (shared settings)", () => {
-    const funnel = buildFunnel()
+    const funnel = buildCore()
+    const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
 
     const channel = funnel.channels.add({ name: "ops" })
 
-    funnel.profiles.add({
+    profiles.add({
       name: "default",
       path: "/repo",
       channelId: channel.id,
     })
 
-    expect(funnel.profiles.list()).toHaveLength(1)
-    expect(funnel.profiles.get("default")?.channelId).toBe(channel.id)
+    expect(profiles.list()).toHaveLength(1)
+    expect(profiles.get("default")?.channelId).toBe(channel.id)
   })
 
-  test("removing a channel referenced by a profile is rejected", () => {
-    const funnel = buildFunnel()
+  test("channels.remove works without a profileChecker wired", () => {
+    const funnel = buildCore()
+    const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
     const channel = funnel.channels.add({ name: "ops" })
 
-    funnel.profiles.add({
+    profiles.add({
       name: "default",
       path: "/repo",
       channelId: channel.id,
     })
 
-    expect(() => funnel.channels.remove("ops")).toThrow(/referenced by a profile/)
+    // profileChecker is not wired in core — remove proceeds without checking
+    expect(() => funnel.channels.remove("ops")).not.toThrow()
   })
 })

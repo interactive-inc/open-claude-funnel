@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { dispatchClaude } from "@/cli/dispatch-claude"
+import { FunnelClaude } from "@/engine/claude/claude"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
+import { FunnelLocalConfig } from "@/engine/local-config/local-config"
+import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
+import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
+import { FunnelProfiles } from "@/engine/profiles/profiles"
+import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import { Funnel } from "@/funnel"
+import type { DispatchDeps } from "@/cli/dispatch-claude"
 
 type Setup = {
+  deps: DispatchDeps
   funnel: Funnel
   fs: MemoryFunnelFileSystem
   process: MemoryFunnelProcessRunner
@@ -30,8 +38,27 @@ const buildSetup = (opts: { files?: Record<string, string>; dirs?: string[] } = 
   })
 
   const funnel = Funnel.inMemory({ fs, process: memoryProcess })
+  const mcp = new FunnelMcp({ fs })
+  const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
+  const localConfig = new FunnelLocalConfig({ fs })
+  const localConfigSync = new FunnelLocalConfigSync({
+    channels: funnel.channels,
+    prompter: new MemoryFunnelTokenPrompter(),
+  })
+  const claude = new FunnelClaude({
+    channels: funnel.channels,
+    mcp,
+    gateway: funnel.gateway,
+    sessions: profiles,
+    fs,
+    process: memoryProcess,
+    idGenerator: funnel.idGenerator,
+    dir: funnel.paths.dir,
+  })
 
-  return { funnel, fs, process: memoryProcess }
+  const deps: DispatchDeps = { claude, profiles, localConfig, localConfigSync, listeners: funnel.listeners }
+
+  return { deps, funnel, fs, process: memoryProcess }
 }
 
 const lastAttach = (process: MemoryFunnelProcessRunner) => {
@@ -46,10 +73,10 @@ const lastAttach = (process: MemoryFunnelProcessRunner) => {
 
 describe("dispatchClaude — argv parsing", () => {
   test("forwards positional args verbatim to claude", async () => {
-    const { funnel, process } = buildSetup()
+    const { deps, funnel, process } = buildSetup()
     funnel.channels.add({ name: "ops" })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "ops", "resume", "abc123"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--channel", "ops", "resume", "abc123"])
 
     const attach = lastAttach(process)
 
@@ -57,10 +84,10 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("forwards unknown short flags verbatim to claude", async () => {
-    const { funnel, process } = buildSetup()
+    const { deps, funnel, process } = buildSetup()
     funnel.channels.add({ name: "ops" })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "ops", "-c"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--channel", "ops", "-c"])
 
     const attach = lastAttach(process)
 
@@ -68,10 +95,10 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("forwards --agent xxx verbatim", async () => {
-    const { funnel, process } = buildSetup()
+    const { deps, funnel, process } = buildSetup()
     funnel.channels.add({ name: "ops" })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "ops", "--agent", "developer"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--channel", "ops", "--agent", "developer"])
 
     const attach = lastAttach(process)
 
@@ -79,16 +106,16 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("supports --profile=<name> equals form", async () => {
-    const { funnel, process } = buildSetup()
+    const { deps, funnel, process } = buildSetup()
     const channel = funnel.channels.add({ name: "ops" })
 
-    funnel.profiles.add({
+    deps.profiles.add({
       name: "cto",
       path: "/work",
       channelId: channel.id,
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--profile=cto", "--agent", "other"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--profile=cto", "--agent", "other"])
 
     const attach = lastAttach(process)
 
@@ -97,49 +124,49 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("supports -p shorthand", async () => {
-    const { funnel, process } = buildSetup()
+    const { deps, funnel, process } = buildSetup()
     const channel = funnel.channels.add({ name: "ops" })
 
-    funnel.profiles.add({
+    deps.profiles.add({
       name: "cto",
       path: "/work",
       channelId: channel.id,
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["-p", "cto"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["-p", "cto"])
 
     expect(lastAttach(process)?.options.cwd).toEqual("/work")
   })
 
   test("returns help when --help is given", async () => {
-    const { funnel } = buildSetup()
+    const { deps } = buildSetup()
 
-    const result = await dispatchClaude({ funnel, cwd: "/repo" }, ["--help"])
+    const result = await dispatchClaude({ ...deps, cwd: "/repo" }, ["--help"])
 
     expect(result.exitCode).toEqual(0)
     expect(result.stdout).toContain("funnel claude")
   })
 
   test("returns stderr and exit 1 when profile is missing", async () => {
-    const { funnel } = buildSetup()
+    const { deps } = buildSetup()
 
-    const result = await dispatchClaude({ funnel, cwd: "/repo" }, ["--profile", "missing"])
+    const result = await dispatchClaude({ ...deps, cwd: "/repo" }, ["--profile", "missing"])
 
     expect(result.exitCode).toEqual(1)
     expect(result.stderr).toContain("not found")
   })
 
   test("errors when --profile and --channel are combined", async () => {
-    const { funnel } = buildSetup()
+    const { deps, funnel } = buildSetup()
     const channel = funnel.channels.add({ name: "ops" })
 
-    funnel.profiles.add({
+    deps.profiles.add({
       name: "cto",
       path: "/work",
       channelId: channel.id,
     })
 
-    const result = await dispatchClaude({ funnel, cwd: "/repo" }, [
+    const result = await dispatchClaude({ ...deps, cwd: "/repo" }, [
       "--profile",
       "cto",
       "--channel",
@@ -151,17 +178,14 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("reads funnel.json from cwd and launches the first declared channel", async () => {
-    const { funnel, process } = buildSetup({
+    const { deps, funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({ channels: [{ name: "ops" }] }),
       },
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--agent", "developer"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--agent", "developer"])
 
-    // The channel is materialized into the funnel the launch uses. (cli/index.ts
-    // points FUNNEL_DIR at ~/.funnel/projects/<id>/ before dispatch runs; dispatch
-    // itself just reads funnel.json and syncs into the funnel it is handed.)
     expect(funnel.channels.get("ops")).not.toBeNull()
 
     const attach = lastAttach(process)
@@ -171,7 +195,7 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("picks a non-default channel by --channel name without applying any profile", async () => {
-    const { funnel, process } = buildSetup({
+    const { deps, funnel, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }, { name: "review" }],
@@ -183,18 +207,17 @@ describe("dispatchClaude — argv parsing", () => {
       },
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "review"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--channel", "review"])
 
     const command = lastAttach(process)?.command ?? []
 
-    // A channel binds transport only — no profile recipe leaks in by channel.
     expect(command).not.toContain("reviewer")
     expect(command).not.toContain("pm")
     expect(funnel.channels.get("review")).not.toBeNull()
   })
 
   test("errors when --channel names a channel not in funnel.json", async () => {
-    const { funnel } = buildSetup({
+    const { deps } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
@@ -202,38 +225,38 @@ describe("dispatchClaude — argv parsing", () => {
       },
     })
 
-    const result = await dispatchClaude({ funnel, cwd: "/repo" }, ["--channel", "missing"])
+    const result = await dispatchClaude({ ...deps, cwd: "/repo" }, ["--channel", "missing"])
 
     expect(result.exitCode).toEqual(1)
     expect(result.stderr).toContain("missing")
   })
 
   test("falls back to default profile when no funnel.json and no flags", async () => {
-    const { funnel, process } = buildSetup()
+    const { deps, funnel, process } = buildSetup()
     const channel = funnel.channels.add({ name: "ops" })
 
-    funnel.profiles.add({
+    deps.profiles.add({
       name: "default-profile",
       path: "/work",
       channelId: channel.id,
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, [])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, [])
 
     expect(lastAttach(process)?.options.cwd).toEqual("/work")
   })
 
   test("shows help when no flags, no funnel.json, and no default profile", async () => {
-    const { funnel } = buildSetup()
+    const { deps } = buildSetup()
 
-    const result = await dispatchClaude({ funnel, cwd: "/repo" }, [])
+    const result = await dispatchClaude({ ...deps, cwd: "/repo" }, [])
 
     expect(result.exitCode).toEqual(0)
     expect(result.stdout).toContain("funnel claude")
   })
 
   test("--profile <name> prepends the funnel.json profile options before user CLI args", async () => {
-    const { funnel, process } = buildSetup({
+    const { deps, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
@@ -242,7 +265,7 @@ describe("dispatchClaude — argv parsing", () => {
       },
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--profile", "dev", "--resume", "abc"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--profile", "dev", "--resume", "abc"])
 
     const attach = lastAttach(process)
     const command = attach?.command ?? []
@@ -255,7 +278,7 @@ describe("dispatchClaude — argv parsing", () => {
   })
 
   test("--profile <name> merges the funnel.json profile env into the claude process env", async () => {
-    const { funnel, process } = buildSetup({
+    const { deps, process } = buildSetup({
       files: {
         "/repo/funnel.json": JSON.stringify({
           channels: [{ name: "ops" }],
@@ -270,7 +293,7 @@ describe("dispatchClaude — argv parsing", () => {
       },
     })
 
-    await dispatchClaude({ funnel, cwd: "/repo" }, ["--profile", "dev"])
+    await dispatchClaude({ ...deps, cwd: "/repo" }, ["--profile", "dev"])
 
     const attach = lastAttach(process)
 

@@ -8,8 +8,9 @@ export const profilesRenameHandler = factory.createHandlers(
   (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel
+    const { profiles, claude } = c.env
 
-    funnel.profiles.rename(param.profile, param.newName)
+    profiles.rename(param.profile, param.newName)
 
     return c.text(`renamed profile "${param.profile}" to "${param.newName}"`)
   },

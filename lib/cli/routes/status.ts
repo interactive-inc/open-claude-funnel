@@ -2,6 +2,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import type { Funnel } from "@/funnel"
+import type { FunnelProfiles } from "@/engine/profiles/profiles"
 
 const statusHelp = `funnel status — overall health at a glance
 
@@ -26,7 +27,6 @@ type GatewayClient = {
   channel: string
   channelName: string | null
   connectors: string[]
-  tapAll: boolean | null
 }
 
 type ListenerStatus = {
@@ -51,9 +51,9 @@ const isGatewayStatus = (value: unknown): value is GatewayStatus => {
   return true
 }
 
-const buildStatusLines = async (funnel: Funnel): Promise<string[]> => {
+const buildStatusLines = async (funnel: Funnel, profiles: FunnelProfiles): Promise<string[]> => {
   const channels = funnel.channels.list()
-  const profiles = funnel.profiles.list()
+  const profileList = profiles.list()
   const gatewayStatus = funnel.gateway.getStatus()
 
   const lines: string[] = []
@@ -100,8 +100,6 @@ const buildStatusLines = async (funnel: Funnel): Promise<string[]> => {
 
   if (gatewayData) {
     for (const client of gatewayData.clients) {
-      if (client.tapAll) continue
-
       const key = client.channelName ?? client.channel
       clientsByChannel.set(key, (clientsByChannel.get(key) ?? 0) + 1)
     }
@@ -145,9 +143,9 @@ const buildStatusLines = async (funnel: Funnel): Promise<string[]> => {
 
   lines.push("")
 
-  lines.push(`profiles: ${profiles.length}`)
+  lines.push(`profiles: ${profileList.length}`)
 
-  for (const [index, profile] of profiles.entries()) {
+  for (const [index, profile] of profileList.entries()) {
     const tag = index === 0 ? " (default)" : ""
     const channel = funnel.channels.getById(profile.channelId)
     const channelLabel = channel ? channel.name : `id:${profile.channelId}`
@@ -174,13 +172,13 @@ export const statusHandler = factory.createHandlers(
     const intervalSec = Math.min(60, Math.max(1, query.interval ? Number(query.interval) : 3))
 
     if (!isWatch) {
-      const lines = await buildStatusLines(funnel)
+      const lines = await buildStatusLines(funnel, c.env.profiles)
 
       return c.text(lines.join("\n"))
     }
 
     const render = async () => {
-      const lines = await buildStatusLines(funnel)
+      const lines = await buildStatusLines(funnel, c.env.profiles)
       const ts = new Date().toISOString().slice(11, 19)
 
       process.stdout.write("\x1b[2J\x1b[H")

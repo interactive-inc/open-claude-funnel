@@ -44,11 +44,11 @@ export const claudeHandler = factory.createHandlers(
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const funnel = c.env.funnel
+    const { funnel, claude, profiles, localConfig, localConfigSync } = c.env
     const userArgs = queryToCliArgs(c.req.url, RESERVED_KEYS)
 
     if (query.channel && !query.profile) {
-      const exitCode = await funnel.claude.launch({
+      const exitCode = await claude.launch({
         channel: query.channel,
         userArgs,
       })
@@ -57,13 +57,13 @@ export const claudeHandler = factory.createHandlers(
     }
 
     if (query.profile) {
-      const profile = funnel.profiles.get(query.profile)
+      const profile = profiles.get(query.profile)
 
       if (!profile) {
         throw new HTTPException(404, { message: `profile "${query.profile}" not found` })
       }
 
-      const exitCode = await funnel.claude.launch({
+      const exitCode = await claude.launch({
         channel: profile.channelId,
         cwd: profile.path,
         userArgs,
@@ -77,7 +77,7 @@ export const claudeHandler = factory.createHandlers(
     }
 
     const cwd = process.cwd()
-    const local = funnel.localConfig.read(cwd)
+    const local = localConfig.read(cwd)
 
     if (local) {
       const picked =
@@ -93,7 +93,7 @@ export const claudeHandler = factory.createHandlers(
         })
       }
 
-      const synced = await funnel.localConfigSync.ensure(picked)
+      const synced = await localConfigSync.ensure(picked)
 
       for (const outcome of synced.touched) {
         if (outcome.changed) {
@@ -107,7 +107,7 @@ export const claudeHandler = factory.createHandlers(
         await funnel.listeners.stop(picked.name, name)
       }
 
-      const exitCode = await funnel.claude.launch({
+      const exitCode = await claude.launch({
         channel: picked.name,
         cwd,
         userArgs,
@@ -116,13 +116,13 @@ export const claudeHandler = factory.createHandlers(
       process.exit(exitCode)
     }
 
-    const defaultProfile = funnel.profiles.getDefault()
+    const defaultProfile = profiles.getDefault()
 
     if (!defaultProfile) {
       return c.text(claudeHelp)
     }
 
-    const exitCode = await funnel.claude.launch({
+    const exitCode = await claude.launch({
       channel: defaultProfile.channelId,
       cwd: defaultProfile.path,
       userArgs,

@@ -14,7 +14,6 @@ import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gatew
 import { gatewayRoutes } from "@/gateway/routes"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelProcessRunner } from "@/engine/process/process-runner"
-import type { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import type { FunnelClock } from "@/engine/time/clock"
@@ -28,7 +27,6 @@ const defaultDbPath = (): string => join(funnelTmpDir(), "events.db")
 
 type Deps = {
   channels: FunnelChannels
-  settings: FunnelSettingsReader
   port?: number
   /** Bind address for `Bun.serve`. Defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on the network. */
   hostname?: string
@@ -57,13 +55,12 @@ type Deps = {
 }
 
 type WsData = {
-  /** Stable channel id (uuid) the client subscribed to. "" for tap-all clients. */
+  /** Stable channel id (uuid) the client subscribed to. */
   channel: string
-  /** Resolved channel name (for log readability). null for tap-all or unknown. */
+  /** Resolved channel name (for log readability). null for unknown. */
   channelName: string | null
-  /** Connector names belonging to that channel; used by tap-all replay filtering. */
+  /** Connector names belonging to that channel. */
   connectors: string[]
-  tapAll?: boolean
   /** Routing mode for this channel; resolved at upgrade time from settings. */
   delivery: "fanout" | "exclusive"
   /** Opaque client id from `?id=<subscriberId>`; lets publishers target this client via `meta.target`. */
@@ -86,7 +83,6 @@ const defaultOnError: OnFunnelError = () => {}
  */
 export class FunnelGatewayServer {
   private readonly channels: FunnelChannels
-  private readonly settings: FunnelSettingsReader
   private readonly port: number
   private readonly hostname: string
   private readonly dbPath: string
@@ -107,7 +103,6 @@ export class FunnelGatewayServer {
 
   constructor(deps: Deps) {
     this.channels = deps.channels
-    this.settings = deps.settings
     this.port = deps.port ?? resolveFunnelPort()
     this.hostname = deps.hostname ?? DEFAULT_HOST
     this.dbPath = deps.dbPath ?? defaultDbPath()
@@ -235,11 +230,10 @@ export class FunnelGatewayServer {
         return new Response("unauthorized", { status: 401 })
       }
 
-      const tapAll = url.searchParams.get("tap") === "all"
-      const requestedChannel = tapAll ? "" : (url.searchParams.get("channel") ?? "")
-      const channel = !tapAll && requestedChannel ? this.resolveChannel(requestedChannel) : null
-      const channelId = tapAll ? "" : (channel?.id ?? requestedChannel)
-      const channelName = tapAll ? null : (channel?.name ?? null)
+      const requestedChannel = url.searchParams.get("channel") ?? ""
+      const channel = requestedChannel ? this.resolveChannel(requestedChannel) : null
+      const channelId = channel?.id ?? requestedChannel
+      const channelName = channel?.name ?? null
       const connectors = channel?.connectors ?? []
       const delivery = channel?.delivery ?? "fanout"
       const sinceRaw = url.searchParams.get("since")
@@ -251,7 +245,6 @@ export class FunnelGatewayServer {
           channel: channelId,
           channelName,
           connectors,
-          tapAll,
           delivery,
           subscriberId,
           since,
@@ -275,44 +268,26 @@ export class FunnelGatewayServer {
 
     this.broadcaster.addClient(ws, ws.data)
 
-    if (ws.data.channelName) {
-      const meta: Record<string, string> = {
-        event_type: "system",
-        action: "channel_connect",
-        channel: ws.data.channelName,
-        channelId: ws.data.channel,
-        connectors: ws.data.connectors.join(","),
-        total: String(this.broadcaster.getClientCount()),
-      }
-
-      this.logger?.info("channel connected", meta)
-    } else {
-      this.logger?.info("tap-all client connected", {
-        event_type: "system",
-        action: "tap_connect",
-        total: String(this.broadcaster.getClientCount()),
-      })
-    }
+    this.logger?.info("channel connected", {
+      event_type: "system",
+      action: "channel_connect",
+      channel: ws.data.channelName ?? "",
+      channelId: ws.data.channel,
+      connectors: ws.data.connectors.join(","),
+      total: String(this.broadcaster.getClientCount()),
+    })
   }
 
   private handleWsClose(ws: ServerWebSocket<WsData>): void {
     this.broadcaster.removeClient(ws)
 
-    if (ws.data.channelName) {
-      this.logger?.info("channel disconnected", {
-        event_type: "system",
-        action: "channel_disconnect",
-        channel: ws.data.channelName,
-        channelId: ws.data.channel,
-        total: String(this.broadcaster.getClientCount()),
-      })
-    } else {
-      this.logger?.info("tap-all client disconnected", {
-        event_type: "system",
-        action: "tap_disconnect",
-        total: String(this.broadcaster.getClientCount()),
-      })
-    }
+    this.logger?.info("channel disconnected", {
+      event_type: "system",
+      action: "channel_disconnect",
+      channel: ws.data.channelName ?? "",
+      channelId: ws.data.channel,
+      total: String(this.broadcaster.getClientCount()),
+    })
   }
 
   private logServerStarted(): void {
@@ -389,8 +364,7 @@ export class FunnelGatewayServer {
   private resolveChannel(
     requested: string,
   ): { id: string; name: string; connectors: string[]; delivery: "fanout" | "exclusive" } | null {
-    const settings = this.settings.read()
-    const channel = settings?.channels.find((c) => c.id === requested || c.name === requested)
+    const channel = this.channels.get(requested) ?? this.channels.getById(requested)
 
     if (!channel) return null
 
@@ -476,15 +450,12 @@ export class FunnelGatewayServer {
   }
 
   private lookupChannelId(channelName: string): string | null {
-    const channel = this.settings.read().channels.find((c) => c.name === channelName)
-
-    return channel?.id ?? null
+    return this.channels.get(channelName)?.id ?? null
   }
 
   private lookupConnectorId(channelId: string, connectorName: string): string | null {
-    const channel = this.settings.read().channels.find((c) => c.id === channelId)
-    const connector = channel?.connectors.find((c) => c.name === connectorName)
+    const channel = this.channels.getById(channelId)
 
-    return connector?.id ?? null
+    return channel?.connectors.find((c) => c.name === connectorName)?.id ?? null
   }
 }

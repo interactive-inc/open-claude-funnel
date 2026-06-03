@@ -1,7 +1,10 @@
 import { claudeHelp } from "@/cli/routes/claude"
+import type { FunnelClaude } from "@/engine/claude/claude"
 import type { ChannelSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
-import type { LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
-import { Funnel } from "@/funnel"
+import type { FunnelLocalConfig } from "@/engine/local-config/local-config"
+import type { FunnelLocalConfigSync, LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
+import type { FunnelProfiles } from "@/engine/profiles/profiles"
+import type { FunnelListenersClient } from "@/gateway/listeners-client"
 
 export type DispatchClaudeResult = {
   stdout: string | null
@@ -9,10 +12,15 @@ export type DispatchClaudeResult = {
   exitCode: number
 }
 
-type Deps = {
-  funnel: Funnel
-  cwd?: string
+export type DispatchDeps = {
+  claude: FunnelClaude
+  profiles: FunnelProfiles
+  localConfig: FunnelLocalConfig
+  localConfigSync: FunnelLocalConfigSync
+  listeners: FunnelListenersClient
 }
+
+type Deps = DispatchDeps & { cwd?: string }
 
 const HELP_LONG = "--help"
 const HELP_SHORT = "-h"
@@ -108,20 +116,20 @@ const parse = (args: string[]): Parsed => {
  * auto-start inside `claude.launch` will reload from scratch anyway.
  */
 const reconcileListeners = async (
-  funnel: Funnel,
+  listeners: FunnelListenersClient,
   channelName: string,
   synced: LocalConfigSyncResult,
 ): Promise<void> => {
   for (const outcome of synced.touched) {
     if (outcome.changed) {
-      await funnel.listeners.restart(channelName, outcome.name)
+      await listeners.restart(channelName, outcome.name)
     } else {
-      await funnel.listeners.start(channelName, outcome.name)
+      await listeners.start(channelName, outcome.name)
     }
   }
 
   for (const name of synced.removed) {
-    await funnel.listeners.stop(channelName, name)
+    await listeners.stop(channelName, name)
   }
 }
 
@@ -180,14 +188,14 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
     }
   }
 
-  const funnel = deps.funnel
+  const { claude, profiles, localConfig, localConfigSync, listeners } = deps
   const cwd = deps.cwd ?? process.cwd()
 
   if (parsed.profile !== null) {
-    const globalProfile = funnel.profiles.get(parsed.profile)
+    const globalProfile = profiles.get(parsed.profile)
 
     if (globalProfile) {
-      const exitCode = await funnel.claude.launch({
+      const exitCode = await claude.launch({
         channel: globalProfile.channelId,
         cwd: globalProfile.path,
         userArgs: parsed.userArgs,
@@ -200,7 +208,7 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
       return { stdout: null, stderr: null, exitCode }
     }
 
-    const localForProfile = funnel.localConfig.read(cwd)
+    const localForProfile = localConfig.read(cwd)
     const localProfile = localForProfile?.profiles?.find((p) => p.name === parsed.profile)
 
     if (localForProfile && localProfile) {
@@ -210,11 +218,11 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
         return { stdout: null, stderr: `error: ${picked}`, exitCode: 1 }
       }
 
-      const synced = await funnel.localConfigSync.ensure(picked)
+      const synced = await localConfigSync.ensure(picked)
 
-      await reconcileListeners(funnel, picked.name, synced)
+      await reconcileListeners(listeners, picked.name, synced)
 
-      const exitCode = await funnel.claude.launch({
+      const exitCode = await claude.launch({
         channel: picked.name,
         cwd,
         userArgs: parsed.userArgs,
@@ -233,7 +241,7 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
     }
   }
 
-  const local = funnel.localConfig.read(cwd)
+  const local = localConfig.read(cwd)
 
   if (local) {
     const picked = pickChannel(local, parsed.channel)
@@ -243,18 +251,18 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
     }
 
     // funnel.json was detected at entry (cli/index.ts), which already pointed
-    // FUNNEL_DIR at ~/.funnel/projects/<id>/ — so `funnel` and the daemon it
+    // FUNNEL_DIR at ~/.funnel/projects/<id>/ — so funnel and the daemon it
     // spawns read and write only that scoped root, never the global ~/.funnel.
     // Tokens missing from settings.json are prompted for at sync (TTY) and saved
     // there; they never live in the repo.
-    const synced = await funnel.localConfigSync.ensure(picked)
+    const synced = await localConfigSync.ensure(picked)
 
-    await reconcileListeners(funnel, picked.name, synced)
+    await reconcileListeners(listeners, picked.name, synced)
 
     // A channel binds transport only — no launch recipe. Options/env/resume come
     // from a profile, reachable solely via `--profile <name>`. The channel never
     // pulls in a profile on its own.
-    const exitCode = await funnel.claude.launch({
+    const exitCode = await claude.launch({
       channel: picked.name,
       cwd,
       userArgs: parsed.userArgs,
@@ -264,7 +272,7 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
   }
 
   if (parsed.channel !== null) {
-    const exitCode = await funnel.claude.launch({
+    const exitCode = await claude.launch({
       channel: parsed.channel,
       cwd,
       userArgs: parsed.userArgs,
@@ -273,13 +281,13 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
     return { stdout: null, stderr: null, exitCode }
   }
 
-  const defaultProfile = funnel.profiles.getDefault()
+  const defaultProfile = profiles.getDefault()
 
   if (!defaultProfile) {
     return { stdout: claudeHelp, stderr: null, exitCode: 0 }
   }
 
-  const exitCode = await funnel.claude.launch({
+  const exitCode = await claude.launch({
     channel: defaultProfile.channelId,
     cwd: defaultProfile.path,
     userArgs: parsed.userArgs,

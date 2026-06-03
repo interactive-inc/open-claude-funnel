@@ -8,8 +8,9 @@ export const profilesRemoveHandler = factory.createHandlers(
   (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel
+    const { profiles, claude } = c.env
 
-    funnel.profiles.remove(param.profile)
+    profiles.remove(param.profile)
 
     return c.text(`removed profile "${param.profile}"`)
   },

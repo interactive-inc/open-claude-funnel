@@ -17,13 +17,14 @@ export const profilesLaunchHandler = factory.createHandlers(
   async (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel
-    const profile = funnel.profiles.get(param.profile)
+    const { profiles, claude } = c.env
+    const profile = profiles.get(param.profile)
 
     if (!profile) {
       throw new HTTPException(404, { message: `profile "${param.profile}" not found` })
     }
 
-    const exitCode = await funnel.claude.launch({
+    const exitCode = await claude.launch({
       channel: profile.channelId,
       cwd: profile.path,
       userArgs: queryToCliArgs(c.req.url, RESERVED_KEYS),
