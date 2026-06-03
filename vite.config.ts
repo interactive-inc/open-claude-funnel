@@ -11,6 +11,10 @@ export default defineConfig({
   pack: {
     entry: {
       index: "lib/index.ts",
+      claude: "lib/claude.ts",
+      gateway: "lib/gateway.ts",
+      profiles: "lib/profiles.ts",
+      "local-config": "lib/local-config.ts",
       "connectors/slack": "lib/connectors/slack.ts",
       "connectors/discord": "lib/connectors/discord.ts",
       "connectors/gh": "lib/connectors/gh.ts",
