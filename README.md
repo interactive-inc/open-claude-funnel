@@ -16,7 +16,7 @@ Slack のメンション、GitHub の Issue、毎朝 9 時の cron。こうし�
    返信は同じコネクタを逆向きに通る（エージェント → MCP tool → 外部サービス）。
 ```
 
-コマンドは `funnel`（短縮形 `fnl`）。Claude Code を中心に作っているが、アーキテクチャはエージェント非依存。
+コマンドは `funnel`（短縮形 `fnl`）。Claude Code を中心に作っているが、アーキテクチャはエージェント非依存。現在のバージョンは `0.49.0`。
 
 ## funnel がやること
 
@@ -142,7 +142,7 @@ fnl gateway start
 fnl claude --channel ops
 ```
 
-delivery モードはチャネル作成時に選ぶ。
+delivery モードはチャネル作成時に選ぶ。`tap=all` は廃止されており、WS 購読は `?id=<uuid>` の targeted delivery のみ。
 
 ```bash
 fnl channels add reviews                       # fanout（デフォルト）: 全エージェントが全イベント
@@ -199,7 +199,7 @@ external sources                          outbound replies
 
 transport モデルは 2 つの概念でできている。
 
-Channel は名前付きの購読箱（transport のみ）。1 つ以上のコネクタと delivery モードを持ち、起動フラグは持たない。エージェントセッションはちょうど 1 つのチャネルを購読する。delivery は `fanout`（全 subscriber が全イベントを見る、デフォルト）か `exclusive`（1 イベントを 1 subscriber が round-robin で消費、ワーカープール向け）。
+Channel は名前付きの購読箱（transport のみ）。1 つ以上のコネクタと delivery モードを持ち、起動フラグは持たない。エージェントセッションはちょうど 1 つのチャネルを購読する。WS 接続は `?id=<uuid>` の targeted delivery のみで、`tap=all` は廃止されている。delivery は `fanout`（全 subscriber が全イベントを見る、デフォルト）か `exclusive`（1 イベントを 1 subscriber が round-robin で消費、ワーカープール向け）。
 
 Connector はチャネルから外部ソースへの 1 つの接続。`slack` / `gh` / `discord` / `schedule` の 4 型。前者 3 つは双方向（イベント入力・返信出力）、`schedule` は一方向（cron tick の入力のみ）。
 
@@ -330,7 +330,7 @@ Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.j
 
 ## プログラマブル API（Bun）
 
-CLI を介さず、ライブラリとして組み込める。CLI が使うのと同じ `Funnel` facade をパッケージのルートから export している。コンストラクタは lazy で、`new Funnel()` は props を記録して freeze するだけ。メソッドを呼ぶまでディスク / プロセス / ネットワークに触れない。
+CLI を介さず、ライブラリとして組み込める。CLI が使うのと同じ `Funnel` facade をパッケージのルートから export している。`new Funnel()` は constructor で全依存を即座に組み立てて freeze する（完全イミュータブル）。
 
 ```ts
 import { Funnel } from "@interactive-inc/claude-funnel"
@@ -346,16 +346,19 @@ funnel.channels.addConnector("inbox", {
 })
 ```
 
-`channels` / `profiles` / `gateway` / `listeners` / `mcp` / `claude` など全ファセットが同じインスタンスから辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
+`channels` / `profiles` / `gateway` / `listeners` / `claude` / `localConfig` / `localConfigSync` など全ファセットが同じインスタンスの readonly プロパティとして辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
 
 ```ts
-await funnel.gateway.start() // デーモンを別プロセスとして spawn
-funnel.gateway.getStatus() // { running, pid, port }
+await funnel.gateway.start()    // デーモンを別プロセスとして spawn
+funnel.gateway.getStatus()      // { running, pid, port }
 
 await funnel.listeners.start("inbox", "my-slack")
 await funnel.listeners.restart("inbox", "my-slack")
 
 await funnel.claude.launch({ channel: "inbox" }) // claude を起動（.mcp.json も自動で書く）
+
+// profiles / localConfig / localConfigSync も直接アクセス可
+funnel.profiles.add({ name: "pm", path: "/repo", channelId: channel.id })
 ```
 
 デーモンを spawn せず、gateway をインプロセスで動かすこともできる（テストや埋め込み向け）。`onEvent` で全 broadcast イベントをインプロセスで観測できる。
@@ -372,16 +375,38 @@ unsubscribe()
 
 永続化と再生は `FunnelEventLog` port の裏にある。デフォルトは `SqliteFunnelEventLog`（デーモン再起動を跨いで durable。reconnect 時の再生を提供する）。`gatewayServer({ eventLog })` に `MemoryFunnelEventLog` を渡せば durable な再生を差し替え・無効化できる。`onEvent` は書き込み専用の観測フックで、再生（読み戻し）は EventLog の責務。
 
+### サブエントリ
+
+個別の層だけを import したい場合は sub-entry を使う。
+
+```ts
+// in-process gateway building blocks（FunnelGatewayServer, FunnelBroadcaster 等）
+import { FunnelGatewayServer } from "@interactive-inc/claude-funnel/gateway"
+
+// 名前付き起動プロファイル管理
+import { FunnelProfiles } from "@interactive-inc/claude-funnel/profiles"
+
+// funnel.json reader / writer / syncer
+import { FunnelLocalConfig } from "@interactive-inc/claude-funnel/local-config"
+
+// コネクタスキーマ（Slack / Discord / GitHub / Schedule）
+import { slackConnectorSchema } from "@interactive-inc/claude-funnel/connectors/slack"
+```
+
 ### テスト用のサンドボックス
 
 `Funnel.inMemory()` は全 IO 境界（ディスク / プロセス / clock / UUID）を Memory 実装で配線済みの Funnel を返す。`props` の任意の部分集合で個々の seam を上書きできるので、実 FS や spawn に触れずにテストを書ける。
 
 ```ts
-const funnel = Funnel.inMemory() // 実ディスク / プロセス / clock / UUID に触れない
+import { MemoryFunnelTokenPrompter } from "@interactive-inc/claude-funnel"
+
+const funnel = Funnel.inMemory({
+  tokenPrompter: new MemoryFunnelTokenPrompter(), // TTY プロンプトを差し替え
+})
 funnel.channels.add({ name: "inbox" }) // インメモリ store を変更する
 ```
 
-`fnl` を支える Hono アプリ（`createCliApp` / `toRequest`）や、各コネクタの Zod スキーマ（`connectorConfigSchema`）も export している。詳細は型定義を参照。
+`fnl` を支える Hono アプリ（`cliRoutes` / `toRequest`）や、各コネクタの Zod スキーマも export している。詳細は型定義を参照。
 
 ## Claude Code skill
 
