@@ -100,15 +100,14 @@ type Props = {
 }
 
 /**
- * Facade exposing every funnel facet as a getter.
+ * Facade that wires every funnel facet together and exposes the public surface.
  *
- * The same `Funnel` is used by the CLI and as a programmable library.
- * All side-effecting boundaries (filesystem, process, logger, clock, id, paths) are
- * injectable via `Props` — passing memory implementations gives a fully sandboxed
+ * All side-effecting boundaries (filesystem, process, logger, clock, id, paths)
+ * are injected via Props — passing memory implementations gives a fully sandboxed
  * Funnel that touches no real disk, processes, or wall-clock time.
  *
- * Connectors live nested inside their owning channel (channels[].connectors[]),
- * so connector CRUD is reached via `funnel.channels.addConnector(...)` etc.
+ * Fully immutable: all fields are resolved in the constructor and frozen.
+ * No lazy initialisation — every dependency is wired at construction time.
  *
  * @example
  * ```ts
@@ -119,21 +118,89 @@ type Props = {
  * ```
  */
 export class Funnel {
-  private readonly memos: {
-    fs?: FunnelFileSystem
-    process?: FunnelProcessRunner
-    clock?: FunnelClock
-    idGenerator?: FunnelIdGenerator
-    store?: FunnelSettingsReader
-    factory?: FunnelConnectorFactory
-    channels?: FunnelChannels
-    gateway?: FunnelGateway
-    gatewayToken?: FunnelGatewayToken
-    publisher?: FunnelChannelPublisher
-    listeners?: FunnelListenersClient
-  } = {}
+  readonly paths: { dir: string; tmpDir: string; settings: string }
+  readonly channels: FunnelChannels
+  readonly gateway: FunnelGateway
+  readonly gatewayToken: FunnelGatewayToken
+  readonly publisher: FunnelChannelPublisher
+  readonly listeners: FunnelListenersClient
 
-  constructor(private readonly props: Props = {}) {
+  private readonly fs: FunnelFileSystem
+  private readonly process: FunnelProcessRunner
+  private readonly logger: FunnelLogger | undefined
+  private readonly clock: FunnelClock
+  private readonly onError: OnFunnelError
+  private readonly store: FunnelSettingsReader
+  private readonly idGenerator: FunnelIdGenerator
+  private readonly slackListenerOptions: SlackListenerOptions | undefined
+  private readonly scheduleListenerOptions: ScheduleListenerOptions | undefined
+  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
+
+  constructor(props: Props = {}) {
+    const dir = props.dir ?? resolveFunnelDir()
+    const tmpDir = props.tmpDir ?? funnelTmpDir()
+
+    this.paths = { dir, tmpDir, settings: join(dir, "settings.json") }
+    this.fs = props.fs ?? new NodeFunnelFileSystem()
+    this.process = props.process ?? new NodeFunnelProcessRunner()
+    this.logger = props.logger
+    this.clock = props.clock ?? new NodeFunnelClock()
+    this.onError = props.onError ?? noopOnError
+    this.idGenerator = props.idGenerator ?? new NodeFunnelIdGenerator()
+    this.slackListenerOptions = props.slackListenerOptions
+    this.scheduleListenerOptions = props.scheduleListenerOptions
+    this.diagnosticLog = props.diagnosticLog
+
+    const idGenerator = this.idGenerator
+
+    this.store =
+      props.store ??
+      new FunnelSettingsStore({
+        path: this.paths.settings,
+        fs: this.fs,
+        idGenerator,
+      })
+
+    const factory = new FunnelConnectorFactory({
+      fs: this.fs,
+      process: this.process,
+      logger: this.logger,
+      diagnosticLog: this.diagnosticLog,
+      dir,
+      slackListenerOptions: this.slackListenerOptions,
+      scheduleListenerOptions: this.scheduleListenerOptions,
+    })
+
+    this.channels = new FunnelChannels({
+      store: this.store,
+      factory,
+      clock: this.clock,
+      idGenerator,
+    })
+
+    this.gateway = new FunnelGateway({
+      fs: this.fs,
+      process: this.process,
+      clock: this.clock,
+      dir,
+      tmpDir,
+      port: props.port,
+    })
+
+    this.gatewayToken = new FunnelGatewayToken({ fs: this.fs, dir })
+
+    this.publisher = new FunnelChannelPublisher({
+      port: this.gateway.getPort(),
+      isDaemonRunning: () => this.gateway.isRunning(),
+      getToken: () => this.gatewayToken.read(),
+    })
+
+    this.listeners = new FunnelListenersClient({
+      port: this.gateway.getPort(),
+      isDaemonRunning: () => this.gateway.isRunning(),
+      getToken: () => this.gatewayToken.read(),
+    })
+
     Object.freeze(this)
   }
 
@@ -144,6 +211,7 @@ export class Funnel {
    */
   static inMemory(props: Props = {}): Funnel {
     return new Funnel({
+      ...props,
       store: props.store ?? new MockFunnelSettingsReader(),
       fs: props.fs ?? new MemoryFunnelFileSystem(),
       process: props.process ?? new MemoryFunnelProcessRunner(),
@@ -155,203 +223,9 @@ export class Funnel {
     })
   }
 
-  /** Resolved on-disk paths the facade will read/write when methods are called. Pure compute, not memoized. */
-  get paths(): { dir: string; tmpDir: string; settings: string } {
-    const dir = this.props.dir ?? resolveFunnelDir()
-    const tmpDir = this.props.tmpDir ?? funnelTmpDir()
-
-    return { dir, tmpDir, settings: join(dir, "settings.json") }
-  }
-
-  private get fs(): FunnelFileSystem {
-    if (!this.memos.fs) this.memos.fs = this.props.fs ?? new NodeFunnelFileSystem()
-
-    return this.memos.fs
-  }
-
-  private get process(): FunnelProcessRunner {
-    if (!this.memos.process)
-      this.memos.process = this.props.process ?? new NodeFunnelProcessRunner()
-
-    return this.memos.process
-  }
-
-  private get logger(): FunnelLogger | undefined {
-    return this.props.logger
-  }
-
-  private get clock(): FunnelClock {
-    if (!this.memos.clock) this.memos.clock = this.props.clock ?? new NodeFunnelClock()
-
-    return this.memos.clock
-  }
-
-  private get onError(): OnFunnelError {
-    return this.props.onError ?? noopOnError
-  }
-
-  private get idGenerator(): FunnelIdGenerator {
-    if (!this.memos.idGenerator) {
-      this.memos.idGenerator = this.props.idGenerator ?? new NodeFunnelIdGenerator()
-    }
-
-    return this.memos.idGenerator
-  }
-
-  private get store(): FunnelSettingsReader {
-    if (!this.memos.store) {
-      this.memos.store =
-        this.props.store ??
-        new FunnelSettingsStore({
-          path: this.paths.settings,
-          fs: this.fs,
-          idGenerator: this.idGenerator,
-        })
-    }
-
-    return this.memos.store
-  }
-
-  private get factory(): FunnelConnectorFactory {
-    if (!this.memos.factory) {
-      this.memos.factory = new FunnelConnectorFactory({
-        fs: this.fs,
-        process: this.process,
-        logger: this.logger,
-        diagnosticLog: this.props.diagnosticLog,
-        dir: this.paths.dir,
-        slackListenerOptions: this.props.slackListenerOptions,
-        scheduleListenerOptions: this.props.scheduleListenerOptions,
-      })
-    }
-
-    return this.memos.factory
-  }
-
-  /** Channel CRUD + nested connector CRUD + schedule entries + listener/adapter dispatch. */
-  get channels(): FunnelChannels {
-    if (!this.memos.channels) {
-      this.memos.channels = new FunnelChannels({
-        store: this.store,
-        factory: this.factory,
-        clock: this.clock,
-        idGenerator: this.idGenerator,
-      })
-    }
-
-    return this.memos.channels
-  }
-
-  /** Gateway daemon controller (PID-file, start/stop the separate `bun daemon.ts` process). */
-  get gateway(): FunnelGateway {
-    if (!this.memos.gateway) {
-      this.memos.gateway = new FunnelGateway({
-        fs: this.fs,
-        process: this.process,
-        clock: this.clock,
-        dir: this.paths.dir,
-        tmpDir: this.paths.tmpDir,
-        port: this.props.port,
-      })
-    }
-
-    return this.memos.gateway
-  }
-
-  /** Read / generate the daemon's gateway token (mode 0600 file under `dir`). */
-  get gatewayToken(): FunnelGatewayToken {
-    if (!this.memos.gatewayToken) {
-      this.memos.gatewayToken = new FunnelGatewayToken({ fs: this.fs, dir: this.paths.dir })
-    }
-
-    return this.memos.gatewayToken
-  }
-
-  /**
-   * HTTP client for `POST /channels/:channel/publish` on the running gateway
-   * daemon. Use it to push arbitrary content into a channel from outside any
-   * connector. Returns `{ state: "offline" }` if the daemon isn't up.
-   */
-  get publisher(): FunnelChannelPublisher {
-    if (!this.memos.publisher) {
-      const gateway = this.gateway
-      const token = this.gatewayToken
-
-      this.memos.publisher = new FunnelChannelPublisher({
-        port: gateway.getPort(),
-        isDaemonRunning: () => gateway.isRunning(),
-        getToken: () => token.read(),
-      })
-    }
-
-    return this.memos.publisher
-  }
-
-  /**
-   * HTTP client for listener operations on the running gateway daemon.
-   * Returns `{ state: "offline" }` when the daemon is offline so hot-reload
-   * paths stay write-only without parsing strings.
-   */
-  get listeners(): FunnelListenersClient {
-    if (!this.memos.listeners) {
-      const gateway = this.gateway
-      const token = this.gatewayToken
-
-      this.memos.listeners = new FunnelListenersClient({
-        port: gateway.getPort(),
-        isDaemonRunning: () => gateway.isRunning(),
-        getToken: () => token.read(),
-      })
-    }
-
-    return this.memos.listeners
-  }
-
-  /**
-   * In-process gateway server. Unlike `gateway.start()` (which spawns a daemon),
-   * this returns a class that runs `Bun.serve` + listeners inside the current process —
-   * useful for tests, embedding, or custom hosts.
-   */
-  gatewayServer(
-    options: {
-      port?: number
-      /** Bind address. Defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on the network. */
-      hostname?: string
-      dbPath?: string
-      killCompetingSlack?: boolean
-      /** Override the auth token. Defaults to the persisted gateway.token. Pass "" to disable auth (tests). */
-      token?: string
-      /** Durable replay log. Defaults to a SqliteFunnelEventLog at dbPath; inject a MemoryFunnelEventLog (or any FunnelEventLog) to swap or disable persistence. */
-      eventLog?: FunnelEventLog
-      /**
-       * Additional hono app mounted before the built-in gateway routes.
-       * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
-       * Host routes are mounted first; built-in `/listeners`, `/status`,
-       * `/channels`, `/health` are mounted after and take precedence on conflict.
-       */
-      extraRoutes?: Hono<Env>
-    } = {},
-  ): FunnelGatewayServer {
-    return new FunnelGatewayServer({
-      channels: this.channels,
-      port: options.port,
-      hostname: options.hostname,
-      dbPath: options.dbPath,
-      eventLog: options.eventLog,
-      process: this.process,
-      clock: this.clock,
-      logger: this.logger,
-      onError: this.onError,
-      dir: this.paths.dir,
-      killCompetingSlack: options.killCompetingSlack,
-      token: options.token ?? this.gatewayToken.ensure(),
-      extraRoutes: options.extraRoutes,
-    })
-  }
-
   /**
    * Build the Claude Code launcher with all dependencies wired from this Funnel.
-   * Returns a tuple of the launcher and supporting objects needed by the CLI.
+   * Returns the launcher and supporting objects needed by the CLI.
    */
   buildClaude(tokenPrompter?: FunnelTokenPrompter): {
     claude: FunnelClaude
@@ -383,7 +257,6 @@ export class Funnel {
       guard,
       fs: this.fs,
       process: this.process,
-      idGenerator: this.idGenerator,
       logger: this.logger,
     })
 
@@ -391,8 +264,40 @@ export class Funnel {
   }
 
   /**
+   * In-process gateway server. Unlike `gateway.start()` (which spawns a daemon),
+   * this returns a class that runs `Bun.serve` + listeners inside the current process —
+   * useful for tests, embedding, or custom hosts.
+   */
+  gatewayServer(
+    options: {
+      port?: number
+      hostname?: string
+      dbPath?: string
+      killCompetingSlack?: boolean
+      token?: string
+      eventLog?: FunnelEventLog
+      extraRoutes?: Hono<Env>
+    } = {},
+  ): FunnelGatewayServer {
+    return new FunnelGatewayServer({
+      channels: this.channels,
+      port: options.port,
+      hostname: options.hostname,
+      dbPath: options.dbPath,
+      eventLog: options.eventLog,
+      process: this.process,
+      clock: this.clock,
+      logger: this.logger,
+      onError: this.onError,
+      dir: this.paths.dir,
+      killCompetingSlack: options.killCompetingSlack,
+      token: options.token ?? this.gatewayToken.ensure(),
+      extraRoutes: options.extraRoutes,
+    })
+  }
+
+  /**
    * Run the gateway daemon in the foreground (tied to this terminal).
-   * On macOS wraps with `caffeinate -is` by default.
    * For background daemon management, use `funnel.gateway.start()` instead.
    */
   async runGatewayForeground(options: { caffeinate?: boolean } = {}): Promise<number> {
