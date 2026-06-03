@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
-import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
+import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 
 const buildCore = (): Funnel =>
@@ -28,9 +28,9 @@ describe("Funnel facade", () => {
     expect(funnel.channels.listAllConnectors()).toHaveLength(1)
   })
 
-  test("profiles see the same store as channels (shared settings)", () => {
+  test("buildClaude profiles see the same store as channels (shared settings)", () => {
     const funnel = buildCore()
-    const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
+    const { profiles } = funnel.buildClaude(new MemoryFunnelTokenPrompter())
 
     const channel = funnel.channels.add({ name: "ops" })
 
@@ -46,7 +46,7 @@ describe("Funnel facade", () => {
 
   test("channels.remove works without a profileChecker wired", () => {
     const funnel = buildCore()
-    const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
+    const { profiles } = funnel.buildClaude(new MemoryFunnelTokenPrompter())
     const channel = funnel.channels.add({ name: "ops" })
 
     profiles.add({

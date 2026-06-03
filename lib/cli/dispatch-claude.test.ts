@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { dispatchClaude } from "@/cli/dispatch-claude"
-import { FunnelClaude } from "@/engine/claude/claude"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
-import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
-import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
-import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import { Funnel } from "@/funnel"
 import type { DispatchDeps } from "@/cli/dispatch-claude"
@@ -38,23 +33,9 @@ const buildSetup = (opts: { files?: Record<string, string>; dirs?: string[] } = 
   })
 
   const funnel = Funnel.inMemory({ fs, process: memoryProcess })
-  const mcp = new FunnelMcp({ fs })
-  const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
-  const localConfig = new FunnelLocalConfig({ fs })
-  const localConfigSync = new FunnelLocalConfigSync({
-    channels: funnel.channels,
-    prompter: new MemoryFunnelTokenPrompter(),
-  })
-  const claude = new FunnelClaude({
-    channels: funnel.channels,
-    mcp,
-    gateway: funnel.gateway,
-    sessions: profiles,
-    fs,
-    process: memoryProcess,
-    idGenerator: funnel.idGenerator,
-    dir: funnel.paths.dir,
-  })
+  const { claude, profiles, localConfig, localConfigSync } = funnel.buildClaude(
+    new MemoryFunnelTokenPrompter(),
+  )
 
   const deps: DispatchDeps = { claude, profiles, localConfig, localConfigSync, listeners: funnel.listeners }
 

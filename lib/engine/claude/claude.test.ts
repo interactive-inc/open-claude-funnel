@@ -36,16 +36,23 @@ const buildClaude = () => {
     isRunning: () => true,
     start: async () => true,
   }
+  // Simple in-memory guard: tracks acquired profileIds so tests can simulate
+  // a live process without touching the real filesystem or process table.
+  const acquired = new Set<string>()
+  const guard = {
+    isRunning: (profileId: string) => acquired.has(profileId),
+    acquire: (profileId: string) => { acquired.add(profileId) },
+    release: (profileId: string) => { acquired.delete(profileId) },
+  }
   const claude = new FunnelClaude({
     channels,
     mcp,
     gateway,
     sessions,
-    fs,
+    guard,
     process,
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "sess" }),
     logger: new NoopFunnelLogger(),
-    dir: "/funnel",
   })
 
   // Sessions (profiles) are addressed by id internally; seed a few and hand back their ids
@@ -60,7 +67,7 @@ const buildClaude = () => {
     return created.id
   }
 
-  return { claude, channel: FAKE_CHANNEL, fs, process, profiles: sessions, addProfile }
+  return { claude, channel: FAKE_CHANNEL, fs, process, profiles: sessions, guard, acquired, addProfile }
 }
 
 describe("FunnelClaude", () => {
@@ -86,16 +93,12 @@ describe("FunnelClaude", () => {
     await expect(claude.launch({ channel: "nope" })).rejects.toThrow(/not found/)
   })
 
-  test("launch refuses to start a profile that already has a live PID file", async () => {
-    const { claude, fs, process, addProfile } = buildClaude()
-
-    process.on(() => ({ exitCode: 0 }))
-    process.onSync(() => ({ exitCode: 0, stdout: "S\n", stderr: "" }))
+  test("launch refuses to start a profile that is already running", async () => {
+    const { claude, acquired, addProfile } = buildClaude()
 
     const devId = addProfile("dev")
 
-    fs.mkdirSync("/funnel/claude", { recursive: true })
-    fs.writeFileSync(`/funnel/claude/${devId}.pid`, String(globalThis.process.pid))
+    acquired.add(devId)
 
     await expect(claude.launch({ channel: "ops", profileId: devId })).rejects.toThrow(
       /already running/,

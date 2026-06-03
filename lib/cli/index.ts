@@ -7,14 +7,9 @@ import { toRequest } from "@/cli/router/to-request"
 import { routes } from "@/cli/routes"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
-import { FunnelClaude } from "@/engine/claude/claude"
 import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
 import { FunnelLocalConfigWriter } from "@/engine/local-config/local-config-writer"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
-import { FunnelMcp } from "@/engine/mcp/mcp"
-import { FunnelProfiles } from "@/engine/profiles/profiles"
-import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prompter"
 import { Funnel } from "@/funnel"
 
 process.title = "funnel"
@@ -47,24 +42,7 @@ const repoDir = resolveRepoDir(
 if (repoDir) process.env.FUNNEL_DIR = repoDir
 
 const funnel = new Funnel({ logger: new NodeFunnelLogger() })
-const mcp = new FunnelMcp({ fs: funnel.fs })
-const profiles = new FunnelProfiles({ store: funnel.store, idGenerator: funnel.idGenerator })
-const localConfig = new FunnelLocalConfig({ fs: funnel.fs })
-const localConfigSync = new FunnelLocalConfigSync({
-  channels: funnel.channels,
-  prompter: new NodeFunnelTokenPrompter(),
-})
-const claude = new FunnelClaude({
-  channels: funnel.channels,
-  mcp,
-  gateway: funnel.gateway,
-  sessions: profiles,
-  fs: funnel.fs,
-  process: funnel.process,
-  idGenerator: funnel.idGenerator,
-  logger: funnel.logger,
-  dir: funnel.paths.dir,
-})
+const { claude, profiles, localConfig, localConfigSync } = funnel.buildClaude()
 
 const env = { funnel, claude, profiles, localConfig, localConfigSync }
 

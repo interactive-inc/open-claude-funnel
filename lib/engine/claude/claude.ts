@@ -1,7 +1,7 @@
-import { join } from "node:path"
 import type { ChannelResolver } from "@/engine/claude/channel-resolver"
 import type { GatewayController } from "@/engine/claude/gateway-controller"
 import type { McpInstaller } from "@/engine/claude/mcp-installer"
+import type { ProcessGuard } from "@/engine/claude/process-guard"
 import type { SessionStore } from "@/engine/claude/session-store"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
@@ -10,7 +10,7 @@ import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
-import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
+import { resolveFunnelPort } from "@/engine/settings/settings-store"
 
 export type LaunchOptions = {
   channel: string
@@ -46,11 +46,11 @@ type Deps = {
   mcp: McpInstaller
   gateway: GatewayController
   sessions: SessionStore
+  guard: ProcessGuard
   process?: FunnelProcessRunner
   fs?: FunnelFileSystem
   idGenerator?: FunnelIdGenerator
   logger?: FunnelLogger
-  dir?: string
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
@@ -60,30 +60,30 @@ const defaultIdGenerator = new NodeFunnelIdGenerator()
 /**
  * Launches Claude Code with funnel pre-wired: ensures the gateway is running,
  * installs the funnel MCP into the target repo's `.mcp.json` if missing,
- * injects `FUNNEL_CHANNEL_ID` into the child env, and writes a per-profile
- * PID file to enforce singleton launches.
+ * injects `FUNNEL_CHANNEL_ID` into the child env, and delegates singleton
+ * enforcement to a ProcessGuard.
  */
 export class FunnelClaude {
   private readonly channels: ChannelResolver
   private readonly mcp: McpInstaller
   private readonly gateway: GatewayController
   private readonly sessions: SessionStore
+  private readonly guard: ProcessGuard
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
   private readonly idGenerator: FunnelIdGenerator
   private readonly logger: FunnelLogger | undefined
-  private readonly pidDir: string
 
   constructor(deps: Deps) {
     this.channels = deps.channels
     this.mcp = deps.mcp
     this.gateway = deps.gateway
     this.sessions = deps.sessions
+    this.guard = deps.guard
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     this.logger = deps.logger
-    this.pidDir = join(deps.dir ?? FUNNEL_DIR, "claude")
     Object.freeze(this)
   }
 
@@ -94,7 +94,7 @@ export class FunnelClaude {
       throw new Error(`channel "${options.channel}" not found`)
     }
 
-    if (options.profileId && this.isRunning(options.profileId)) {
+    if (options.profileId && this.guard.isRunning(options.profileId)) {
       throw new Error(`profile "${options.profileId}" is already running`)
     }
 
@@ -113,8 +113,7 @@ export class FunnelClaude {
     }
 
     if (options.profileId) {
-      this.writePidFile(options.profileId)
-      this.installCleanup(options.profileId)
+      this.guard.acquire(options.profileId)
     }
 
     const resume = options.resume ?? false
@@ -138,61 +137,8 @@ export class FunnelClaude {
         onSpawned: options.onSpawned,
       })
     } finally {
-      if (options.profileId) this.removePidFile(options.profileId)
+      if (options.profileId) this.guard.release(options.profileId)
     }
-  }
-
-  isRunning(profileId: string): boolean {
-    const pid = this.readPid(profileId)
-
-    if (!pid) return false
-
-    return this.isProcessAlive(pid)
-  }
-
-  private pidPath(profileId: string): string {
-    return join(this.pidDir, `${profileId}.pid`)
-  }
-
-  private readPid(profileId: string): number | null {
-    const path = this.pidPath(profileId)
-
-    if (!this.fs.existsSync(path)) return null
-
-    try {
-      const content = this.fs.readFileSync(path).trim()
-      const pid = Number(content)
-
-      if (!pid || pid <= 0) return null
-
-      return pid
-    } catch {
-      return null
-    }
-  }
-
-  private writePidFile(profileId: string): void {
-    this.fs.mkdirSync(this.pidDir, { recursive: true })
-    this.fs.writeFileSync(this.pidPath(profileId), String(globalThis.process.pid))
-  }
-
-  private removePidFile(profileId: string): void {
-    const path = this.pidPath(profileId)
-
-    if (this.fs.existsSync(path)) this.fs.unlink(path)
-  }
-
-  private installCleanup(profileId: string): void {
-    // Default Bun behavior on SIGINT/SIGTERM is process.exit(130/143), which
-    // fires the "exit" event. Hooking only "exit" keeps the PID file cleanup
-    // running while letting the signal terminate the process normally —
-    // adding our own SIGINT handler would suppress the default exit and leave
-    // funnel hanging until claude responds.
-    globalThis.process.once("exit", () => this.removePidFile(profileId))
-  }
-
-  private isProcessAlive(pid: number): boolean {
-    return this.process.isAlive(pid)
   }
 
   private buildArgs(

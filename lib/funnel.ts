@@ -8,6 +8,14 @@ import {
   type SlackListenerOptions,
 } from "@/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
+import { FunnelClaude } from "@/engine/claude/claude"
+import { FileProcessGuard } from "@/engine/claude/file-process-guard"
+import { FunnelLocalConfig } from "@/engine/local-config/local-config"
+import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
+import { FunnelMcp } from "@/engine/mcp/mcp"
+import { FunnelProfiles } from "@/engine/profiles/profiles"
+import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prompter"
+import type { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
@@ -36,6 +44,7 @@ import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
 import { buildFunnelDebugReport, type FunnelDebugReport } from "@/gateway/funnel-debug"
+import { resolveDaemonScript } from "@/gateway/resolve-daemon-script"
 
 const SANDBOX_DIR = "/sandbox/.funnel"
 const SANDBOX_TMP_DIR = "/sandbox/tmp"
@@ -154,43 +163,34 @@ export class Funnel {
     return { dir, tmpDir, settings: join(dir, "settings.json") }
   }
 
-  /** Filesystem boundary. Defaults to NodeFunnelFileSystem. */
-  get fs(): FunnelFileSystem {
+  private get fs(): FunnelFileSystem {
     if (!this.memos.fs) this.memos.fs = this.props.fs ?? new NodeFunnelFileSystem()
 
     return this.memos.fs
   }
 
-  /** Process runner boundary. Defaults to NodeFunnelProcessRunner. */
-  get process(): FunnelProcessRunner {
+  private get process(): FunnelProcessRunner {
     if (!this.memos.process)
       this.memos.process = this.props.process ?? new NodeFunnelProcessRunner()
 
     return this.memos.process
   }
 
-  /** Logger boundary. Optional — when no logger is injected, every facet's `this.logger?.x` call is a silent no-op. Production entry points (cli, daemon) inject a NodeFunnelLogger. */
-  get logger(): FunnelLogger | undefined {
+  private get logger(): FunnelLogger | undefined {
     return this.props.logger
   }
 
-  /** Clock boundary. Defaults to NodeFunnelClock. */
-  get clock(): FunnelClock {
+  private get clock(): FunnelClock {
     if (!this.memos.clock) this.memos.clock = this.props.clock ?? new NodeFunnelClock()
 
     return this.memos.clock
   }
 
-  /**
-   * Error hook. Forwards Funnel-internal exceptions that would otherwise be
-   * swallowed. Defaults to a no-op when no host hook was passed.
-   */
-  get onError(): OnFunnelError {
+  private get onError(): OnFunnelError {
     return this.props.onError ?? noopOnError
   }
 
-  /** ID generator boundary. Defaults to NodeFunnelIdGenerator. */
-  get idGenerator(): FunnelIdGenerator {
+  private get idGenerator(): FunnelIdGenerator {
     if (!this.memos.idGenerator) {
       this.memos.idGenerator = this.props.idGenerator ?? new NodeFunnelIdGenerator()
     }
@@ -198,8 +198,7 @@ export class Funnel {
     return this.memos.idGenerator
   }
 
-  /** Settings reader. If not injected, a FunnelSettingsStore rooted at `dir` is created. */
-  get store(): FunnelSettingsReader {
+  private get store(): FunnelSettingsReader {
     if (!this.memos.store) {
       this.memos.store =
         this.props.store ??
@@ -213,8 +212,7 @@ export class Funnel {
     return this.memos.store
   }
 
-  /** Pure factory that constructs per-type listeners and adapters from connector configs. */
-  get factory(): FunnelConnectorFactory {
+  private get factory(): FunnelConnectorFactory {
     if (!this.memos.factory) {
       this.memos.factory = new FunnelConnectorFactory({
         fs: this.fs,
@@ -349,6 +347,63 @@ export class Funnel {
       token: options.token ?? this.gatewayToken.ensure(),
       extraRoutes: options.extraRoutes,
     })
+  }
+
+  /**
+   * Build the Claude Code launcher with all dependencies wired from this Funnel.
+   * Returns a tuple of the launcher and supporting objects needed by the CLI.
+   */
+  buildClaude(tokenPrompter?: FunnelTokenPrompter): {
+    claude: FunnelClaude
+    profiles: FunnelProfiles
+    localConfig: FunnelLocalConfig
+    localConfigSync: FunnelLocalConfigSync
+  } {
+    const mcp = new FunnelMcp({ fs: this.fs })
+    const profiles = new FunnelProfiles({
+      store: this.store,
+      idGenerator: this.idGenerator,
+      fs: this.fs,
+    })
+    const localConfig = new FunnelLocalConfig({ fs: this.fs })
+    const localConfigSync = new FunnelLocalConfigSync({
+      channels: this.channels,
+      prompter: tokenPrompter ?? new NodeFunnelTokenPrompter(),
+    })
+    const guard = new FileProcessGuard({
+      fs: this.fs,
+      process: this.process,
+      dir: this.paths.dir,
+    })
+    const claude = new FunnelClaude({
+      channels: this.channels,
+      mcp,
+      gateway: this.gateway,
+      sessions: profiles,
+      guard,
+      fs: this.fs,
+      process: this.process,
+      idGenerator: this.idGenerator,
+      logger: this.logger,
+    })
+
+    return { claude, profiles, localConfig, localConfigSync }
+  }
+
+  /**
+   * Run the gateway daemon in the foreground (tied to this terminal).
+   * On macOS wraps with `caffeinate -is` by default.
+   * For background daemon management, use `funnel.gateway.start()` instead.
+   */
+  async runGatewayForeground(options: { caffeinate?: boolean } = {}): Promise<number> {
+    const gatewayScript = resolveDaemonScript()
+    const useCaffeinate =
+      options.caffeinate !== false && globalThis.process.platform === "darwin"
+    const command = useCaffeinate
+      ? ["caffeinate", "-is", "bun", gatewayScript]
+      : ["bun", gatewayScript]
+
+    return this.process.attach(command)
   }
 
   async debug(channelName?: string): Promise<FunnelDebugReport> {
