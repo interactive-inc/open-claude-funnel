@@ -42,7 +42,7 @@ const repoDir = resolveRepoDir(
 if (repoDir) process.env.FUNNEL_DIR = repoDir
 
 const funnel = new Funnel({ logger: new NodeFunnelLogger() })
-const { claude, profiles, localConfig, localConfigSync } = funnel.buildClaude()
+const { claude, profiles, localConfig, localConfigSync } = funnel
 
 const env = { funnel, claude, profiles, localConfig, localConfigSync }
 

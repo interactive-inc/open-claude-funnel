@@ -97,6 +97,11 @@ type Props = {
    * the default (9742) without setting FUNNEL_PORT in the environment.
    */
   port?: number
+  /**
+   * Token prompter used by FunnelLocalConfigSync when funnel.json omits a token.
+   * Defaults to a TTY-only stdin prompter. Inject MemoryFunnelTokenPrompter in tests.
+   */
+  tokenPrompter?: FunnelTokenPrompter
 }
 
 /**
@@ -124,70 +129,67 @@ export class Funnel {
   readonly gatewayToken: FunnelGatewayToken
   readonly publisher: FunnelChannelPublisher
   readonly listeners: FunnelListenersClient
+  readonly claude: FunnelClaude
+  readonly profiles: FunnelProfiles
+  readonly localConfig: FunnelLocalConfig
+  readonly localConfigSync: FunnelLocalConfigSync
 
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
   private readonly logger: FunnelLogger | undefined
   private readonly clock: FunnelClock
   private readonly onError: OnFunnelError
-  private readonly store: FunnelSettingsReader
-  private readonly idGenerator: FunnelIdGenerator
-  private readonly slackListenerOptions: SlackListenerOptions | undefined
-  private readonly scheduleListenerOptions: ScheduleListenerOptions | undefined
-  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
 
   constructor(props: Props = {}) {
     const dir = props.dir ?? resolveFunnelDir()
     const tmpDir = props.tmpDir ?? funnelTmpDir()
+    const fs = props.fs ?? new NodeFunnelFileSystem()
+    const process = props.process ?? new NodeFunnelProcessRunner()
+    const clock = props.clock ?? new NodeFunnelClock()
+    const idGenerator = props.idGenerator ?? new NodeFunnelIdGenerator()
 
     this.paths = { dir, tmpDir, settings: join(dir, "settings.json") }
-    this.fs = props.fs ?? new NodeFunnelFileSystem()
-    this.process = props.process ?? new NodeFunnelProcessRunner()
+    this.fs = fs
+    this.process = process
     this.logger = props.logger
-    this.clock = props.clock ?? new NodeFunnelClock()
+    this.clock = clock
     this.onError = props.onError ?? noopOnError
-    this.idGenerator = props.idGenerator ?? new NodeFunnelIdGenerator()
-    this.slackListenerOptions = props.slackListenerOptions
-    this.scheduleListenerOptions = props.scheduleListenerOptions
-    this.diagnosticLog = props.diagnosticLog
 
-    const idGenerator = this.idGenerator
-
-    this.store =
+    const store =
       props.store ??
       new FunnelSettingsStore({
         path: this.paths.settings,
-        fs: this.fs,
+        fs,
         idGenerator,
       })
 
     const factory = new FunnelConnectorFactory({
-      fs: this.fs,
-      process: this.process,
+      fs,
+      process,
       logger: this.logger,
-      diagnosticLog: this.diagnosticLog,
+      diagnosticLog: props.diagnosticLog,
       dir,
-      slackListenerOptions: this.slackListenerOptions,
-      scheduleListenerOptions: this.scheduleListenerOptions,
+      slackListenerOptions: props.slackListenerOptions,
+      scheduleListenerOptions: props.scheduleListenerOptions,
     })
 
     this.channels = new FunnelChannels({
-      store: this.store,
+      store,
       factory,
-      clock: this.clock,
+      clock,
       idGenerator,
     })
 
     this.gateway = new FunnelGateway({
-      fs: this.fs,
-      process: this.process,
-      clock: this.clock,
+      fs,
+      process,
+      clock,
       dir,
       tmpDir,
       port: props.port,
     })
 
-    this.gatewayToken = new FunnelGatewayToken({ fs: this.fs, dir })
+    this.gatewayToken = new FunnelGatewayToken({ fs, dir })
 
     this.publisher = new FunnelChannelPublisher({
       port: this.gateway.getPort(),
@@ -199,6 +201,23 @@ export class Funnel {
       port: this.gateway.getPort(),
       isDaemonRunning: () => this.gateway.isRunning(),
       getToken: () => this.gatewayToken.read(),
+    })
+
+    const mcp = new FunnelMcp({ fs })
+    this.profiles = new FunnelProfiles({ store, idGenerator, fs })
+    this.localConfig = new FunnelLocalConfig({ fs })
+    this.localConfigSync = new FunnelLocalConfigSync({
+      channels: this.channels,
+      prompter: props.tokenPrompter ?? new NodeFunnelTokenPrompter(),
+    })
+    this.claude = new FunnelClaude({
+      channels: this.channels,
+      mcp,
+      gateway: this.gateway,
+      sessions: this.profiles,
+      guard: new FileProcessGuard({ fs, process, dir }),
+      process,
+      logger: this.logger,
     })
 
     Object.freeze(this)
@@ -221,45 +240,6 @@ export class Funnel {
       dir: props.dir ?? SANDBOX_DIR,
       tmpDir: props.tmpDir ?? SANDBOX_TMP_DIR,
     })
-  }
-
-  /**
-   * Build the Claude Code launcher with all dependencies wired from this Funnel.
-   * Returns the launcher and supporting objects needed by the CLI.
-   */
-  buildClaude(tokenPrompter?: FunnelTokenPrompter): {
-    claude: FunnelClaude
-    profiles: FunnelProfiles
-    localConfig: FunnelLocalConfig
-    localConfigSync: FunnelLocalConfigSync
-  } {
-    const mcp = new FunnelMcp({ fs: this.fs })
-    const profiles = new FunnelProfiles({
-      store: this.store,
-      idGenerator: this.idGenerator,
-      fs: this.fs,
-    })
-    const localConfig = new FunnelLocalConfig({ fs: this.fs })
-    const localConfigSync = new FunnelLocalConfigSync({
-      channels: this.channels,
-      prompter: tokenPrompter ?? new NodeFunnelTokenPrompter(),
-    })
-    const guard = new FileProcessGuard({
-      fs: this.fs,
-      process: this.process,
-      dir: this.paths.dir,
-    })
-    const claude = new FunnelClaude({
-      channels: this.channels,
-      mcp,
-      gateway: this.gateway,
-      sessions: profiles,
-      guard,
-      process: this.process,
-      logger: this.logger,
-    })
-
-    return { claude, profiles, localConfig, localConfigSync }
   }
 
   /**

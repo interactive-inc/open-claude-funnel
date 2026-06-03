@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { dispatchClaude } from "@/cli/dispatch-claude"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
-import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import { Funnel } from "@/funnel"
+import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import type { DispatchDeps } from "@/cli/dispatch-claude"
 
 type Setup = {
@@ -32,12 +32,10 @@ const buildSetup = (opts: { files?: Record<string, string>; dirs?: string[] } = 
     return { exitCode: 0 }
   })
 
-  const funnel = Funnel.inMemory({ fs, process: memoryProcess })
-  const { claude, profiles, localConfig, localConfigSync } = funnel.buildClaude(
-    new MemoryFunnelTokenPrompter(),
-  )
+  const funnel = Funnel.inMemory({ fs, process: memoryProcess, tokenPrompter: new MemoryFunnelTokenPrompter() })
+  const { claude, profiles, localConfig, localConfigSync, listeners } = funnel
 
-  const deps: DispatchDeps = { claude, profiles, localConfig, localConfigSync, listeners: funnel.listeners }
+  const deps: DispatchDeps = { claude, profiles, localConfig, localConfigSync, listeners }
 
   return { deps, funnel, fs, process: memoryProcess }
 }

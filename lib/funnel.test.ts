@@ -8,7 +8,7 @@ import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader
 import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 
-const buildCore = (): Funnel =>
+const buildFunnel = (): Funnel =>
   new Funnel({
     store: new MockFunnelSettingsReader(),
     fs: new MemoryFunnelFileSystem(),
@@ -16,11 +16,12 @@ const buildCore = (): Funnel =>
     logger: new NoopFunnelLogger(),
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
+    tokenPrompter: new MemoryFunnelTokenPrompter(),
   })
 
 describe("Funnel facade", () => {
   test("exposes channels with the channel-scoped connector API wired", () => {
-    const funnel = buildCore()
+    const funnel = buildFunnel()
 
     funnel.channels.add({ name: "ops" })
     funnel.channels.addConnector("ops", { type: "schedule", name: "cron" })
@@ -28,34 +29,40 @@ describe("Funnel facade", () => {
     expect(funnel.channels.listAllConnectors()).toHaveLength(1)
   })
 
-  test("buildClaude profiles see the same store as channels (shared settings)", () => {
-    const funnel = buildCore()
-    const { profiles } = funnel.buildClaude(new MemoryFunnelTokenPrompter())
+  test("profiles see the same store as channels (shared settings)", () => {
+    const funnel = buildFunnel()
 
     const channel = funnel.channels.add({ name: "ops" })
 
-    profiles.add({
+    funnel.profiles.add({
       name: "default",
       path: "/repo",
       channelId: channel.id,
     })
 
-    expect(profiles.list()).toHaveLength(1)
-    expect(profiles.get("default")?.channelId).toBe(channel.id)
+    expect(funnel.profiles.list()).toHaveLength(1)
+    expect(funnel.profiles.get("default")?.channelId).toBe(channel.id)
   })
 
   test("channels.remove works without a profileChecker wired", () => {
-    const funnel = buildCore()
-    const { profiles } = funnel.buildClaude(new MemoryFunnelTokenPrompter())
+    const funnel = buildFunnel()
     const channel = funnel.channels.add({ name: "ops" })
 
-    profiles.add({
+    funnel.profiles.add({
       name: "default",
       path: "/repo",
       channelId: channel.id,
     })
 
-    // profileChecker is not wired in core — remove proceeds without checking
     expect(() => funnel.channels.remove("ops")).not.toThrow()
+  })
+
+  test("claude, profiles, localConfig, localConfigSync are wired at construction", () => {
+    const funnel = buildFunnel()
+
+    expect(funnel.claude).toBeDefined()
+    expect(funnel.profiles).toBeDefined()
+    expect(funnel.localConfig).toBeDefined()
+    expect(funnel.localConfigSync).toBeDefined()
   })
 })
