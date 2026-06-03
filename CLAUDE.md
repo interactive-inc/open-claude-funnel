@@ -144,6 +144,11 @@ graph TD
     MI[McpInstaller]
     GC[GatewayController]
     SS2[SessionStore]
+    PG[ProcessGuard]
+  end
+
+  subgraph guardimpl["ProcessGuard 実装"]
+    FPG[FileProcessGuard]
   end
 
   boundaries --> storage
@@ -156,10 +161,12 @@ graph TD
   MC -.implements.-> MI
   GW -.implements.-> GC
   PR2 -.implements.-> SS2
+  FPG -.implements.-> PG
   CR --> FC
   MI --> FC
   GC --> FC
   SS2 --> FC
+  PG --> FC
   CH --> LS
   CH --> GS
   BC --> GS
@@ -176,13 +183,11 @@ graph TD
 
 **サブエントリとの対応：**
 
-| import | 対応するレイヤ |
-|--------|---------------|
-| `"."` | ファサード（Funnel）全体 |
-| `"./gateway"` | ゲートウェイ層のブロック単品 |
-| `"./profiles"` | エンジン層の Profiles 単品 |
-| `"./local-config"` | エンジン層の LocalConfig 群単品 |
-| `"./connectors/*"` | コネクタ層の各コネクタ単品 |
+- `"."` — ファサード（Funnel）全体
+- `"./gateway"` — ゲートウェイ層のブロック単品
+- `"./profiles"` — エンジン層の Profiles 単品
+- `"./local-config"` — エンジン層の LocalConfig 群単品
+- `"./connectors/*"` — コネクタ層の各コネクタ単品
 
 ### lib/engine
 
@@ -202,7 +207,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 
 ### lib/funnel.ts と lib/bin.ts と lib/index.ts
 
-`funnel.ts` が全 Service を束ねる Facade。`bin.ts` が `package.json` の `bin` エントリ。`index.ts` が公開 API の re-export。
+`funnel.ts` が全 Service を束ねる Facade。constructor で全依存を eager に組み立て `Object.freeze(this)` で本物のイミュータブルを保証する。公開フィールドは `channels` / `gateway` / `gatewayToken` / `publisher` / `listeners` / `claude` / `profiles` / `localConfig` / `localConfigSync` / `paths`。`buildClaude()` のような工場メソッドはなく、`new Funnel(props)` した瞬間に全フィールドが確定する。`bin.ts` が `package.json` の `bin` エントリ。`index.ts` が公開 API の re-export。
 
 ### lib/logger
 
@@ -237,13 +242,15 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 
 - ハンドラに try/catch を書かない。Service は throw、エラー応答は `throw new HTTPException(status, { message })` に統一する。`return c.text("...", 4xx)` 禁止。`lib/cli/routes/index.ts` の onError が捕捉して `error: <message>` で返す
 - `c.req.valid("param")` / `c.req.valid("query")` の結果は分割代入せず、`const param = ...` / `const query = ...` として保持する
-- Funnel は middleware で context に乗せる。ルートからは `const funnel = c.var.funnel` で取得する
+- Funnel と Claude 層は Hono の `Bindings` で context に乗せる。ルートからは `const funnel = c.env.funnel`、`const { profiles, claude } = c.env` で取得する
 - `export default` 禁止
 
 ### モジュールと依存
 
 - ビジネスロジックは engine と connectors のクラスに集約（Hono 非依存）
-- クラスは DI（コンストラクタで依存を受け取る）。`Object.freeze(this)` で immutable
+- クラスは DI（コンストラクタで依存を受け取る）。`Object.freeze(this)` で immutable。`Funnel` ファサードは constructor で全依存を eager に組み立て、lazy memos パターンは使わない
+- `FunnelClaude` の依存は全て narrow interface（`ChannelResolver` / `McpInstaller` / `GatewayController` / `SessionStore` / `ProcessGuard`）。具体クラスへの依存はゼロなのでテストはスタブだけで書ける。`FileProcessGuard` が `ProcessGuard` の Node 実装（PID ファイル管理）
+- `sessionFileExists`（Claude のセッション jsonl パス解決）は `FunnelClaude` でなく `FunnelProfiles`/`SessionStore` が持つ。Claude 内部のパス構造を知るのは「セッションを所有するクラス」の責務
 - 既存クラスを薄くラップしただけの `createXxxService(store)` 関数は作らない。DI が複数あるときだけ create 関数を置く
 - 外部境界は abstract class + Node / Memory 実装を並置。テストは Memory 実装で書く（実 FS / spawn / fetch / WebSocket / TTY に触れない）
 - logger だけは例外で **optional・default インスタンスを作らない**。`logger?: FunnelLogger` を DI で受け、内部は `this.logger?.info(...)` の optional chaining で呼ぶ（未注入なら sliently no-op）。これでテストは何も注入せず勝手に静か（実 FS に触れない）になり、`?? new NodeFunnelLogger()` の結線を全クラスから排除できる。本物の file sink は production 入口（`lib/cli/index.ts` / `lib/gateway/daemon.ts`）で `new Funnel({ logger: new NodeFunnelLogger() })` として一度だけ注入する。エラーを host に晒す経路は logger ではなく `OnFunnelError`（DI 維持・テストで assert する seam）— 2 つを混ぜない
@@ -260,7 +267,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 ### Gateway とライフサイクル
 
 - 同一 `Bun.serve` で WebSocket と内部管理 API（`/health` `/status` `/listeners*` `/channels/.../call`）をホストする
-- WebSocket クライアントは `?channel=<name>` で接続し、そのチャネルの connector イベントだけ受信する
+- WebSocket クライアントは `?channel=<name>&id=<subscriberId>` で接続する。`id` は funnel の targeted delivery キーで、`meta.target=<id>` のイベントがそのクライアントだけに届く。`id` を省略した場合は channel 全体の fanout を受信する（tap=all は廃止済み）
 - listener は `start(notify)` / `stop()` / `isAlive()` を持ち、`FunnelListenerSupervisor` が registry を所有して 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
 - connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` の rename-by-token 経路は engine を直接叩くため reload が走らない（`fnl gateway restart` 必要）
