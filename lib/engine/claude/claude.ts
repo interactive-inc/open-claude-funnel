@@ -3,8 +3,6 @@ import type { GatewayController } from "@/engine/claude/gateway-controller"
 import type { McpInstaller } from "@/engine/claude/mcp-installer"
 import type { ProcessGuard } from "@/engine/claude/process-guard"
 import type { SessionStore } from "@/engine/claude/session-store"
-import { FunnelFileSystem } from "@/engine/fs/file-system"
-import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelLogger } from "@/engine/logger/logger"
@@ -48,13 +46,11 @@ type Deps = {
   sessions: SessionStore
   guard: ProcessGuard
   process?: FunnelProcessRunner
-  fs?: FunnelFileSystem
   idGenerator?: FunnelIdGenerator
   logger?: FunnelLogger
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
-const defaultFs = new NodeFunnelFileSystem()
 const defaultIdGenerator = new NodeFunnelIdGenerator()
 
 /**
@@ -70,7 +66,6 @@ export class FunnelClaude {
   private readonly sessions: SessionStore
   private readonly guard: ProcessGuard
   private readonly process: FunnelProcessRunner
-  private readonly fs: FunnelFileSystem
   private readonly idGenerator: FunnelIdGenerator
   private readonly logger: FunnelLogger | undefined
 
@@ -81,7 +76,6 @@ export class FunnelClaude {
     this.sessions = deps.sessions
     this.guard = deps.guard
     this.process = deps.process ?? defaultProcess
-    this.fs = deps.fs ?? defaultFs
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     this.logger = deps.logger
     Object.freeze(this)

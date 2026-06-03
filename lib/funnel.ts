@@ -255,7 +255,6 @@ export class Funnel {
       gateway: this.gateway,
       sessions: profiles,
       guard,
-      fs: this.fs,
       process: this.process,
       logger: this.logger,
     })
