@@ -276,6 +276,19 @@ export class Funnel {
   }
 
   /**
+   * Create a ProcessGuard scoped to this Funnel's home directory.
+   * Useful for hosts that need to check or manage singleton PID files
+   * independently of FunnelClaude (e.g. checking if a named profile is running).
+   */
+  createProcessGuard(): FileProcessGuard {
+    return new FileProcessGuard({
+      fs: this.fs,
+      process: this.process,
+      dir: this.paths.dir,
+    })
+  }
+
+  /**
    * Run the gateway daemon in the foreground (tied to this terminal).
    * For background daemon management, use `funnel.gateway.start()` instead.
    */
