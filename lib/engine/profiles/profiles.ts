@@ -1,3 +1,7 @@
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { FunnelFileSystem } from "@/engine/fs/file-system"
+import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import type { ProfileConfig } from "@/engine/settings/settings-schema"
@@ -5,7 +9,10 @@ import type { ProfileConfig } from "@/engine/settings/settings-schema"
 type Deps = {
   store: FunnelSettingsReader
   idGenerator: FunnelIdGenerator
+  fs?: FunnelFileSystem
 }
+
+const defaultFs = new NodeFunnelFileSystem()
 
 /**
  * Named launch presets for `fnl claude`. Each profile bundles a working
@@ -27,10 +34,12 @@ type Deps = {
 export class FunnelProfiles {
   private readonly store: FunnelSettingsReader
   private readonly idGenerator: FunnelIdGenerator
+  private readonly fs: FunnelFileSystem
 
   constructor(deps: Deps) {
     this.store = deps.store
     this.idGenerator = deps.idGenerator
+    this.fs = deps.fs ?? defaultFs
     Object.freeze(this)
   }
 
@@ -147,6 +156,30 @@ export class FunnelProfiles {
     profile.sessionId = sessionId
 
     this.store.write(settings)
+  }
+
+  /**
+   * Mirrors claude's session storage path
+   * (`<config-dir>/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`) to check
+   * whether a recorded session still exists AND is non-empty. Reads the same
+   * `CLAUDE_CONFIG_DIR` the child will run under so the check matches reality; a
+   * wrong guess can only ever produce a false negative (start fresh), never a
+   * bad resume.
+   */
+  sessionFileExists(cwd: string, sessionId: string, env: Record<string, string>): boolean {
+    const configDir =
+      env.CLAUDE_CONFIG_DIR ??
+      globalThis.process.env.CLAUDE_CONFIG_DIR ??
+      join(homedir(), ".claude")
+    const projectSlug = cwd.replace(/\//g, "-")
+    const path = join(configDir, "projects", projectSlug, `${sessionId}.jsonl`)
+
+    if (!this.fs.existsSync(path)) return false
+
+    // An empty / whitespace-only jsonl is a corrupt session that claude rejects
+    // with "No conversation found"; treat it as missing so the launch resolves a
+    // fresh session instead of a doomed --resume.
+    return this.fs.readFileSync(path).trim().length > 0
   }
 
   update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {

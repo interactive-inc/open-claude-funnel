@@ -1,16 +1,15 @@
-import { homedir } from "node:os"
 import { join } from "node:path"
-import type { FunnelChannels } from "@/engine/channels/channels"
+import type { ChannelResolver } from "@/engine/claude/channel-resolver"
 import type { GatewayController } from "@/engine/claude/gateway-controller"
+import type { McpInstaller } from "@/engine/claude/mcp-installer"
+import type { SessionStore } from "@/engine/claude/session-store"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelLogger } from "@/engine/logger/logger"
-import type { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
-import type { FunnelProfiles } from "@/engine/profiles/profiles"
 import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 
 export type LaunchOptions = {
@@ -43,10 +42,10 @@ export type LaunchOptions = {
 type SessionResolution = { id: string; mode: "resume" | "new" } | null
 
 type Deps = {
-  channels: FunnelChannels
-  mcp: FunnelMcp
+  channels: ChannelResolver
+  mcp: McpInstaller
   gateway: GatewayController
-  profiles: FunnelProfiles
+  sessions: SessionStore
   process?: FunnelProcessRunner
   fs?: FunnelFileSystem
   idGenerator?: FunnelIdGenerator
@@ -65,10 +64,10 @@ const defaultIdGenerator = new NodeFunnelIdGenerator()
  * PID file to enforce singleton launches.
  */
 export class FunnelClaude {
-  private readonly channels: FunnelChannels
-  private readonly mcp: FunnelMcp
+  private readonly channels: ChannelResolver
+  private readonly mcp: McpInstaller
   private readonly gateway: GatewayController
-  private readonly profiles: FunnelProfiles
+  private readonly sessions: SessionStore
   private readonly process: FunnelProcessRunner
   private readonly fs: FunnelFileSystem
   private readonly idGenerator: FunnelIdGenerator
@@ -79,7 +78,7 @@ export class FunnelClaude {
     this.channels = deps.channels
     this.mcp = deps.mcp
     this.gateway = deps.gateway
-    this.profiles = deps.profiles
+    this.sessions = deps.sessions
     this.process = deps.process ?? defaultProcess
     this.fs = deps.fs ?? defaultFs
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
@@ -258,45 +257,17 @@ export class FunnelClaude {
       if (arg === "--session-id" || arg.startsWith("--session-id=")) return null
     }
 
-    const existing = this.profiles.getSessionId(profileId)
+    const existing = this.sessions.getSessionId(profileId)
 
-    if (existing !== null && this.sessionFileExists(cwd, existing, recipeEnv)) {
+    if (existing !== null && this.sessions.sessionFileExists(cwd, existing, recipeEnv)) {
       return { id: existing, mode: "resume" }
     }
 
     const fresh = this.idGenerator.generate()
 
-    this.profiles.setSessionId(profileId, fresh)
+    this.sessions.setSessionId(profileId, fresh)
 
     return { id: fresh, mode: "new" }
-  }
-
-  /**
-   * Mirrors claude's session storage path
-   * (`<config-dir>/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`) to check
-   * whether a recorded session still exists AND is non-empty. Reads the same
-   * `CLAUDE_CONFIG_DIR` the child will run under so the check matches reality; a
-   * wrong guess can only ever produce a false negative (start fresh), never a
-   * bad resume.
-   */
-  private sessionFileExists(
-    cwd: string,
-    sessionId: string,
-    recipeEnv: Record<string, string>,
-  ): boolean {
-    const configDir =
-      recipeEnv.CLAUDE_CONFIG_DIR ??
-      globalThis.process.env.CLAUDE_CONFIG_DIR ??
-      join(homedir(), ".claude")
-    const projectSlug = cwd.replace(/\//g, "-")
-    const path = join(configDir, "projects", projectSlug, `${sessionId}.jsonl`)
-
-    if (!this.fs.existsSync(path)) return false
-
-    // An empty / whitespace-only jsonl is a corrupt session that claude rejects
-    // with "No conversation found"; treat it as missing so the launch resolves a
-    // fresh session instead of a doomed --resume.
-    return this.fs.readFileSync(path).trim().length > 0
   }
 
   private buildEnv(channelId: string, recipeEnv: Record<string, string>): Record<string, string> {

@@ -1,39 +1,37 @@
 import { describe, expect, test } from "bun:test"
-import { FunnelConnectorFactory } from "@/connectors/connector-factory"
-import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
-import { FunnelMcp } from "@/engine/mcp/mcp"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
-import { MemoryFunnelClock } from "@/engine/time/memory-clock"
+import type { ChannelConfig } from "@/engine/settings/settings-schema"
+
+const FAKE_CHANNEL: ChannelConfig = {
+  id: "ch-ops-id",
+  name: "ops",
+  delivery: "fanout",
+  connectors: [],
+}
 
 const buildClaude = () => {
   const fs = new MemoryFunnelFileSystem()
   const process = new MemoryFunnelProcessRunner().on(() => ({ exitCode: 0 }))
-  const store = new MockFunnelSettingsReader()
-  const profiles = new FunnelProfiles({
+  const store = new MockFunnelSettingsReader({ channels: [FAKE_CHANNEL] })
+  const sessions = new FunnelProfiles({
     store,
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "prof" }),
-  })
-  const factory = new FunnelConnectorFactory({
     fs,
-    process,
-    logger: new NoopFunnelLogger(),
-    dir: "/funnel",
   })
-  const channels = new FunnelChannels({
-    store,
-    factory,
-    profileChecker: profiles,
-    clock: new MemoryFunnelClock(),
-    idGenerator: new MemoryFunnelIdGenerator({ prefix: "ch" }),
-  })
-  const channel = channels.add({ name: "ops" })
-  const mcp = new FunnelMcp({ fs })
+  const channels = {
+    get: (name: string): ChannelConfig | null => (name === "ops" ? FAKE_CHANNEL : null),
+    getById: (id: string): ChannelConfig | null => (id === FAKE_CHANNEL.id ? FAKE_CHANNEL : null),
+  }
+  const mcp = {
+    findInstalledName: (_cwd: string): string | null => null,
+    install: (_cwd: string): void => {},
+  }
   const gateway = {
     isRunning: () => true,
     start: async () => true,
@@ -42,7 +40,7 @@ const buildClaude = () => {
     channels,
     mcp,
     gateway,
-    profiles,
+    sessions,
     fs,
     process,
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "sess" }),
@@ -50,19 +48,19 @@ const buildClaude = () => {
     dir: "/funnel",
   })
 
-  // Profiles are addressed by id internally; seed a few and hand back their ids
+  // Sessions (profiles) are addressed by id internally; seed a few and hand back their ids
   // so each test can launch under a known profile.
   const addProfile = (name: string): string => {
-    profiles.add({ name, path: "/work", channelId: channel.id })
+    sessions.add({ name, path: "/work", channelId: FAKE_CHANNEL.id })
 
-    const created = profiles.get(name)
+    const created = sessions.get(name)
 
     if (!created) throw new Error(`failed to seed profile "${name}"`)
 
     return created.id
   }
 
-  return { claude, channels, channel, fs, process, profiles, addProfile }
+  return { claude, channel: FAKE_CHANNEL, fs, process, profiles: sessions, addProfile }
 }
 
 describe("FunnelClaude", () => {
