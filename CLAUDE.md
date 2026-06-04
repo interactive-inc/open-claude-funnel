@@ -69,6 +69,24 @@ Slack → SlackListener.start(notify) → notify(channel, connector, content, me
 
 `fnl channels add` 等の store 編集系は gateway なしでも動く。Listener を起動するもの（実イベントを流す）、WS で受け取るもの（MCP / 観察クライアント）、outbound（Claude → external も HTTP hop 経由）が gateway を必要とする。store 編集後に gateway が動いていれば、対応する Listener を hot-reload する（ただし `FunnelLocalConfigSync` の rename-by-token 経路は engine の `FunnelChannels.renameConnector` を直叩きするので reload が走らない — `fnl gateway restart` で取り込む）。
 
+### in-process gateway か daemon か
+
+gateway を立てる経路は 2 つあり、用途で使い分ける。
+
+- **daemon（別プロセス）** — `Funnel.gateway.start()` が `bun .../daemon.js` を spawn し、`~/.funnel/`（または scoped root）に PID を書く。`fnl claude` 起動時に自動で立ち上がるのもこれ。複数の Claude セッション・複数リポジトリが 1 つの gateway を共有し、プロセスを跨いで生き続ける。CLI は `Funnel.listeners` / `Funnel.publisher` が loopback HTTP（`gatewayLoopbackUrl(port)`）でこの daemon を叩く
+- **in-process（同一プロセス）** — `Funnel.gatewayServer(options).start()` が現在のプロセス内で `Bun.serve` + listeners を直接動かす。テスト・埋め込み・カスタムホスト向け。`onEvent(handler)` で全 event を in-process 観測できる（別プロセスの daemon は観測できない — その場合は WS クライアントを使う）
+
+両者は排他ではない（埋め込みアプリが in-process gateway を 9742、CLI 起動が daemon を 9743 と別ポートで同居できる）。「永続・共有」が要るなら daemon、「このプロセス内で完結・観測したい」なら in-process。
+
+### 型安全な接続・URL 構築
+
+URL を手で組み立てると `channel=` 付け忘れのような事故が起きる（broadcaster が配送しない）。クライアント側は文字列連結せず以下を使う。
+
+- WS 購読 — `channelWsUrl({ base, channel, subscriberId?, since? })`。`channel` は必須でコンパイル時に強制される。token 認証は `channelWsProtocols(token)` を `new WebSocket(url, protocols)` の第 2 引数に渡す（ブラウザ WS は Authorization ヘッダを付けられないため subprotocol 経由）
+- HTTP（publisher / listeners client / MCP channel server）— loopback base は `gatewayLoopbackUrl(port)` に一元化。`http://127.0.0.1:${port}` を直書きしない
+- 非ループバック bind — `gatewayServer({ hostname: "0.0.0.0" })` は token 無しだと `start()` が throw する（全エンドポイントが無防備に晒されるため）。自前で前段認証を入れている場合のみ `allowInsecureHost: true` で許可する
+- 排他オプション — token は `botToken` か `botTokenEnv` の片方のみ（`EitherToken`、両方同時はコンパイルエラー）、event store は `dbPath` か `eventLog` の片方のみ、launch の `resume` は `profileId` がある時だけ指定できる（`LaunchOptions` の union）
+
 ## コマンド
 
 ```bash

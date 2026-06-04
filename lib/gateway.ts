@@ -4,6 +4,8 @@
 // these together automatically — import directly only when you need
 // fine-grained control over the gateway internals.
 export * from "@/gateway/gateway-server"
+export * from "@/gateway/channel-ws-url"
+export * from "@/gateway/gateway-base-url"
 export * from "@/gateway/broadcaster"
 export * from "@/gateway/listener-supervisor"
 export * from "@/gateway/gateway-token"

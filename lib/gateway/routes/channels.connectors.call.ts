@@ -1,12 +1,24 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
+import type { JsonValue } from "@/connectors/connector-adapter"
 import { factory } from "@/gateway/factory"
 import { zParam } from "@/gateway/routes/validator"
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+)
 
 const bodySchema = z.object({
   method: z.string().min(1),
   path: z.string().min(1),
-  body: z.unknown().optional(),
+  body: jsonValueSchema.optional(),
 })
 
 /**
@@ -31,7 +43,9 @@ export const channelsConnectorsCallHandler = factory.createHandlers(
     const result = await c.var.deps.channels.call(param.channel, param.connector, {
       method: parsed.data.method,
       path: parsed.data.path,
-      body: parsed.data.body ?? {},
+      // Pass body through as-is; omitted body stays undefined so adapters apply
+      // their own "no body" handling rather than seeing a spurious empty object.
+      body: parsed.data.body,
     })
 
     return c.json({ ok: true, result })

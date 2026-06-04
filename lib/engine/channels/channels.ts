@@ -1,5 +1,6 @@
 import type { CallInput } from "@/connectors/connector-adapter"
 import type { ConnectorConfig } from "@/connectors/connector-config-schema"
+import type { EitherToken } from "@/connectors/either-token"
 import type { FunnelConnectorFactory } from "@/connectors/connector-factory"
 import type { FunnelConnectorListener } from "@/connectors/connector-listener"
 import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
@@ -33,20 +34,17 @@ export type ChannelConnectorView = ConnectorConfig & {
 }
 
 // Slack/Discord carry either a literal token or a `*TokenEnv` reference name
-// (resolved from the environment at listener start). The sync layer chooses
-// which to store; both shapes are accepted here and passed straight through.
+// (resolved from the environment at listener start). Each token slot is an
+// EitherToken union, so literal+env on the same slot is a compile error while
+// "neither" stays valid (the sync layer / TTY prompt fills it in later).
 type AddConnectorInput =
-  | {
-      type: "slack"
-      name: string
-      botToken?: string
-      appToken?: string
-      botTokenEnv?: string
-      appTokenEnv?: string
-      minify?: boolean
-    }
+  | ({ type: "slack"; name: string; minify?: boolean } & EitherToken<
+      "botToken",
+      "botTokenEnv"
+    > &
+      EitherToken<"appToken", "appTokenEnv">)
   | { type: "gh"; name: string; pollInterval?: number }
-  | { type: "discord"; name: string; botToken?: string; botTokenEnv?: string }
+  | ({ type: "discord"; name: string } & EitherToken<"botToken", "botTokenEnv">)
   | { type: "schedule"; name: string; entries?: ScheduleEntry[] }
 
 /**

@@ -51,6 +51,7 @@ const startServerOn = async (props: {
   token: string
   hostname?: string
   logger?: MemoryFunnelLogger
+  allowInsecureHost?: boolean
 }) => {
   const fs = new MemoryFunnelFileSystem()
   const funnel = new Funnel({
@@ -64,6 +65,7 @@ const startServerOn = async (props: {
     hostname: props.hostname,
     killCompetingSlack: false,
     token: props.token,
+    allowInsecureHost: props.allowInsecureHost,
     dbPath: "/tmp/funnel-test/events.db",
   })
 
@@ -252,23 +254,27 @@ describe("FunnelGatewayServer bind address", () => {
     expect(active.httpServer.hostname).toBe("127.0.0.1")
   })
 
-  test("warns when auth is disabled on a non-loopback bind", async () => {
-    const logger = new MemoryFunnelLogger()
-
-    active = await startServerOn({ token: "", hostname: "0.0.0.0", logger })
-
-    const warned = logger.entries.some(
-      (entry) => entry.level === "warn" && entry.message.includes("non-loopback"),
+  test("refuses to start on a non-loopback bind without a token", async () => {
+    await expect(startServerOn({ token: "", hostname: "0.0.0.0" })).rejects.toThrow(
+      /reachable off-box but no token/,
     )
-    expect(warned).toBe(true)
   })
 
-  test("stays silent on a loopback bind even without a token", async () => {
-    const logger = new MemoryFunnelLogger()
+  test("starts on a non-loopback bind when allowInsecureHost is set", async () => {
+    active = await startServerOn({ token: "", hostname: "0.0.0.0", allowInsecureHost: true })
 
-    active = await startServerOn({ token: "", logger })
+    expect(active.httpServer.hostname).toBe("0.0.0.0")
+  })
 
-    const warned = logger.entries.some((entry) => entry.level === "warn")
-    expect(warned).toBe(false)
+  test("starts on a non-loopback bind with a token", async () => {
+    active = await startServerOn({ token: "secret", hostname: "0.0.0.0" })
+
+    expect(active.httpServer.hostname).toBe("0.0.0.0")
+  })
+
+  test("starts on a loopback bind even without a token", async () => {
+    active = await startServerOn({ token: "" })
+
+    expect(active.httpServer.hostname).toBe("127.0.0.1")
   })
 })

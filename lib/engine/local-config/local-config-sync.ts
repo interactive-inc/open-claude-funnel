@@ -1,3 +1,4 @@
+import { appTokenSlot, botTokenSlot } from "@/connectors/either-token"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { ChannelSpec, ConnectorSpec } from "@/engine/local-config/local-config-schema"
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
@@ -24,6 +25,16 @@ type EnsureOutcome = {
   name: string
   changed: boolean
 }
+
+/**
+ * A resolved token slot: exactly one of literal (`token`) / env-ref (`tokenEnv`)
+ * is set, the other `undefined`. The union (not two independent optionals)
+ * lets the spread `{ botToken: token, botTokenEnv: tokenEnv }` narrow to an
+ * `EitherToken`-compatible shape, so it can flow straight into `addConnector`.
+ */
+type ResolvedSlot =
+  | { token: string; tokenEnv: undefined }
+  | { token: undefined; tokenEnv: string }
 
 /**
  * Reconciles a single funnel.json channel spec with `~/.funnel/settings.json`.
@@ -128,7 +139,8 @@ export class FunnelLocalConfigSync {
     const added = this.channels.addConnector(channelName, {
       type: "slack",
       name: spec.name,
-      ...update,
+      ...botTokenSlot({ literal: bot.token, env: bot.tokenEnv }),
+      ...appTokenSlot({ literal: app.token, env: app.tokenEnv }),
       ...(spec.minify !== undefined ? { minify: spec.minify } : {}),
     })
 
@@ -162,7 +174,7 @@ export class FunnelLocalConfigSync {
     const added = this.channels.addConnector(channelName, {
       type: "discord",
       name: spec.name,
-      ...update,
+      ...botTokenSlot({ literal: bot.token, env: bot.tokenEnv }),
     })
 
     return { id: added.id, name: spec.name, changed: true }
@@ -280,7 +292,7 @@ export class FunnelLocalConfigSync {
     label: string
     existingLiteral: string | undefined
     existingEnv: string | undefined
-  }): Promise<{ token: string | undefined; tokenEnv: string | undefined }> {
+  }): Promise<ResolvedSlot> {
     if (input.existingEnv !== undefined) return { token: undefined, tokenEnv: input.existingEnv }
     if (input.existingLiteral !== undefined) {
       return { token: input.existingLiteral, tokenEnv: undefined }

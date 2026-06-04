@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { gatewayLoopbackUrl } from "@/gateway/gateway-base-url"
 import { FunnelChannelSubscriber } from "@/engine/mcp/channel-subscriber"
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
 import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
@@ -54,9 +55,7 @@ const readAllChannels = (dir: string): ChannelSummary[] => {
 export const startChannelServer = async (options: ChannelServerOptions = {}): Promise<void> => {
   const dir = options.dir ?? DEFAULT_FUNNEL_DIR
   const gatewayBaseUrl =
-    options.gatewayUrl ??
-    process.env.FUNNEL_GATEWAY_URL ??
-    `http://127.0.0.1:${resolveFunnelPort()}`
+    options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? gatewayLoopbackUrl(resolveFunnelPort())
   const gatewayWsUrl = `${gatewayBaseUrl.replace(/^http/, "ws")}/ws`
   const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
   const channel = channelId ? readChannelConnectors(dir, channelId) : null
@@ -187,7 +186,9 @@ export const startChannelServer = async (options: ChannelServerOptions = {}): Pr
     const args = (request.params.arguments ?? {}) as Record<string, unknown>
     const method = typeof args.method === "string" ? args.method : ""
     const path = typeof args.path === "string" ? args.path : ""
-    const body = args.body ?? {}
+    // Leave body undefined when absent so the gateway / adapter applies its own
+    // "no body" handling rather than receiving a spurious empty object.
+    const body = args.body
 
     if (!method || !path) {
       throw new Error("`method` and `path` are required")

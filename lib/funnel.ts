@@ -40,7 +40,7 @@ import type { ConnectorDiagnosticLog } from "@/gateway/connector-diagnostic-log"
 import type { Env } from "@/gateway/factory"
 import type { FunnelEventLog } from "@/gateway/funnel-event-log"
 import { FunnelGateway } from "@/gateway/gateway"
-import { FunnelGatewayServer } from "@/gateway/gateway-server"
+import { FunnelGatewayServer, type GatewayEventStore } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
 import { buildFunnelDebugReport, type FunnelDebugReport } from "@/gateway/funnel-debug"
@@ -102,6 +102,20 @@ type Props = {
    * Defaults to a TTY-only stdin prompter. Inject MemoryFunnelTokenPrompter in tests.
    */
   tokenPrompter?: FunnelTokenPrompter
+}
+
+/**
+ * Options for `Funnel.gatewayServer()`. The event store is a union (`dbPath`
+ * xor `eventLog`) so the two storage modes can't be mixed.
+ */
+export type GatewayServerOptions = GatewayEventStore & {
+  port?: number
+  hostname?: string
+  killCompetingSlack?: boolean
+  token?: string
+  /** Permit a non-loopback `hostname` without a token. See FunnelGatewayServer. */
+  allowInsecureHost?: boolean
+  extraRoutes?: Hono<Env>
 }
 
 /**
@@ -247,23 +261,13 @@ export class Funnel {
    * this returns a class that runs `Bun.serve` + listeners inside the current process —
    * useful for tests, embedding, or custom hosts.
    */
-  gatewayServer(
-    options: {
-      port?: number
-      hostname?: string
-      dbPath?: string
-      killCompetingSlack?: boolean
-      token?: string
-      eventLog?: FunnelEventLog
-      extraRoutes?: Hono<Env>
-    } = {},
-  ): FunnelGatewayServer {
+  gatewayServer(options: GatewayServerOptions = {}): FunnelGatewayServer {
     return new FunnelGatewayServer({
       channels: this.channels,
       port: options.port,
       hostname: options.hostname,
-      dbPath: options.dbPath,
-      eventLog: options.eventLog,
+      // EventStore is a union (dbPath xor eventLog); spread it so exactly one reaches the server.
+      ...(options.eventLog ? { eventLog: options.eventLog } : { dbPath: options.dbPath }),
       process: this.process,
       clock: this.clock,
       logger: this.logger,
@@ -271,6 +275,7 @@ export class Funnel {
       dir: this.paths.dir,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
+      allowInsecureHost: options.allowInsecureHost,
       extraRoutes: options.extraRoutes,
     })
   }

@@ -151,14 +151,16 @@ describe("FunnelClaude", () => {
     expect(profiles.getSessionId(devId)).toBeNull()
   })
 
-  test("launch never resumes without a profile, even when resume is true", async () => {
+  test("a profile-less launch starts a fresh, unrecorded session", async () => {
     // The session is owned by the profile; a profile-less launch has no profile
-    // to resume under, so it always starts a fresh, unrecorded session.
+    // to resume under, so it always starts a fresh session. `resume` can no
+    // longer even be passed here — the LaunchOptions union requires a profileId
+    // for it, so the old "resume is silently ignored" path is now a compile error.
     const { claude, fs, process } = buildClaude()
 
     fs.mkdirSync("/work", { recursive: true })
 
-    await claude.launch({ channel: "ops", cwd: "/work", resume: true })
+    await claude.launch({ channel: "ops", cwd: "/work" })
 
     const attach = process.calls.find((c) => c.kind === "attach")
 

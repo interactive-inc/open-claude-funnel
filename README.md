@@ -375,6 +375,28 @@ unsubscribe()
 
 永続化と再生は `FunnelEventLog` port の裏にある。デフォルトは `SqliteFunnelEventLog`（デーモン再起動を跨いで durable。reconnect 時の再生を提供する）。`gatewayServer({ eventLog })` に `MemoryFunnelEventLog` を渡せば durable な再生を差し替え・無効化できる。`onEvent` は書き込み専用の観測フックで、再生（読み戻し）は EventLog の責務。
 
+### 間違えにくい API
+
+URL やオプションは型で安全側に倒している。
+
+```ts
+import {
+  channelWsUrl,
+  channelWsProtocols,
+  gatewayLoopbackUrl,
+} from "@interactive-inc/claude-funnel/gateway"
+
+// WS 購読 URL。channel は必須（付け忘れるとコンパイルエラー）。
+const url = channelWsUrl({ base: "ws://localhost:9743/ws", channel: "inbox", subscriberId })
+const ws = new WebSocket(url, channelWsProtocols(token)) // token は subprotocol で渡す
+
+// HTTP の loopback base は手で組まずこれを使う
+const base = gatewayLoopbackUrl(9743) // → http://127.0.0.1:9743
+```
+
+- 非ループバック bind（`gatewayServer({ hostname: "0.0.0.0" })`）は token 無しだと `start()` が throw する。前段で自前認証する場合のみ `allowInsecureHost: true`
+- コネクタの token は `botToken` か `botTokenEnv` の片方だけ（両方同時はコンパイルエラー）、event store は `dbPath` か `eventLog` の片方だけ、launch の `resume` は `profileId` がある時だけ指定できる
+
 ### サブエントリ
 
 個別の層だけを import したい場合は sub-entry を使う。

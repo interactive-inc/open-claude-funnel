@@ -222,13 +222,15 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
 
       await reconcileListeners(listeners, picked.name, synced)
 
+      // A funnel.json profile has no stable uuid (only a name), so it can't key
+      // the PID file or a resumable session — `resume` would be silently ignored.
+      // The type now forbids passing it without a profileId, making that explicit.
       const exitCode = await claude.launch({
         channel: picked.name,
         cwd,
         userArgs: parsed.userArgs,
         options: localProfile.options,
         env: localProfile.env,
-        resume: localProfile.resume,
       })
 
       return { stdout: null, stderr: null, exitCode }

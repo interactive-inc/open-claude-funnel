@@ -25,15 +25,24 @@ const DEFAULT_HOST = "127.0.0.1"
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"])
 const defaultDbPath = (): string => join(funnelTmpDir(), "events.db")
 
-type Deps = {
+/**
+ * Where the gateway's durable replay log lives. The two ways to specify it are
+ * mutually exclusive — modeled as a union so you can't pass both (the old shape
+ * silently ignored `dbPath` when `eventLog` was also given).
+ *
+ * - omit both → SQLite at the default path (`<os.tmpdir()>/funnel/events.db`)
+ * - `dbPath` → SQLite at a custom path (parent dir created on demand)
+ * - `eventLog` → bring your own `FunnelEventLog` (e.g. `MemoryFunnelEventLog`)
+ */
+export type GatewayEventStore =
+  | { dbPath?: string; eventLog?: undefined }
+  | { dbPath?: undefined; eventLog: FunnelEventLog }
+
+type Deps = GatewayEventStore & {
   channels: FunnelChannels
   port?: number
   /** Bind address for `Bun.serve`. Defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on the network. */
   hostname?: string
-  /** SQLite event store file path. Parent directory is created on demand. Defaults to `<os.tmpdir()>/funnel/events.db`. Ignored when `eventLog` is supplied. */
-  dbPath?: string
-  /** Durable replay log. Defaults to a `SqliteFunnelEventLog` at `dbPath`. Inject a `MemoryFunnelEventLog` (or any `FunnelEventLog`) to swap or disable persistence. */
-  eventLog?: FunnelEventLog
   process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
@@ -45,6 +54,13 @@ type Deps = {
   killCompetingSlack?: boolean
   /** Bearer token required for `/listeners*`, `/status`, and `/ws`. Empty string disables auth (tests only). */
   token?: string
+  /**
+   * Permit binding a non-loopback hostname without a token. Off by default:
+   * `start()` throws when `hostname` is reachable off-box and `token` is empty,
+   * because every privileged endpoint would then be open to the network. Set
+   * this only when you've deliberately fronted the gateway with your own auth.
+   */
+  allowInsecureHost?: boolean
   /**
    * Additional hono app mounted before the built-in gateway routes.
    * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
@@ -93,6 +109,7 @@ export class FunnelGatewayServer {
   private readonly dir: string
   private readonly killCompetingSlack: boolean
   private readonly token: string
+  private readonly allowInsecureHost: boolean
   private readonly broadcaster: FunnelBroadcaster
   private readonly eventLog: FunnelEventLog
   private readonly supervisor: FunnelListenerSupervisor
@@ -113,6 +130,7 @@ export class FunnelGatewayServer {
     this.dir = deps.dir ?? FUNNEL_DIR
     this.killCompetingSlack = deps.killCompetingSlack ?? true
     this.token = deps.token ?? ""
+    this.allowInsecureHost = deps.allowInsecureHost ?? false
     this.extraRoutes = deps.extraRoutes ?? null
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
@@ -147,12 +165,14 @@ export class FunnelGatewayServer {
   async start(): Promise<Server<WsData>> {
     if (this.server) return this.server
 
-    if (!this.token && !LOOPBACK_HOSTS.has(this.hostname)) {
-      this.logger?.warn(
-        "gateway auth is disabled on a non-loopback bind — every endpoint is reachable without a token",
-        {
-          hostname: this.hostname,
-        },
+    if (!this.token && !LOOPBACK_HOSTS.has(this.hostname) && !this.allowInsecureHost) {
+      // Fail fast: a non-loopback bind with no token would expose every
+      // privileged endpoint to the network. Refuse rather than warn — a missed
+      // log line has shipped open gateways before. Set a `token`, bind loopback,
+      // or pass `allowInsecureHost: true` if you've fronted it with your own auth.
+      throw new Error(
+        `refusing to start gateway: hostname "${this.hostname}" is reachable off-box but no token is set. ` +
+          `Set a token, bind to loopback (127.0.0.1), or pass allowInsecureHost: true.`,
       )
     }
 
