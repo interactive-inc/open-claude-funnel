@@ -6,7 +6,7 @@ import { zValidator } from "@/cli/router/validator"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
 
-const PRESETS: Record<string, string> = {
+export const PRESETS: Record<string, string> = {
   recent: "SELECT seq, ts, type, outcome FROM processed ORDER BY seq DESC LIMIT 20",
   skipped:
     "SELECT seq, ts, type, outcome, payload FROM processed WHERE outcome LIKE 'skip:%' ORDER BY seq DESC LIMIT 20",
@@ -15,6 +15,24 @@ const PRESETS: Record<string, string> = {
   summary: "SELECT outcome, COUNT(*) AS count FROM processed GROUP BY outcome ORDER BY count DESC",
   "trace-dedup":
     "SELECT r.seq, r.ts, r.event_id, r.payload FROM raw r JOIN processed p USING(event_id) WHERE p.outcome='skip:dedup' ORDER BY r.seq DESC LIMIT 20",
+}
+
+// Channel-filtered variants. A regex that injects `WHERE channel_id = ?` into
+// the base presets broke whenever the base already had a WHERE (skipped/errors
+// → double WHERE) or a table alias (trace-dedup → split `raw r`). Each preset
+// instead carries a hand-written `channel_id = ?` placed correctly (AND vs
+// WHERE, aliased for the join). Keys must stay in sync with PRESETS.
+export const PRESETS_BY_CHANNEL: Record<string, string> = {
+  recent:
+    "SELECT seq, ts, type, outcome FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT 20",
+  skipped:
+    "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? AND outcome LIKE 'skip:%' ORDER BY seq DESC LIMIT 20",
+  errors:
+    "SELECT ts, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 20",
+  summary:
+    "SELECT outcome, COUNT(*) AS count FROM processed WHERE channel_id = ? GROUP BY outcome ORDER BY count DESC",
+  "trace-dedup":
+    "SELECT r.seq, r.ts, r.event_id, r.payload FROM raw r JOIN processed p USING(event_id) WHERE r.channel_id = ? AND p.outcome='skip:dedup' ORDER BY r.seq DESC LIMIT 20",
 }
 
 const sqlHelp = `funnel gateway sql — query inbound connector traffic with SQL
@@ -86,7 +104,9 @@ export const gatewaySqlHandler = factory.createHandlers(
     }
 
     if (query.preset) {
-      const base = PRESETS[query.preset] ?? null
+      const base = resolvedChannelId
+        ? (PRESETS_BY_CHANNEL[query.preset] ?? null)
+        : (PRESETS[query.preset] ?? null)
 
       if (!base) return c.text(sqlHelp)
 
@@ -98,12 +118,8 @@ export const gatewaySqlHandler = factory.createHandlers(
         applied = applied.replace(/LIMIT \d+/, `LIMIT ${n}`)
       }
 
-      if (resolvedChannelId) {
-        sql = applied.replace(/FROM (raw|processed|connection)\b/, "FROM $1 WHERE channel_id = ?")
-        params = [resolvedChannelId]
-      } else {
-        sql = applied
-      }
+      sql = applied
+      params = resolvedChannelId ? [resolvedChannelId] : []
     } else if (query.query) {
       sql = query.query
     }

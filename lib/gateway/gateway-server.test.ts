@@ -245,6 +245,29 @@ describe("FunnelGatewayServer event log", () => {
     expect(eventLog.loadSince(0).map((event) => event.content)).toEqual(["hello", "world"])
     expect(server.getEventLog()).toBe(eventLog)
   })
+
+  test("emit stamps channelId whether the channel is named by name or by id", () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    const channel = funnel.channels.add({ name: "ops" })
+    const eventLog = new MemoryFunnelEventLog()
+    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+
+    const stamped: (string | undefined)[] = []
+    server.onEvent((event) => stamped.push(event.meta?.channelId))
+
+    // Publishing by id must resolve the same as by name. Otherwise channelId is
+    // left unstamped and the broadcaster fans the event out across all channels.
+    server.emit({ channel: channel.name, content: "by-name" })
+    server.emit({ channel: channel.id, content: "by-id" })
+
+    expect(stamped).toEqual([channel.id, channel.id])
+  })
 })
 
 describe("FunnelGatewayServer bind address", () => {
@@ -276,5 +299,64 @@ describe("FunnelGatewayServer bind address", () => {
     active = await startServerOn({ token: "" })
 
     expect(active.httpServer.hostname).toBe("127.0.0.1")
+  })
+})
+
+describe("FunnelGatewayServer error responses", () => {
+  const startWithChannel = async () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    funnel.channels.add({ name: "ops" })
+    const server = funnel.gatewayServer({
+      port: 0,
+      killCompetingSlack: false,
+      token: "secret",
+      dbPath: "/tmp/funnel-test/events.db",
+    })
+
+    const httpServer = await server.start()
+    return { server, httpServer }
+  }
+
+  test("a service error surfaces its message instead of a generic 500", async () => {
+    active = await startWithChannel()
+    const url = `http://localhost:${active.httpServer.port}/channels/ops/connectors/nope/call`
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { authorization: "Bearer secret", "content-type": "application/json" },
+      body: JSON.stringify({ method: "GET", path: "x" }),
+    })
+    const text = await res.text()
+
+    // channels.call throws a plain Error for the unknown connector; onError must
+    // carry its message through rather than collapsing it to "Internal Server Error".
+    expect(res.status).toBe(500)
+    expect(text).toContain("not found")
+    expect(text).not.toContain("Internal Server Error")
+  })
+
+  test("a body-validation HTTPException keeps its native 400", async () => {
+    active = await startWithChannel()
+    const url = `http://localhost:${active.httpServer.port}/channels/ops/connectors/nope/call`
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { authorization: "Bearer secret", "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    const text = await res.text()
+
+    // The call route throws HTTPException(400) before reaching the service.
+    // onError must delegate to its native response: the body carries the
+    // validation reason verbatim, not the generic `{ error }` envelope the
+    // non-HTTPException branch would emit.
+    expect(res.status).toBe(400)
+    expect(text).toContain("Invalid input")
   })
 })

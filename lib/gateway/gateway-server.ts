@@ -141,7 +141,11 @@ export class FunnelGatewayServer {
 
       if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true })
 
-      this.eventLog = new SqliteFunnelEventLog({ path: this.dbPath, now: this.nowMs })
+      this.eventLog = new SqliteFunnelEventLog({
+        path: this.dbPath,
+        now: this.nowMs,
+        logger: this.logger,
+      })
     }
 
     this.broadcaster = new FunnelBroadcaster({
@@ -470,7 +474,11 @@ export class FunnelGatewayServer {
   }
 
   private lookupChannelId(channelName: string): string | null {
-    return this.channels.get(channelName)?.id ?? null
+    // Resolve by name OR id, matching the WS upgrade path (`resolveChannel`).
+    // A caller that publishes by channel id would otherwise leave channelId
+    // unstamped, and the broadcaster then skips its channel filter and fans the
+    // event out to every connected client regardless of channel.
+    return this.channels.get(channelName)?.id ?? this.channels.getById(channelName)?.id ?? null
   }
 
   private lookupConnectorId(channelId: string, connectorName: string): string | null {
