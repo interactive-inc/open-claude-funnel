@@ -174,6 +174,22 @@ describe("FunnelScheduleListener", () => {
 
     expect(sent2).toHaveLength(0)
   })
+
+  test("catches up a missed match on first tick when state has no prior record", async () => {
+    // cron fires at minute 0 of every hour; now is 30 min later with no prior state.
+    // Previously this would not fire because searchFrom defaulted to `now` and the
+    // window collapsed to a single minute.
+    const config = buildConfig([buildEntry({ cron: "0 * * * *", catchupPolicy: "latest" })])
+    const { listener, sent } = buildListener(config, new Date("2026-01-01T00:30:00.000Z"))
+
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.meta?.fired_at).toBe("2026-01-01T00:00:00.000Z")
+    expect(sent[0]?.meta?.catchup).toBe("true")
+  })
 })
 
 describe("FunnelScheduleListener: diagnostic log", () => {
