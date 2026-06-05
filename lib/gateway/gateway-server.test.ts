@@ -350,9 +350,13 @@ describe("FunnelGatewayServer error responses", () => {
       headers: { authorization: "Bearer secret", "content-type": "application/json" },
       body: JSON.stringify({}),
     })
+    const text = await res.text()
 
-    // The call route throws HTTPException(400) before reaching the service, and
-    // onError delegates to its native response untouched.
+    // The call route throws HTTPException(400) before reaching the service.
+    // onError must delegate to its native response: the body carries the
+    // validation reason verbatim, not the generic `{ error }` envelope the
+    // non-HTTPException branch would emit.
     expect(res.status).toBe(400)
+    expect(text).toContain("Invalid input")
   })
 })
