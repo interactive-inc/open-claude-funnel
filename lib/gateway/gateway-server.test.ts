@@ -301,3 +301,58 @@ describe("FunnelGatewayServer bind address", () => {
     expect(active.httpServer.hostname).toBe("127.0.0.1")
   })
 })
+
+describe("FunnelGatewayServer error responses", () => {
+  const startWithChannel = async () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    funnel.channels.add({ name: "ops" })
+    const server = funnel.gatewayServer({
+      port: 0,
+      killCompetingSlack: false,
+      token: "secret",
+      dbPath: "/tmp/funnel-test/events.db",
+    })
+
+    const httpServer = await server.start()
+    return { server, httpServer }
+  }
+
+  test("a service error surfaces its message instead of a generic 500", async () => {
+    active = await startWithChannel()
+    const url = `http://localhost:${active.httpServer.port}/channels/ops/connectors/nope/call`
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { authorization: "Bearer secret", "content-type": "application/json" },
+      body: JSON.stringify({ method: "GET", path: "x" }),
+    })
+    const text = await res.text()
+
+    // channels.call throws a plain Error for the unknown connector; onError must
+    // carry its message through rather than collapsing it to "Internal Server Error".
+    expect(res.status).toBe(500)
+    expect(text).toContain("not found")
+    expect(text).not.toContain("Internal Server Error")
+  })
+
+  test("a body-validation HTTPException keeps its native 400", async () => {
+    active = await startWithChannel()
+    const url = `http://localhost:${active.httpServer.port}/channels/ops/connectors/nope/call`
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { authorization: "Bearer secret", "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+
+    // The call route throws HTTPException(400) before reaching the service, and
+    // onError delegates to its native response untouched.
+    expect(res.status).toBe(400)
+  })
+})
