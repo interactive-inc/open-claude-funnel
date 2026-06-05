@@ -1,5 +1,4 @@
 import { join } from "node:path"
-import { z } from "zod"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 
@@ -10,28 +9,26 @@ export const FUNNEL_MCP_COMMAND = "bun"
 export const FUNNEL_MCP_ARGS = ["funnel", "mcp"]
 export const FUNNEL_MCP_NAME = "funnel"
 
-const mcpEntrySchema = z.object({
-  command: z.string().optional(),
-  args: z.array(z.string()).optional(),
-})
-
-const mcpConfigSchema = z.object({
-  mcpServers: z.record(z.string(), mcpEntrySchema).optional(),
-})
-
-type McpEntry = z.infer<typeof mcpEntrySchema>
-type McpConfig = z.infer<typeof mcpConfigSchema>
-
 type Deps = {
   fs?: FunnelFileSystem
 }
 
 const defaultFs = new NodeFunnelFileSystem()
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 /**
  * Installs/uninstalls the funnel MCP entry into a target repository's
  * `.mcp.json`. Detects an existing entry by command match so renaming is
  * preserved across re-installs.
+ *
+ * The raw JSON object is mutated and written back untouched apart from the
+ * funnel entry — third-party server fields (`type`, `url`, `env`, `headers`, …)
+ * and unrelated top-level keys are preserved verbatim. Never round-trip the
+ * file through a narrowing schema: that silently strips every key it does not
+ * declare, corrupting other MCP servers.
  */
 export class FunnelMcp {
   private readonly fs: FunnelFileSystem
@@ -47,7 +44,8 @@ export class FunnelMcp {
     }
 
     const config = this.readConfig(repoPath)
-    const servers = config.mcpServers ?? {}
+    const existing = config.mcpServers
+    const servers = isRecord(existing) ? existing : {}
 
     const existingName = this.findServerName(servers)
     const targetName = existingName ?? FUNNEL_MCP_NAME
@@ -56,39 +54,38 @@ export class FunnelMcp {
       command: FUNNEL_MCP_COMMAND,
       args: FUNNEL_MCP_ARGS,
     }
+    config.mcpServers = servers
 
-    this.writeConfig(repoPath, { ...config, mcpServers: servers })
+    this.writeConfig(repoPath, config)
   }
 
   uninstall(repoPath: string): void {
     if (!this.fs.existsSync(repoPath)) return
 
     const config = this.readConfig(repoPath)
-    const servers = config.mcpServers ?? {}
+    const servers = config.mcpServers
+
+    if (!isRecord(servers)) return
 
     const name = this.findServerName(servers)
 
     if (!name) return
 
-    const next = { ...servers }
+    delete servers[name]
 
-    delete next[name]
-
-    this.writeConfig(repoPath, { ...config, mcpServers: next })
+    this.writeConfig(repoPath, config)
   }
 
   findInstalledName(cwd: string): string | null {
     const config = this.readConfig(cwd)
+    const servers = config.mcpServers
 
-    return this.findServerName(config.mcpServers ?? {})
+    return isRecord(servers) ? this.findServerName(servers) : null
   }
 
-  private findServerName(servers: Record<string, McpEntry>): string | null {
+  private findServerName(servers: Record<string, unknown>): string | null {
     for (const entry of Object.entries(servers)) {
-      const name = entry[0]
-      const value = entry[1]
-
-      if (this.isFunnelEntry(value)) return name
+      if (this.isFunnelEntry(entry[1])) return entry[0]
     }
 
     return null
@@ -96,14 +93,19 @@ export class FunnelMcp {
 
   // Matches the current `bun funnel mcp` form AND the legacy global `funnel mcp`
   // form, so a re-install migrates an old entry to the repo-local one in place.
-  private isFunnelEntry(value: McpEntry | undefined): boolean {
-    if (!value) return false
-    if (value.command === "bun" && value.args?.[0] === "funnel") return true
-    if (value.command === "funnel") return true
+  private isFunnelEntry(value: unknown): boolean {
+    if (!isRecord(value)) return false
+
+    const command = value.command
+    const args = value.args
+
+    if (command === "bun" && Array.isArray(args) && args[0] === "funnel") return true
+    if (command === "funnel") return true
+
     return false
   }
 
-  private readConfig(repoPath: string): McpConfig {
+  private readConfig(repoPath: string): Record<string, unknown> {
     const mcpPath = join(repoPath, ".mcp.json")
 
     if (!this.fs.existsSync(mcpPath)) return {}
@@ -122,16 +124,14 @@ export class FunnelMcp {
       )
     }
 
-    const result = mcpConfigSchema.safeParse(parsed)
-
-    if (!result.success) {
-      throw new Error(`invalid .mcp.json (${mcpPath}): ${result.error.message}`)
+    if (!isRecord(parsed)) {
+      throw new Error(`invalid .mcp.json (${mcpPath}): expected a JSON object`)
     }
 
-    return result.data
+    return parsed
   }
 
-  private writeConfig(repoPath: string, config: McpConfig): void {
+  private writeConfig(repoPath: string, config: Record<string, unknown>): void {
     const mcpPath = join(repoPath, ".mcp.json")
 
     this.fs.writeFileSync(mcpPath, `${JSON.stringify(config, null, 2)}\n`)

@@ -67,7 +67,7 @@ Slack → SlackListener.start(notify) → notify(channel, connector, content, me
 
 ### gateway の要否
 
-`fnl channels add` 等の store 編集系は gateway なしでも動く。Listener を起動するもの（実イベントを流す）、WS で受け取るもの（MCP / 観察クライアント）、outbound（Claude → external も HTTP hop 経由）が gateway を必要とする。store 編集後に gateway が動いていれば、対応する Listener を hot-reload する（ただし `FunnelLocalConfigSync` の rename-by-token 経路は engine の `FunnelChannels.renameConnector` を直叩きするので reload が走らない — `fnl gateway restart` で取り込む）。
+`fnl channels add` 等の store 編集系は gateway なしでも動く。Listener を起動するもの（実イベントを流す）、WS で受け取るもの（MCP / 観察クライアント）、outbound（Claude → external も HTTP hop 経由）が gateway を必要とする。store 編集後に gateway が動いていれば、対応する Listener を hot-reload する（ただし `FunnelLocalConfigSync` は engine の `FunnelChannels` を直叩きして connector を同期するため route 経由の hot-reload は走らない。`fnl claude` 経路は同期後に `reconcileListeners` で明示的に listener を取り込むが、それ以外の経路は `fnl gateway restart` で取り込む）。
 
 ### in-process gateway か daemon か
 
@@ -288,7 +288,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - WebSocket クライアントは `?channel=<name>&id=<subscriberId>` で接続する。`id` は funnel の targeted delivery キーで、`meta.target=<id>` のイベントがそのクライアントだけに届く。`id` を省略した場合は channel 全体の fanout を受信する（tap=all は廃止済み）
 - listener は `start(notify)` / `stop()` / `isAlive()` を持ち、`FunnelListenerSupervisor` が registry を所有して 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
-- connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` の rename-by-token 経路は engine を直接叩くため reload が走らない（`fnl gateway restart` 必要）
+- connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` は engine（`FunnelChannels`）を直接叩いて connector を同期するため route 経由の hot-reload は走らない。`fnl claude` の dispatch が同期後に `reconcileListeners` で listener を取り込む（それ以外の経路は `fnl gateway restart` が必要）
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる
 - 永続 replay は `FunnelEventLog` 抽象 port（`record` / `loadSince` / `findMaxOffset` / `close`）に閉じる。default 実装は `SqliteFunnelEventLog`（再起動跨ぎの replay と offset 永続を担う）、`MemoryFunnelEventLog` は in-process double。`gatewayServer({ eventLog })` で注入でき、無指定なら dbPath の SQLite。Broadcaster が依存するのは `loadSince` だけ（narrow な `ReplaySource`）なので EventLog は interface segregation で繋がる
 - in-process で全 event を観測したい host は `FunnelGatewayServer.onEvent(handler)`（= broadcaster.subscribe の薄い委譲）を使う。別プロセスの daemon は観測できない（WS クライアントを使う）。`onEvent` は書き出し専用で、replay（読み戻し）は EventLog の責務 — 2 つを混ぜない

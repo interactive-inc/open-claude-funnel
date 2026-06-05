@@ -1,4 +1,5 @@
 import type { ReplayableEvent } from "@/gateway/broadcaster"
+import { FunnelLogger } from "@/engine/logger/logger"
 import {
   type FunnelEvent,
   FunnelEventLog,
@@ -13,6 +14,8 @@ type Props = {
   path: string
   /** Override for tests. Defaults to `Date.now`. */
   now?: () => number
+  /** Surfaces a failed persist (PK collision, disk-full, locked WAL). Silent if absent. */
+  logger?: FunnelLogger
   /** Optional row cap. Pruned on every insert. */
   maxRows?: number
   /** Optional age cap in ms. Pruned on every insert. */
@@ -43,10 +46,12 @@ type Props = {
 export class SqliteFunnelEventLog extends FunnelEventLog {
   private readonly sink: LeucoLoggerSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>
   private readonly now: () => number
+  private readonly logger: FunnelLogger | undefined
 
   constructor(props: Props) {
     super()
     this.now = props.now ?? (() => Date.now())
+    this.logger = props.logger
     this.sink = new LeucoLoggerSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>({
       path: props.path,
       indexes: ["channel_id", "connector_id"],
@@ -75,7 +80,17 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       connector_id: record.connectorId,
       meta: record.meta,
     }
-    this.sink.write({ seq: record.offset, ts: this.now(), event })
+    const result = this.sink.write({ seq: record.offset, ts: this.now(), event })
+
+    // A dropped write (PK collision on a reused offset, disk-full, locked WAL)
+    // silently loses the event from durable replay. Surface it instead of
+    // discarding the Error the sink returns.
+    if (result instanceof Error) {
+      this.logger?.error("event log write failed", {
+        offset: record.offset,
+        error: result.message,
+      })
+    }
   }
 
   /**

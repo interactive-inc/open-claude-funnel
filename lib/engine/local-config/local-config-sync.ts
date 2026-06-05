@@ -42,10 +42,14 @@ type ResolvedSlot =
  *
  *   - missing channel → created
  *   - declared connector matched by name → tokens reconciled
- *   - declared connector matched by token in the same channel under a
- *     different name → renamed in place (then tokens reconciled)
- *   - declared connector with no match → added
+ *   - declared connector with no name match → added (prompting for its tokens)
  *   - any connector left in the channel that the spec did not touch → removed
+ *
+ * Connectors are matched by NAME only — there is no rename-by-token path. A spec
+ * that renames a connector (same token, new name) is reconciled as "add the new
+ * name, remove the old one". Because the collision check runs at add time while
+ * the old connector is still present, re-using its token at the new name throws
+ * a token-collision error; remove the old connector via the CLI first.
  *
  * Removal only fires when the channel spec has a `connectors` field. An
  * absent field means "do not manage connectors from here" and leaves

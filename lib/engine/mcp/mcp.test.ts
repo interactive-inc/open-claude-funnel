@@ -35,6 +35,57 @@ describe("FunnelMcp", () => {
     expect(config.mcpServers?.funnel?.command).toBe("bun")
   })
 
+  test("install preserves third-party server fields and unrelated top-level keys", () => {
+    const fs = new MemoryFunnelFileSystem({
+      dirs: ["/repo"],
+      files: {
+        "/repo/.mcp.json": JSON.stringify({
+          $schema: "https://example.com/mcp.schema.json",
+          mcpServers: {
+            slack: { type: "http", url: "https://mcp.slack.com/mcp" },
+            local: { command: "node", args: ["server.js"], env: { API_KEY: "secret" } },
+          },
+        }),
+      },
+    })
+
+    new FunnelMcp({ fs }).install("/repo")
+
+    const config = JSON.parse(fs.readFileSync("/repo/.mcp.json"))
+
+    // The funnel entry is added without stripping anything else.
+    expect(config.$schema).toBe("https://example.com/mcp.schema.json")
+    expect(config.mcpServers.slack).toEqual({ type: "http", url: "https://mcp.slack.com/mcp" })
+    expect(config.mcpServers.local).toEqual({
+      command: "node",
+      args: ["server.js"],
+      env: { API_KEY: "secret" },
+    })
+    expect(config.mcpServers.funnel).toEqual({ command: "bun", args: ["funnel", "mcp"] })
+  })
+
+  test("uninstall preserves third-party server fields and top-level keys", () => {
+    const fs = new MemoryFunnelFileSystem({
+      dirs: ["/repo"],
+      files: {
+        "/repo/.mcp.json": JSON.stringify({
+          $schema: "https://example.com/mcp.schema.json",
+          mcpServers: {
+            slack: { type: "http", url: "https://mcp.slack.com/mcp" },
+            funnel: { command: "bun", args: ["funnel", "mcp"] },
+          },
+        }),
+      },
+    })
+
+    new FunnelMcp({ fs }).uninstall("/repo")
+
+    const config = JSON.parse(fs.readFileSync("/repo/.mcp.json"))
+    expect(config.$schema).toBe("https://example.com/mcp.schema.json")
+    expect(config.mcpServers.slack).toEqual({ type: "http", url: "https://mcp.slack.com/mcp" })
+    expect(config.mcpServers.funnel).toBeUndefined()
+  })
+
   test("findInstalledName returns the key whose command is funnel", () => {
     const fs = new MemoryFunnelFileSystem({
       files: {

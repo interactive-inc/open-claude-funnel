@@ -4,7 +4,10 @@ import { zValidator } from "@/cli/router/validator"
 
 const requestHelp = `funnel channels <channel> connectors <connector> request — call a connector's outbound API
 
-usage: funnel channels <channel> connectors <connector> request --method=<api.method> [--key=value ...]`
+usage: funnel channels <channel> connectors <connector> request --method=<m> [--path=<p>] [--key=value ...]
+
+  --method   slack: the API method (e.g. chat.postMessage). gh/discord: the HTTP verb (GET/POST/...).
+  --path     gh/discord: the endpoint (e.g. repos/o/r/issues). Omit for slack (defaults to --method).`
 
 export const channelsConnectorsRequestHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
@@ -13,6 +16,7 @@ export const channelsConnectorsRequestHandler = factory.createHandlers(
     z
       .object({
         method: z.string(),
+        path: z.string().optional(),
       })
       .passthrough(),
     requestHelp,
@@ -25,13 +29,16 @@ export const channelsConnectorsRequestHandler = factory.createHandlers(
     const passthrough: Record<string, string> = {}
 
     for (const [k, v] of new URL(c.req.url).searchParams) {
-      if (k === "method") continue
+      if (k === "method" || k === "path") continue
       passthrough[k] = v
     }
 
+    // path falls back to method so slack (which ignores the HTTP verb and uses
+    // path as the API method name) still works with just --method. gh/discord
+    // need a distinct verb + endpoint, so they pass --path explicitly.
     const response = await funnel.channels.call(param.channel, param.connector, {
       method: query.method,
-      path: query.method,
+      path: query.path ?? query.method,
       body: passthrough,
     })
 

@@ -49,6 +49,16 @@ const parseField = (expr: string, min: number, max: number): Field => {
   return { min, max, values }
 }
 
+/**
+ * Returns true when `date` (local time) satisfies a 5-field cron expression.
+ *
+ * Two deliberate deviations from Vixie cron, called out so schedules are not
+ * written expecting the other behavior:
+ *   - Day-of-month and day-of-week are ANDed, not ORed. Vixie cron fires when
+ *     EITHER matches once both are restricted; here every field must match.
+ *   - Day-of-week is 0-6 (Sunday=0). `7` for Sunday is NOT accepted (it throws
+ *     as out-of-range); use `0`.
+ */
 export const matchCron = (expr: string, date: Date): boolean => {
   const parts = expr.trim().split(/\s+/)
 

@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception"
 import { factory } from "@/gateway/factory"
 import { channelsConnectorsCallHandler } from "@/gateway/routes/channels.connectors.call"
 import { channelsPublishHandler } from "@/gateway/routes/channels.publish"
@@ -20,6 +21,17 @@ export type GatewayApp = ReturnType<typeof buildGatewayRoutes>
 function buildGatewayRoutes() {
   return factory
   .createApp()
+  // Without this, a plain Error thrown by a service (e.g. channels.call() on an
+  // unknown connector) falls through to Hono's default 500 "Internal Server
+  // Error", hiding the real reason from the MCP caller. HTTPException already
+  // carries its own status/body, so delegate to its native response untouched.
+  .onError((error, c) => {
+    if (error instanceof HTTPException) return error.getResponse()
+
+    const message = error instanceof Error ? error.message : String(error)
+
+    return c.json({ error: message }, 500)
+  })
   .get("/health", ...healthHandler)
   .get("/status", ...statusHandler)
   .get("/debug", ...debugHandler)

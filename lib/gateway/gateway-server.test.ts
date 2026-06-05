@@ -245,6 +245,29 @@ describe("FunnelGatewayServer event log", () => {
     expect(eventLog.loadSince(0).map((event) => event.content)).toEqual(["hello", "world"])
     expect(server.getEventLog()).toBe(eventLog)
   })
+
+  test("emit stamps channelId whether the channel is named by name or by id", () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    const channel = funnel.channels.add({ name: "ops" })
+    const eventLog = new MemoryFunnelEventLog()
+    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+
+    const stamped: (string | undefined)[] = []
+    server.onEvent((event) => stamped.push(event.meta?.channelId))
+
+    // Publishing by id must resolve the same as by name. Otherwise channelId is
+    // left unstamped and the broadcaster fans the event out across all channels.
+    server.emit({ channel: channel.name, content: "by-name" })
+    server.emit({ channel: channel.id, content: "by-id" })
+
+    expect(stamped).toEqual([channel.id, channel.id])
+  })
 })
 
 describe("FunnelGatewayServer bind address", () => {

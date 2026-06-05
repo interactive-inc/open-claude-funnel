@@ -10,7 +10,9 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
     z.object({
       cron: z.string(),
       prompt: z.string(),
-      enabled: z.coerce.boolean().optional(),
+      // NOT z.coerce.boolean(): that runs Boolean("false") === true, so
+      // --enabled=false would store `true`. Parse the literal string instead.
+      enabled: z.enum(["true", "false"]).optional(),
       "catchup-policy": scheduleCatchupPolicySchema.optional(),
     }),
   ),
@@ -23,7 +25,7 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
       id: param.id,
       cron: query.cron,
       prompt: query.prompt,
-      ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
+      ...(query.enabled !== undefined ? { enabled: query.enabled === "true" } : {}),
       ...(query["catchup-policy"] !== undefined ? { catchupPolicy: query["catchup-policy"] } : {}),
     })
 
