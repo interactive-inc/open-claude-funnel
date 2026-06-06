@@ -1,7 +1,7 @@
 import { join } from "node:path"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
-import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigWriter } from "@/engine/local-config/local-config-writer"
+import { FunnelLocalConfig } from "@/services/local-config/local-config"
+import { FunnelLocalConfigWriter } from "@/services/local-config/local-config-writer"
 
 type Deps = {
   localConfig: FunnelLocalConfig

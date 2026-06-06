@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { factory } from "@/gateway/factory"
-import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
+import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
 type RecentEvent = {

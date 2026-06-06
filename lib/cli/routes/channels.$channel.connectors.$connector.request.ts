@@ -1,13 +1,17 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { renderYaml } from "@/cli/yaml-render"
 
-const requestHelp = `funnel channels <channel> connectors <connector> request — call a connector's outbound API
+const requestHelp = `funnel channels <channel> connectors <connector> request / call a connector's outbound API
 
-usage: funnel channels <channel> connectors <connector> request --method=<m> [--path=<p>] [--key=value ...]
+usage / funnel channels <channel> connectors <connector> request --method=<m> [--path=<p>] [--key=value ...]
 
-  --method   slack: the API method (e.g. chat.postMessage). gh/discord: the HTTP verb (GET/POST/...).
-  --path     gh/discord: the endpoint (e.g. repos/o/r/issues). Omit for slack (defaults to --method).`
+options:
+  --method / slack: API method (e.g. chat.postMessage). gh/discord: HTTP verb (GET/POST/...).
+  --path / gh/discord: endpoint (e.g. repos/o/r/issues). Omit for slack (defaults to --method).
+
+output / valid YAML (or raw text when the adapter returns text)`
 
 export const channelsConnectorsRequestHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
@@ -42,6 +46,6 @@ export const channelsConnectorsRequestHandler = factory.createHandlers(
       body: passthrough,
     })
 
-    return c.text(typeof response === "string" ? response : JSON.stringify(response, null, 2))
+    return c.text(typeof response === "string" ? response : renderYaml(response))
   },
 )

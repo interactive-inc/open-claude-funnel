@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { connectorConfigSchema } from "@/connectors/connector-config-schema"
+import { connectorConfigSchema } from "@/engine/connectors/connector-config-schema"
 
 /**
  * Routing mode when multiple WS clients are subscribed to the same channel.

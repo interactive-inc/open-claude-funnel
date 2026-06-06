@@ -27,7 +27,14 @@ funnel-specific options (everything else passes through to claude verbatim):
 
 Positional args, unknown short flags (e.g. -c, -r), and claude's own flags
 (--agent, --resume, --model, --print, --output-format ...) are all forwarded.
-On launch the FUNNEL_CHANNEL_ID env var is set and MCP connects to the gateway.`
+On launch the FUNNEL_CHANNEL_ID env var is set and MCP connects to the gateway.
+
+see also:
+  fnl docs claude              full resolution order, side effects, double-launch guard
+  fnl docs mcp                 what the MCP server exposes once Claude is up
+  fnl docs debugging           the diagnose → recover → verify loop
+
+programmable: funnel.claude.launch({ profileId | channelId, options, env, resume })`
 
 const RESERVED_KEYS = ["profile", "channel"]
 

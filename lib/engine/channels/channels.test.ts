@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { FunnelConnectorFactory } from "@/connectors/connector-factory"
+import { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"

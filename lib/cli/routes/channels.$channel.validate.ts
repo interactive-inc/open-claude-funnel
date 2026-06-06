@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { renderYaml } from "@/cli/yaml-render"
 import { HTTPException } from "hono/http-exception"
 
 type ConnectorIssue = {
@@ -99,17 +100,10 @@ const validateConnector = (
 
 export const channelsValidateHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string() })),
-  zValidator(
-    "query",
-    z.object({
-      json: z.enum(["true", "false", ""]).optional(),
-    }),
-  ),
+  zValidator("query", z.object({})),
   (c) => {
     const param = c.req.valid("param")
-    const query = c.req.valid("query")
     const funnel = c.env.funnel
-    const isJson = query.json === "true" || query.json === ""
 
     const channel = funnel.channels.get(param.channel)
 
@@ -118,17 +112,13 @@ export const channelsValidateHandler = factory.createHandlers(
     }
 
     if (channel.connectors.length === 0) {
-      if (isJson) {
-        return c.json({
+      return c.text(
+        renderYaml({
           channel: channel.name,
           valid: false,
-          issues: [
-            { connector: "(none)", field: "connectors", message: "no connectors configured" },
-          ],
-        })
-      }
-
-      return c.text(`⚠ ${channel.name}: no connectors configured`)
+          issues: [{ connector: null, field: "connectors", message: "no connectors configured" }],
+        }),
+      )
     }
 
     const allIssues: ConnectorIssue[] = []
@@ -141,20 +131,12 @@ export const channelsValidateHandler = factory.createHandlers(
       allIssues.push(...issues)
     }
 
-    if (isJson) {
-      return c.json({
+    return c.text(
+      renderYaml({
         channel: channel.name,
         valid: allIssues.length === 0,
         issues: allIssues,
-      })
-    }
-
-    if (allIssues.length === 0) {
-      return c.text(`✓ ${channel.name}: all connectors valid`)
-    }
-
-    const lines = allIssues.map((issue) => `✗ ${channel.name}/${issue.connector}: ${issue.message}`)
-
-    return c.text(lines.join("\n"))
+      }),
+    )
   },
 )

@@ -7,8 +7,8 @@ import { toRequest } from "@/cli/router/to-request"
 import { routes } from "@/cli/routes"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
-import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigWriter } from "@/engine/local-config/local-config-writer"
+import { FunnelLocalConfig } from "@/services/local-config/local-config"
+import { FunnelLocalConfigWriter } from "@/services/local-config/local-config-writer"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { Funnel } from "@/funnel"
 
@@ -46,33 +46,47 @@ const { claude, profiles, localConfig, localConfigSync } = funnel
 
 const env = { funnel, claude, profiles, localConfig, localConfigSync }
 
-const HELP = `funnel — Open Claude Funnel
+const HELP = `funnel / Open Claude Funnel
 
-usage: funnel [command]
+usage / funnel [command]
 
 commands:
-  claude                launch Claude Code (default profile or --profile)
-  channels              manage channels and their nested connectors
-  profiles              manage named launch presets
-  gateway               manage the gateway daemon (HTTP + WebSocket)
-  status                overall health: gateway, listeners, Claude connections
-  debug                 channel diagnosis with next-action hint (--json for Claude)
-  schema                print the JSON Schema for funnel.json
-  update                update funnel to the latest version
-  mcp                   run as an MCP server (invoked from .mcp.json)
+  doctor / diagnose every channel; --fix applies safe self-healing
+  claude / launch Claude Code (default profile or --profile)
+  channels / manage channels and their nested connectors
+  profiles / manage named launch presets
+  gateway / manage the gateway daemon (HTTP + WebSocket)
+  status / overall health snapshot
+  debug / lower-level inspection (per-channel events, drops, replay)
+  docs / embedded documentation
+  schema / print the JSON Schema for funnel.json
+  update / update funnel to the latest version
+  mcp / run as an MCP server (invoked from .mcp.json)
 
 options:
-  --help, -h            show help
-  --version, -v         show version
+  --help / -h / show help
+  --version / -v / show version
 
-debugging flow:
-  1. fnl status                          is the gateway running? is Claude connected?
-  2. fnl debug --channel <name>          what is wrong and what to do next
-  3. fnl debug --channel <name> --json   same, structured JSON for Claude to parse
-  4. fnl gateway logs                    raw daemon log stream
-  5. fnl gateway sql --preset recent     raw inbound event queries
+output / valid YAML across every command (consumable with yq, parseable by Claude)
 
-more: funnel <command> --help`
+start here:
+  fnl docs / list documentation topics
+  fnl docs architecture / how Funnel routes events
+  fnl docs debugging / how to diagnose problems
+  fnl docs recipes / common task playbooks
+
+when anything seems off:
+  fnl doctor / diagnose every channel
+  fnl doctor --fix / diagnose + apply safe fixes
+  fnl doctor --fix --aggressive / also restart the gateway if needed
+
+deeper inspection (rarely needed):
+  fnl debug --channel <name> / per-channel events, drops, connection errors
+  fnl debug replay --channel <name> / replay a past event to test a fix
+  fnl gateway logs / raw daemon log stream
+  fnl gateway sql --preset recent / raw inbound SQL queries
+
+more / funnel <command> --help`
 
 const args = process.argv.slice(2)
 
@@ -91,7 +105,10 @@ if (args[0] === "mcp") {
 }
 
 if (args[0] === "claude") {
-  const result = await dispatchClaude({ claude, profiles, localConfig, localConfigSync, listeners: funnel.listeners }, args.slice(1))
+  const result = await dispatchClaude(
+    { claude, profiles, localConfig, localConfigSync, listeners: funnel.listeners },
+    args.slice(1),
+  )
 
   if (result.stdout) process.stdout.write(`${result.stdout}\n`)
   if (result.stderr) process.stderr.write(`${result.stderr}\n`)

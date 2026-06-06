@@ -32,7 +32,11 @@ const buildSetup = (opts: { files?: Record<string, string>; dirs?: string[] } = 
     return { exitCode: 0 }
   })
 
-  const funnel = Funnel.inMemory({ fs, process: memoryProcess, tokenPrompter: new MemoryFunnelTokenPrompter() })
+  const funnel = Funnel.inMemory({
+    fs,
+    process: memoryProcess,
+    tokenPrompter: new MemoryFunnelTokenPrompter(),
+  })
   const { claude, profiles, localConfig, localConfigSync, listeners } = funnel
 
   const deps: DispatchDeps = { claude, profiles, localConfig, localConfigSync, listeners }

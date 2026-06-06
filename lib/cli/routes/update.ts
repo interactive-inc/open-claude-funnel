@@ -8,7 +8,10 @@ const updateHelp = `funnel update — update funnel to the latest version
 
 usage: funnel update
 
-Runs "bun i -g @interactive-inc/claude-funnel".`
+Runs "bun i -g @interactive-inc/claude-funnel".
+
+This command has no programmable equivalent — package management belongs to
+the host (npm / bun / yarn install in the host's own way).`
 
 const PACKAGE = "@interactive-inc/claude-funnel"
 

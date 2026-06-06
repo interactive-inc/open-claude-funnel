@@ -6,7 +6,7 @@ import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import type { Env } from "@/gateway/factory"
-import { MemoryFunnelEventLog } from "@/gateway/memory-funnel-event-log"
+import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 
 const startServer = async (token: string) => {
   const fs = new MemoryFunnelFileSystem()

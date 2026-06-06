@@ -3,9 +3,9 @@ import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PRESETS, PRESETS_BY_CHANNEL } from "@/cli/routes/gateway.sql"
-import type { ConnectorConnectionStatus } from "@/gateway/connector-diagnostic-log"
-import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
-import { SqliteConnectorDiagnosticLog } from "@/gateway/sqlite-connector-diagnostic-log"
+import type { ConnectorConnectionStatus } from "@/gateway/diagnostic-log/diagnostic-log"
+import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
+import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
 
 // ATTACH needs real files (":memory:" can't be cross-referenced), so the preset
 // SQL is exercised against on-disk DBs seeded for two channels.

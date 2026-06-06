@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
-import { scheduleCatchupPolicySchema } from "@/connectors/schedule-connector-schema"
+import { scheduleCatchupPolicySchema } from "@/engine/connectors/schedule-connector-schema"
 
 export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string(), id: z.string() })),

@@ -1,5 +1,5 @@
-import type { ConnectorConfig } from "@/connectors/connector-config-schema"
-import type { FunnelConnectorListener } from "@/connectors/connector-listener"
+import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
+import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
