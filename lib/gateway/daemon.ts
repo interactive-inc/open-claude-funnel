@@ -6,7 +6,8 @@ import { resolveFunnelDir, resolveFunnelPort } from "@/engine/settings/settings-
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { Funnel } from "@/funnel"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
-import { SqliteConnectorDiagnosticLog } from "@/gateway/sqlite-connector-diagnostic-log"
+import { buildServiceRoutes } from "@/gateway/service-routes"
+import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
 
 // Raw rows can each hold up to ~256 KiB, so they get a tight cap (~5k rows ≈
 // 1.3 GiB worst case); the small verdict/lifecycle rows get a looser one.
@@ -78,7 +79,18 @@ process.on("exit", () => {
 })
 
 const funnel = new Funnel({ logger, diagnosticLog, dir: funnelDir })
-const server = funnel.gatewayServer({ port: PORT, hostname: HOST })
+const gatewayToken = funnel.gatewayToken.ensure()
+const extraRoutes = buildServiceRoutes({
+  diagnostics: funnel.diagnostics,
+  doctor: funnel.doctor,
+  token: gatewayToken,
+})
+const server = funnel.gatewayServer({
+  port: PORT,
+  hostname: HOST,
+  extraRoutes,
+  token: gatewayToken,
+})
 
 await server.start()
 
