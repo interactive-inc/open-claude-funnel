@@ -6,14 +6,18 @@ import {
   FunnelConnectorFactory,
   type ScheduleListenerOptions,
   type SlackListenerOptions,
-} from "@/connectors/connector-factory"
+} from "@/engine/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
 import { FileProcessGuard } from "@/engine/claude/file-process-guard"
-import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigSync } from "@/engine/local-config/local-config-sync"
+import { FunnelDiagnostics } from "@/services/diagnostics/funnel-diagnostics"
+import { FunnelDoctor } from "@/services/doctor/funnel-doctor"
+import { FunnelDocs } from "@/services/docs/funnel-docs"
+import { FunnelLocalConfig } from "@/services/local-config/local-config"
+import { FunnelLocalConfigSync } from "@/services/local-config/local-config-sync"
 import { FunnelMcp } from "@/engine/mcp/mcp"
 import { FunnelProfiles } from "@/engine/profiles/profiles"
+import { FunnelRecovery } from "@/services/recovery/funnel-recovery"
 import { NodeFunnelTokenPrompter } from "@/engine/token-prompter/node-token-prompter"
 import type { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
@@ -36,14 +40,12 @@ import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
-import type { ConnectorDiagnosticLog } from "@/gateway/connector-diagnostic-log"
+import type { ConnectorDiagnosticLog } from "@/gateway/diagnostic-log/diagnostic-log"
 import type { Env } from "@/gateway/factory"
-import type { FunnelEventLog } from "@/gateway/funnel-event-log"
 import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer, type GatewayEventStore } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
-import { buildFunnelDebugReport, type FunnelDebugReport } from "@/gateway/funnel-debug"
 import { resolveDaemonScript } from "@/gateway/resolve-daemon-script"
 
 const SANDBOX_DIR = "/sandbox/.funnel"
@@ -147,6 +149,10 @@ export class Funnel {
   readonly profiles: FunnelProfiles
   readonly localConfig: FunnelLocalConfig
   readonly localConfigSync: FunnelLocalConfigSync
+  readonly diagnostics: FunnelDiagnostics
+  readonly recovery: FunnelRecovery
+  readonly doctor: FunnelDoctor
+  readonly docs: FunnelDocs
 
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
@@ -234,6 +240,27 @@ export class Funnel {
       logger: this.logger,
     })
 
+    this.diagnostics = new FunnelDiagnostics({
+      gateway: this.gateway,
+      gatewayToken: this.gatewayToken,
+      channels: this.channels,
+      publisher: this.publisher,
+      tmpDir,
+    })
+
+    this.recovery = new FunnelRecovery({
+      gateway: this.gateway,
+      listeners: this.listeners,
+      channels: this.channels,
+    })
+
+    this.doctor = new FunnelDoctor({
+      diagnostics: this.diagnostics,
+      recovery: this.recovery,
+    })
+
+    this.docs = new FunnelDocs()
+
     Object.freeze(this)
   }
 
@@ -299,20 +326,12 @@ export class Funnel {
    */
   async runGatewayForeground(options: { caffeinate?: boolean } = {}): Promise<number> {
     const gatewayScript = resolveDaemonScript()
-    const useCaffeinate =
-      options.caffeinate !== false && globalThis.process.platform === "darwin"
+    const useCaffeinate = options.caffeinate !== false && globalThis.process.platform === "darwin"
     const command = useCaffeinate
       ? ["caffeinate", "-is", "bun", gatewayScript]
       : ["bun", gatewayScript]
 
     return this.process.attach(command)
-  }
-
-  async debug(channelName?: string): Promise<FunnelDebugReport> {
-    return buildFunnelDebugReport(
-      { gateway: this.gateway, channels: this.channels, tmpDir: this.paths.tmpDir },
-      channelName ?? null,
-    )
   }
 
   gatewayClient(): ReturnType<typeof hc<GatewayApp>> {

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { resolveRepoDir } from "@/cli/resolve-repo-dir"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
-import { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import { FunnelLocalConfigWriter } from "@/engine/local-config/local-config-writer"
+import { FunnelLocalConfig } from "@/services/local-config/local-config"
+import { FunnelLocalConfigWriter } from "@/services/local-config/local-config-writer"
 
 const build = (opts: { files?: Record<string, string> } = {}) => {
   const fs = new MemoryFunnelFileSystem({ files: opts.files })

@@ -41,8 +41,12 @@ const buildClaude = () => {
   const acquired = new Set<string>()
   const guard = {
     isRunning: (profileId: string) => acquired.has(profileId),
-    acquire: (profileId: string) => { acquired.add(profileId) },
-    release: (profileId: string) => { acquired.delete(profileId) },
+    acquire: (profileId: string) => {
+      acquired.add(profileId)
+    },
+    release: (profileId: string) => {
+      acquired.delete(profileId)
+    },
   }
   const claude = new FunnelClaude({
     channels,
@@ -67,7 +71,16 @@ const buildClaude = () => {
     return created.id
   }
 
-  return { claude, channel: FAKE_CHANNEL, fs, process, profiles: sessions, guard, acquired, addProfile }
+  return {
+    claude,
+    channel: FAKE_CHANNEL,
+    fs,
+    process,
+    profiles: sessions,
+    guard,
+    acquired,
+    addProfile,
+  }
 }
 
 describe("FunnelClaude", () => {

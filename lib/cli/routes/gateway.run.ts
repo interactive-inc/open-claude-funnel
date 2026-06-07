@@ -13,7 +13,9 @@ For normal usage prefer funnel gateway start.
 
 examples:
   funnel gateway run
-  funnel gateway run --no-caffeine`
+  funnel gateway run --no-caffeine
+
+programmable: funnel.runGatewayForeground({ caffeinate })`
 
 export const gatewayRunHandler = factory.createHandlers(
   zValidator(

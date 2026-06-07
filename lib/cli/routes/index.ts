@@ -39,6 +39,8 @@ import {
   debugErrorsHandler,
   debugReplayHandler,
 } from "@/cli/routes/debug"
+import { docsIndexHandler, docsTopicHandler } from "@/cli/routes/docs"
+import { doctorHandler } from "@/cli/routes/doctor"
 import { gatewayGroupHandler } from "@/cli/routes/gateway"
 import { gatewayListenersHandler } from "@/cli/routes/gateway.listeners"
 import { gatewayLogsHandler } from "@/cli/routes/gateway.logs"
@@ -105,10 +107,7 @@ export const routes = factory
     ...channelsConnectorsRenameHandler,
   )
   .post("/channels/:channel/connectors/rename", ...channelsConnectorsRenameHelpHandler)
-  .post(
-    "/channels/:channel/connectors/:connector/rename",
-    ...channelsConnectorRenameHelpHandler,
-  )
+  .post("/channels/:channel/connectors/:connector/rename", ...channelsConnectorRenameHelpHandler)
   .post("/channels/:channel/connectors/:connector/request", ...channelsConnectorsRequestHandler)
   .get("/channels/:channel/connectors/:connector", ...channelsConnectorsShowHandler)
   .get(
@@ -159,6 +158,9 @@ export const routes = factory
   .get("/debug/dropped", ...debugDroppedHandler)
   .get("/debug/errors", ...debugErrorsHandler)
   .get("/debug/replay", ...debugReplayHandler)
+  .get("/docs", ...docsIndexHandler)
+  .get("/docs/:topic", ...docsTopicHandler)
+  .get("/doctor", ...doctorHandler)
   .get("/schema", ...schemaHandler)
   .get("/status", ...statusHandler)
   .get("/update", ...updateHandler)

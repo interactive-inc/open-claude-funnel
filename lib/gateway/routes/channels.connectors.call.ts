@@ -1,6 +1,6 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
-import type { JsonValue } from "@/connectors/connector-adapter"
+import type { JsonValue } from "@/engine/connectors/connector-adapter"
 import { factory } from "@/gateway/factory"
 import { zParam } from "@/gateway/routes/validator"
 

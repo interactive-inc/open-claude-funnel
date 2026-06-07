@@ -3,8 +3,9 @@ import { join } from "node:path"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { renderYaml } from "@/cli/yaml-render"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
-import { ConnectorDiagnosticSqlReader } from "@/gateway/connector-diagnostic-sql-reader"
+import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
 
 export const PRESETS: Record<string, string> = {
   recent: "SELECT seq, ts, type, outcome FROM processed ORDER BY seq DESC LIMIT 20",
@@ -74,7 +75,12 @@ examples:
 
 tip: for a higher-level view without writing SQL, use: fnl debug --channel <name> --json
 
-see also: fnl debug, fnl gateway logs`
+see also: fnl debug, fnl gateway logs
+
+programmable: const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
+              reader.query("SELECT …")
+              — but for most cases, funnel.diagnostics.recentEvents() / .droppedEvents()
+              / .connectionErrors() are higher level and don't need SQL.`
 
 export const gatewaySqlHandler = factory.createHandlers(
   zValidator(
@@ -145,8 +151,8 @@ export const gatewaySqlHandler = factory.createHandlers(
       }
     })()
 
-    if (rows instanceof Error) return c.text(`error: ${rows.message}`)
+    if (rows instanceof Error) return c.text(renderYaml({ error: rows.message }))
 
-    return c.text(JSON.stringify(rows, null, 2))
+    return c.text(renderYaml({ rows }))
   },
 )

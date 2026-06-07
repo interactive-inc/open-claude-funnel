@@ -1,40 +1,39 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { renderYaml } from "@/cli/yaml-render"
 
-const groupHelp = `funnel channels — manage subscription boxes
+const groupHelp = `funnel channels / manage subscription boxes
 
-usage: funnel channels [--json]
-
-options:
-  --json                output as JSON array (machine-readable, useful for Claude)
+usage / funnel channels [subcommand]
 
 subcommands:
-  (none)                          list
-  add <name>                      add
-  remove <name>                   remove
-  <name>                          show details
-  <name> connectors                       list connectors
-  <name> connectors add <c> --type=...    add a connector
+  (none) / list every channel with its connectors
+  add <name> / create a channel
+  remove <name> / delete a channel
+  <name> / show one channel
+  <name> connectors / list connectors
+  <name> connectors add <c> --type=... / add a connector
+
+output / valid YAML
+
+programmable / funnel.channels.list() / .add() / .remove() / .addConnector() / .removeConnector()
 
 examples:
   funnel channels
-  funnel channels --json
   funnel channels add prod-inbox
   funnel channels prod-inbox connectors add prod-slack --type=slack --bot-token=xoxb-... --app-token=xapp-...
   funnel channels prod-inbox`
 
 export const channelsGroupHandler = factory.createHandlers(
-  zValidator("query", z.object({ json: z.enum(["true", "false", ""]).optional() }), groupHelp),
+  zValidator("query", z.object({}), groupHelp),
   (c) => {
-    const query = c.req.valid("query")
     const funnel = c.env.funnel
     const channels = funnel.channels.list()
-    const isJson = query.json === "true" || query.json === ""
 
-    if (isJson) {
-      return c.json(
-        channels.map((ch) => ({
+    return c.text(
+      renderYaml({
+        channels: channels.map((ch) => ({
           id: ch.id,
           name: ch.name,
           delivery: ch.delivery,
@@ -44,18 +43,7 @@ export const channelsGroupHandler = factory.createHandlers(
             type: conn.type,
           })),
         })),
-      )
-    }
-
-    if (channels.length === 0) return c.text("no channels")
-
-    const lines = channels.map((ch) => {
-      const names = ch.connectors.map((conn) => conn.name)
-      const connectors = names.length > 0 ? names.join(", ") : "(none)"
-
-      return `${ch.name} [${connectors}]`
-    })
-
-    return c.text(lines.join("\n"))
+      }),
+    )
   },
 )

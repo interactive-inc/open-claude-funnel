@@ -1,9 +1,13 @@
 // Public API surface for the @interactive-inc/claude-funnel package.
 //
 // Sub-entries for targeted imports:
-//   "@interactive-inc/claude-funnel/gateway"      in-process gateway building blocks
-//   "@interactive-inc/claude-funnel/profiles"     named launch profiles
-//   "@interactive-inc/claude-funnel/local-config" funnel.json reader / writer / syncer
+//   "@interactive-inc/claude-funnel/gateway"       in-process gateway building blocks
+//   "@interactive-inc/claude-funnel/profiles"      named launch profiles
+//   "@interactive-inc/claude-funnel/local-config"  funnel.json reader / writer / syncer
+//   "@interactive-inc/claude-funnel/diagnostics"   read-only event delivery diagnosis
+//   "@interactive-inc/claude-funnel/recovery"      self-healing primitives
+//   "@interactive-inc/claude-funnel/doctor"        one-shot diagnose + safe fixes
+//   "@interactive-inc/claude-funnel/docs"          embedded documentation
 //
 // Claude Code integration (FunnelClaude, FunnelMcp) is intentionally not
 // exposed as a sub-entry — use the Funnel facade's .claude getter instead.
@@ -11,14 +15,22 @@
 // Facade
 export * from "@/funnel"
 
-// Engine — domain
+// Engine — core domain
 export * from "@/engine/channels/channels"
 export * from "@/engine/settings/settings-reader"
 export * from "@/engine/settings/settings-store"
 export * from "@/engine/settings/mock-settings-reader"
 export * from "@/engine/settings/settings-schema"
 
-// Engine — boundaries (abstract + Node / Memory implementations)
+// Services — interface-layer orchestrators that compose engine primitives
+// (read-only diagnosis, self-healing actions, the one-shot doctor, embedded docs).
+export * from "@/services/diagnostics/funnel-diagnostics"
+export * from "@/services/diagnostics/diagnostic-event"
+export * from "@/services/recovery/funnel-recovery"
+export * from "@/services/doctor/funnel-doctor"
+export * from "@/services/docs/funnel-docs"
+
+// Engine — IO boundaries (abstract + Node / Memory implementations)
 export * from "@/engine/fs/file-system"
 export * from "@/engine/fs/node-file-system"
 export * from "@/engine/fs/memory-file-system"
@@ -43,17 +55,16 @@ export * from "@/engine/id/memory-id-generator"
 export * from "@/engine/error/on-funnel-error"
 
 // Connectors
-export * from "@/connectors/connector-factory"
-export * from "@/connectors/connector-config-schema"
-export * from "@/connectors/connector-listener"
-export * from "@/connectors/discord-connector-schema"
-export * from "@/connectors/gh-connector-schema"
-export * from "@/connectors/schedule-connector-schema"
-export * from "@/connectors/slack-connector-schema"
-export * from "@/connectors/slack-event-processor"
+export * from "@/engine/connectors/connector-factory"
+export * from "@/engine/connectors/connector-config-schema"
+export * from "@/engine/connectors/connector-listener"
+export * from "@/engine/connectors/discord-connector-schema"
+export * from "@/engine/connectors/gh-connector-schema"
+export * from "@/engine/connectors/schedule-connector-schema"
+export * from "@/engine/connectors/slack-connector-schema"
+export * from "@/engine/connectors/slack-event-processor"
 
 // Gateway
-export type { FunnelDebugReport } from "@/gateway/funnel-debug"
 export type { GatewayApp } from "@/gateway/routes"
 export * from "@/gateway/gateway"
 export * from "@/gateway/gateway-server"
@@ -62,16 +73,17 @@ export * from "@/gateway/gateway-base-url"
 export * from "@/gateway/gateway-token"
 export * from "@/gateway/broadcaster"
 export * from "@/gateway/channel-publisher"
-export * from "@/gateway/funnel-event-log"
-export * from "@/gateway/sqlite-funnel-event-log"
-export * from "@/gateway/memory-funnel-event-log"
-export * from "@/gateway/connector-diagnostic-log"
-export * from "@/gateway/sqlite-connector-diagnostic-log"
-export * from "@/gateway/memory-connector-diagnostic-log"
-export * from "@/gateway/connector-diagnostic-sql-reader"
+export * from "@/gateway/event-log/event-log"
+export * from "@/gateway/event-log/sqlite-event-log"
+export * from "@/gateway/event-log/memory-event-log"
+export * from "@/gateway/diagnostic-log/diagnostic-log"
+export * from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+export * from "@/gateway/diagnostic-log/memory-diagnostic-log"
+export * from "@/gateway/diagnostic-log/diagnostic-sql-reader"
 export * from "@/gateway/listener-supervisor"
 export * from "@/gateway/listeners-client"
 export * from "@/gateway/publish-schema"
+export * from "@/gateway/service-routes"
 export { type Env as GatewayServerEnv } from "@/gateway/factory"
 export type { GatewayEmitInput, GatewayRouteDeps } from "@/gateway/routes/route-deps"
 

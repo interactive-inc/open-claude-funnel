@@ -46,11 +46,20 @@ ChannelSpec = { name, connectors? }
 ProfileSpec = { name, channel, options?, env?, resume? }
 ```
 
-`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。profile は `--profile <name>` で名前指定して launch に渡す（channel は profile を選ばない — channel は transport のみ、profile が channel を bind する一方向。同じ channel に複数 profile を bind してよく、`name` で一意に解決する）。global profile への永続化はしない。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/engine/local-config/` を参照。
+`fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。profile は `--profile <name>` で名前指定して launch に渡す（channel は profile を選ばない — channel は transport のみ、profile が channel を bind する一方向。同じ channel に複数 profile を bind してよく、`name` で一意に解決する）。global profile への永続化はしない。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/services/local-config/` を参照。
 
 ### Listener Supervisor と Broadcaster
 
 gateway 内に常駐する 2 つの裏方。Supervisor は Listener の起動 / 停止 / 自動再起動を管理する registry。Broadcaster は notify を受け取って WS クライアントに fanout し、`FunnelEventLog`（永続 replay log の port）に offset を打って永続化する。EventLog は差し替え可能な port で、default は `SqliteFunnelEventLog`、test / 軽量 embedder 向けに `MemoryFunnelEventLog` がある（CLAUDE.md 末尾の Gateway 節参照）。
+
+### Diagnostics と Recovery と Doctor と Docs サービス
+
+エンジン（コアドメイン）の上に乗る interface-layer の orchestrator 群。`lib/services/` 直下に置く（engine と混ぜない — engine は名詞、services は動詞）。プログラマブル API・CLI・MCP の三経路から同じロジックを呼ぶための薄い service 群で、すべて narrow interface に依存し `Funnel` facade に乗る。
+
+- `FunnelDiagnostics`（`lib/services/diagnostics/`）— `diagnose()` / `diagnoseAll()` / `recentEvents()` / `droppedEvents()` / `connectionErrors()` / `replay()`。read-side のみで mutation しない。`/tmp/funnel/connector-*.db` の SQL を読む
+- `FunnelRecovery`（`lib/services/recovery/`）— `ensureGatewayRunning()` / `restartGateway()` / `restartListener()` / `restartAllDeadListeners()`。すべて `RecoveryResult { ok, actions, message }` を返す（throw しない）。building block 扱いで CLI / MCP からは直接呼ばない（Doctor が orchestrate する）
+- `FunnelDoctor`（`lib/services/doctor/`）— `run(mode)` 1 つだけ。`mode` は `off`（読み取り）/ `safe`（gateway 起動 + dead listener 再起動）/ `aggressive`（さらに gateway 再起動）。CLI の `fnl doctor`、MCP の `fnl_doctor`、SDK の `funnel.doctor.run()` がすべてこれを呼ぶ
+- `FunnelDocs`（`lib/services/docs/`）— `list()` / `get(topic)`。本文は `lib/services/docs/topics/docs-*.ts` から import
 
 ### イベントの旅
 
@@ -111,8 +120,8 @@ bun lib/bin.ts <args> # 開発用直接実行（build 不要、起動 ~2s）
 依存は一方向で、内側のレイヤは外側を知らない。
 
 ```
-engine ← connectors ← gateway ← cli
-                                ↖ bin.ts → funnel.ts (facade)
+engine ← connectors ← gateway ← services ← cli
+                                          ↖ bin.ts → funnel.ts (facade)
 ```
 
 ### クラス依存図
@@ -150,6 +159,13 @@ graph TD
     GW[Gateway]
     CP[ChannelPublisher]
     LC2[ListenersClient]
+  end
+
+  subgraph services["サービス層（engine の上の orchestrator）"]
+    DG[Diagnostics]
+    RC[Recovery]
+    DR[Doctor]
+    DC[Docs]
   end
 
   subgraph facade["ファサード"]
@@ -193,9 +209,24 @@ graph TD
   GW --> FN
   CH --> FN
   FC --> FN
+
+  CH --> DG
+  GW --> DG
+  GT --> DG
+  CP --> DG
+  GW --> RC
+  LC2 --> RC
+  CH --> RC
+  DG --> DR
+  RC --> DR
+  DG --> FN
+  RC --> FN
+  DR --> FN
+  DC --> FN
 ```
 
 **矢印の読み方：**
+
 - `A --> B` は「B が A を使う（A に依存する）」。依存は常に下から上の一方向
 - `A -.implements.-> B` は「A が B のインターフェースを満たす」。`FunnelClaude` は具体クラスでなく narrow interface に依存するため、テスト時にスタブで差し替えられる
 
@@ -204,16 +235,20 @@ graph TD
 - `"."` — ファサード（Funnel）全体
 - `"./gateway"` — ゲートウェイ層のブロック単品
 - `"./profiles"` — エンジン層の Profiles 単品
-- `"./local-config"` — エンジン層の LocalConfig 群単品
+- `"./local-config"` — サービス層の LocalConfig 群単品
 - `"./connectors/*"` — コネクタ層の各コネクタ単品
 
 ### lib/engine
 
-コアドメイン。他レイヤを知らない。外部境界（FS / HTTP / process / clock / id / logger / settings / token prompter 等）はすべて abstract class + Node 実装 + Memory 実装で並置し、テストは Memory 実装で書く。主要サービスは channels（購読箱 + nested connector CRUD + schedule entries + adapter dispatch）、claude（起動）、mcp（`.mcp.json` install と stdio サーバ）、profiles、settings、local-config（funnel.json の read / sync / id 書き戻し）、token-prompter（TTY での secret 入力）。
+コアドメイン（名詞）。他レイヤを知らず、自身が他レイヤに依存することもない。外部境界（FS / HTTP / process / clock / id / logger / settings / token prompter 等）はすべて abstract class + Node 実装 + Memory 実装で並置し、テストは Memory 実装で書く。主要モジュールは channels（購読箱 + nested connector CRUD + schedule entries + adapter dispatch）、claude（起動）、mcp（`.mcp.json` install と stdio サーバ）、profiles、settings、token-prompter（TTY での secret 入力）。funnel.json の読み書きや sync は I/O orchestration なので services 側（`lib/services/local-config/`）に置く。
 
-### lib/connectors
+### lib/services
 
-Slack / GitHub / Discord / Schedule の Connector 実装。型ごとに Listener（必須）と Adapter（callable な場合のみ）と Schema を per-file で並置し、`FunnelConnectorFactory` の `switch` で discriminated union を dispatch する。schedule のみ adapter なし。Slack / Schedule listener は `slackListenerOptions` / `scheduleListenerOptions` で host integration hook（Bolt `app.action` 追加、event preprocess、one-shot 削除等）を受ける。
+エンジンの上に乗る interface-layer の orchestrator（動詞）。engine の primitive を組み合わせて 1 つの意味ある操作にまとめる薄い層で、CLI / MCP / SDK の 3 経路から同じ実装を呼ばせるために存在する。現在のサービスは `diagnostics` / `recovery` / `doctor` / `docs` / `local-config` の 5 つで、すべて narrow interface だけに依存し具体クラスを知らない。engine は services を知らない（依存は services → engine の一方向）。
+
+### lib/engine/connectors
+
+Slack / GitHub / Discord / Schedule の Connector 実装。engine の他モジュールと同列で、型ごとに Listener（必須）と Adapter（callable な場合のみ）と Schema を per-file で並置し、`FunnelConnectorFactory` の `switch` で discriminated union を dispatch する。schedule のみ adapter なし。Slack / Schedule listener は `slackListenerOptions` / `scheduleListenerOptions` で host integration hook（Bolt `app.action` 追加、event preprocess、one-shot 削除等）を受ける。サブエントリ `@interactive-inc/claude-funnel/connectors/<type>` から個別 import 可能（外向きパスは不変、実体は `lib/engine/connectors/<type>.ts`）。
 
 ### lib/gateway
 
@@ -239,7 +274,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - パスはハードコードせず、各モジュールが `FUNNEL_DIR`（または DI された `dir` / `tmpDir`）から `join` で構築する。Memory 実装でテストできるようにするため
 - Connector の per-instance な永続 state は `channels/<channel-id>/connectors/<connector-id>/` 配下に置く。id ベースで切るので rename しても追従する。name ベースで切らない
 - Connector の「設定」は settings.json に nested で入れる、「state」だけ上のディレクトリに分ける。設定と state を同じ場所に混ぜない。この分離は Connector のための規約で、Connector の state（lastFiredAt / poll watermark 等）は量があり頻繁に書き換わるため別ディレクトリに逃がす。一方 Profile の `sessionId` は profile に 1 個ぶら下がるだけの軽量な execution state で、profile（by id）が所有することに意味がある（rename 追従・transport 層からの隠蔽）。これは settings.json の profile に内包してよい（別ファイルに切らない）。「混ぜない」は「人手の config に大量の流動 state を流し込むな」の意であって、profile が自分の session を 1 個持つことは禁じない
-- daemon 系の揮発ファイル（pid / token 等）は `~/.funnel/` 直下に置く
+- daemon 系の揮発ファイル（pid / token 等）は `~/.funnel/` 直下に置く。secret / 生存フラグ / 設定は別ファイルに切る — settings.json に束ねない。理由は 3 つで、(1) 権限が違う（token は `0600`、pid は `0644`、settings.json は人手編集で 0644。1 ファイルにすると一番厳しい 0600 に揃えるしかなく secret 以外まで隠れる）、(2) 寿命が違う（token は daemon 起動ごと、pid はプロセスと同寿命、settings.json は永続。1 ファイルだと「pid だけ消す」ができず古い PID 再利用で誤検知する）、(3) atomic write の単位が違う（token 書き → pid 書きの途中で死ぬと中途半端な JSON が残る）。新しい揮発 state を足すときも同じ軸で判断する
 - funnel.json はリポジトリ側 commit 物。funnel が書き換えるのは初回起動時の `id`(uuid) 付与のみ（state 隔離用の不変キー、`FunnelLocalConfigWriter` が担う）。token は絶対に書かない — CLI 設定か TTY prompt で `~/.funnel/projects/<id>/settings.json` に保存し、commit されない
 - Gateway ポートのデフォルトは 2 系統 — `funnel` CLI 起動時は 9743、programmatic（`new Funnel().gatewayServer()`）は 9742（`FUNNEL_PORT` で両方上書き可）。CLI を別ポートにするのは、同マシンで Funnel を埋め込む別アプリの gateway（9742）と CLI 起動が port 衝突しないため。port 解決は `resolveFunnelPort()` に一元化し、CLI entry（`cli/index.ts`）が `FUNNEL_PORT` 未設定時に 9743 を立てて daemon spawn / MCP / listener client 全部に行き渡らせる。bind は loopback（`127.0.0.1`）固定で off-box から到達不可。`FUNNEL_HOST=0.0.0.0` で明示的に公開できる（公開しても全特権エンドポイントは bearer token 必須）
 
@@ -255,6 +290,18 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - CLI フラグは kebab-case のまま zod でバリデートし、ハンドラ層で camelCase に詰め直す。自動ケース変換は入れない
 - `--channel <name>` 等の名前は CLI ハンドラ層で id に解決してから engine に渡す。engine 側は id を受け取る
 - claude への argv 転送は `dispatchClaude` の `parse` で funnel 専用フラグ（`--profile` / `-p` / `--channel` / `--help` / `-h`）だけ取り出し、残りは verbatim に append。`queryToCliArgs` は他コマンド経路だけが使う
+- 各 route の help text 末尾に `programmable: funnel.<surface>.<method>()` を 1 行入れる（CLI と SDK の対応を Claude が辿れるように）。SDK 等価が無いコマンド（`fnl update` 等）はその旨を明記する
+- ドキュメント本文（`lib/services/docs/topics/docs-*.ts`）は `programmable API:` セクションと `related: fnl docs ...` 行で締める
+
+### CLI と MCP と SDK の三方共有パターン
+
+新しい機能は次の順で書く。同じロジックを 3 経路から呼ぶための分離設計。
+
+- engine 側に service クラスを置く（pure、narrow interface に依存、`Object.freeze(this)`）
+- `Funnel` facade のフィールドに追加（constructor で eager 構築）
+- CLI route は `c.env.funnel.<service>` を delegate 呼び出しするだけ。business logic を route に書かない
+- 外部プロセス（MCP）から呼ぶ必要があれば、daemon の `extraRoutes` に薄い HTTP ラッパーを追加（`lib/gateway/service-routes.ts` 参照）
+- MCP tool に登録（`lib/engine/mcp/channel-server.ts`）し、tool description に nextAction hint を書く
 
 ### ルート規約
 
@@ -273,6 +320,14 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - 外部境界は abstract class + Node / Memory 実装を並置。テストは Memory 実装で書く（実 FS / spawn / fetch / WebSocket / TTY に触れない）
 - logger だけは例外で **optional・default インスタンスを作らない**。`logger?: FunnelLogger` を DI で受け、内部は `this.logger?.info(...)` の optional chaining で呼ぶ（未注入なら sliently no-op）。これでテストは何も注入せず勝手に静か（実 FS に触れない）になり、`?? new NodeFunnelLogger()` の結線を全クラスから排除できる。本物の file sink は production 入口（`lib/cli/index.ts` / `lib/gateway/daemon.ts`）で `new Funnel({ logger: new NodeFunnelLogger() })` として一度だけ注入する。エラーを host に晒す経路は logger ではなく `OnFunnelError`（DI 維持・テストで assert する seam）— 2 つを混ぜない
 - 公開 API は `lib/index.ts` で `export * from`。他モジュールから参照されない module-internal な型は元ファイル側で `export` を外す
+- サブエントリ（`@interactive-inc/claude-funnel/<name>`）を追加するには三点同時更新が必要。`lib/<name>.ts` の re-export ファイル、`vite.config.ts` の `pack.entry`、`package.json` の `exports`。どれか欠けると build は通っても import が解決できない
+
+### ドキュメントの所在
+
+ユーザー向けドキュメントは `lib/services/docs/topics/docs-<topic>.ts` に置く（`fnl docs <topic>` で引ける）。README.md や外部 doc サイトは持たない。新しいトピックを追加する手順。
+
+- `lib/services/docs/topics/docs-<name>.ts` を書く（`export const docs<Name> = ...`）
+- `lib/engine/docs/funnel-docs.ts` の `DOCS` と `SUMMARIES` に追加
 
 ### Connectors
 
@@ -293,6 +348,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - 永続 replay は `FunnelEventLog` 抽象 port（`record` / `loadSince` / `findMaxOffset` / `close`）に閉じる。default 実装は `SqliteFunnelEventLog`（再起動跨ぎの replay と offset 永続を担う）、`MemoryFunnelEventLog` は in-process double。`gatewayServer({ eventLog })` で注入でき、無指定なら dbPath の SQLite。Broadcaster が依存するのは `loadSince` だけ（narrow な `ReplaySource`）なので EventLog は interface segregation で繋がる
 - in-process で全 event を観測したい host は `FunnelGatewayServer.onEvent(handler)`（= broadcaster.subscribe の薄い委譲）を使う。別プロセスの daemon は観測できない（WS クライアントを使う）。`onEvent` は書き出し専用で、replay（読み戻し）は EventLog の責務 — 2 つを混ぜない
 - daemon 起動コマンドは `bun .../dist/gateway/daemon.js funnel-gateway[<FUNNEL_DIR>]` の形で argv 末尾に dir tag を付ける。Slack Socket Mode 起動時の競合 kill は `ps -o args=` でこの tag を grep して同 dir の daemon だけを kill する（別 `~/.funnel/` を指す他 install には触らない）
+- gateway daemon が built-in HTTP route 以外を露出する必要が出たら、`buildServiceRoutes` のように Hono サブアプリを書いて `gatewayServer({ extraRoutes, token })` に渡す。daemon は `funnel.diagnostics` / `funnel.doctor` 等を保持しているので、外部プロセス（MCP）からの HTTP 経由アクセスはこの経路でだけ提供する（built-in route table の `lib/gateway/routes/index.ts` は触らない）
 
 ### Schedule Connector
 

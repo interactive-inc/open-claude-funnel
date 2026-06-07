@@ -349,8 +349,8 @@ funnel.channels.addConnector("inbox", {
 `channels` / `profiles` / `gateway` / `listeners` / `claude` / `localConfig` / `localConfigSync` など全ファセットが同じインスタンスの readonly プロパティとして辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
 
 ```ts
-await funnel.gateway.start()    // デーモンを別プロセスとして spawn
-funnel.gateway.getStatus()      // { running, pid, port }
+await funnel.gateway.start() // デーモンを別プロセスとして spawn
+funnel.gateway.getStatus() // { running, pid, port }
 
 await funnel.listeners.start("inbox", "my-slack")
 await funnel.listeners.restart("inbox", "my-slack")

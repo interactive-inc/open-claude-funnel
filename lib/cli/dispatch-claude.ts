@@ -1,8 +1,11 @@
 import { claudeHelp } from "@/cli/routes/claude"
 import type { FunnelClaude } from "@/engine/claude/claude"
-import type { ChannelSpec, LocalConfig } from "@/engine/local-config/local-config-schema"
-import type { FunnelLocalConfig } from "@/engine/local-config/local-config"
-import type { FunnelLocalConfigSync, LocalConfigSyncResult } from "@/engine/local-config/local-config-sync"
+import type { ChannelSpec, LocalConfig } from "@/services/local-config/local-config-schema"
+import type { FunnelLocalConfig } from "@/services/local-config/local-config"
+import type {
+  FunnelLocalConfigSync,
+  LocalConfigSyncResult,
+} from "@/services/local-config/local-config-sync"
 import type { FunnelProfiles } from "@/engine/profiles/profiles"
 import type { FunnelListenersClient } from "@/gateway/listeners-client"
 

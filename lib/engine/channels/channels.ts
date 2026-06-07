@@ -1,11 +1,11 @@
-import type { CallInput } from "@/connectors/connector-adapter"
-import type { ConnectorConfig } from "@/connectors/connector-config-schema"
-import type { EitherToken } from "@/connectors/either-token"
-import type { FunnelConnectorFactory } from "@/connectors/connector-factory"
-import type { FunnelConnectorListener } from "@/connectors/connector-listener"
-import type { DiscordConnectorConfig } from "@/connectors/discord-connector-schema"
-import type { ScheduleEntry } from "@/connectors/schedule-connector-schema"
-import type { SlackConnectorConfig } from "@/connectors/slack-connector-schema"
+import type { CallInput } from "@/engine/connectors/connector-adapter"
+import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
+import type { EitherToken } from "@/engine/connectors/either-token"
+import type { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
+import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
+import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
+import type { ScheduleEntry } from "@/engine/connectors/schedule-connector-schema"
+import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 import { connectorTokens } from "@/engine/channels/connector-tokens"
 import { requireConnectorOfType } from "@/engine/channels/require-connector"
 import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
@@ -38,10 +38,7 @@ export type ChannelConnectorView = ConnectorConfig & {
 // EitherToken union, so literal+env on the same slot is a compile error while
 // "neither" stays valid (the sync layer / TTY prompt fills it in later).
 type AddConnectorInput =
-  | ({ type: "slack"; name: string; minify?: boolean } & EitherToken<
-      "botToken",
-      "botTokenEnv"
-    > &
+  | ({ type: "slack"; name: string; minify?: boolean } & EitherToken<"botToken", "botTokenEnv"> &
       EitherToken<"appToken", "appTokenEnv">)
   | { type: "gh"; name: string; pollInterval?: number }
   | ({ type: "discord"; name: string } & EitherToken<"botToken", "botTokenEnv">)

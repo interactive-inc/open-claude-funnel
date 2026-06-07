@@ -2,10 +2,13 @@ import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { renderYaml } from "@/cli/yaml-render"
 
-const showHelp = `funnel channels <channel> connectors show <connector> — show connector config
+const showHelp = `funnel channels <channel> connectors show <connector> / show connector config
 
-usage: funnel channels <channel> connectors show <connector>`
+usage / funnel channels <channel> connectors show <connector>
+
+output / valid YAML`
 
 export const channelsConnectorsShowHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
@@ -21,6 +24,6 @@ export const channelsConnectorsShowHandler = factory.createHandlers(
       })
     }
 
-    return c.text(JSON.stringify(connector, null, 2))
+    return c.text(renderYaml(connector))
   },
 )

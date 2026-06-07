@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { ConnectorConfig } from "@/connectors/connector-config-schema"
-import { FunnelConnectorListener, type NotifyFn } from "@/connectors/connector-listener"
+import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
+import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"

@@ -19,7 +19,9 @@ log:  ${join(funnelTmpDir(), "gateway.log")}
 
 examples:
   funnel gateway start
-  funnel gateway start --no-caffeine`
+  funnel gateway start --no-caffeine
+
+programmable: funnel.gateway.start({ caffeinate })`
 
 export const gatewayStartHandler = factory.createHandlers(
   zValidator(

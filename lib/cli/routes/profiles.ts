@@ -1,24 +1,29 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
+import { renderYaml } from "@/cli/yaml-render"
 
-const groupHelp = `funnel profiles — manage launch profiles
+const groupHelp = `funnel profiles / manage launch profiles
 
-usage: funnel profiles [subcommand]
+usage / funnel profiles [subcommand]
 
 subcommands:
-  (none)                          list (first entry is the default)
+  (none) / list (first entry is the default)
   add <name> --path <path> --channel <channel> [--agent ...] [--options ...] [--env ...] [--no-resume]
   <name> set [--path ...] [--channel ...] [--agent ...] [--options ...] [--env ...] [--resume|--no-resume]
-  <name> as-default               move profile to the front (becomes default)
-  rename <old> <new>              rename
-  remove <name>                   remove
-  <name> run                      launch (sugar for fnl claude -p <name>)
-  <name>                          launch (alias for run)
+  <name> as-default / move profile to the front
+  rename <old> <new> / rename
+  remove <name> / remove
+  <name> run / launch (sugar for fnl claude -p <name>)
+  <name> / launch (alias for run)
 
-A profile carries the launch recipe — \`--agent\` / \`--options\` prepended to
-the claude argv, \`--env\` layered under the process, \`--resume\` toggling
-session reuse. The channel it points at only declares transport (connectors).
+A profile carries the launch recipe — --agent / --options prepended to the
+claude argv, --env layered under the process, --resume toggling session
+reuse. The channel it points at only declares transport (connectors).
+
+output / valid YAML
+
+programmable / funnel.profiles.list() / .add() / .remove() / .rename() / .setDefault()
 
 examples:
   funnel profiles add cto --path /repo/myapp --channel prod-inbox --agent pm --options "--brief"
@@ -28,20 +33,20 @@ examples:
 export const profilesGroupHandler = factory.createHandlers(
   zValidator("query", z.object({}), groupHelp),
   (c) => {
-    const funnel = c.env.funnel
     const { profiles } = c.env
     const profileList = profiles.list()
 
-    if (profileList.length === 0) return c.text("no profiles")
-
-    const lines = profileList.map((profile, index) => {
-      const tag = index === 0 ? " (default)" : ""
-      const recipe = profile.options.length > 0 ? `, options=${profile.options.join(" ")}` : ""
-      const session = profile.resume ? "" : ", resume=false"
-
-      return `${profile.name}${tag}  [path=${profile.path}, channel=${profile.channelId}${recipe}${session}]`
-    })
-
-    return c.text(lines.join("\n"))
+    return c.text(
+      renderYaml({
+        profiles: profileList.map((profile, index) => ({
+          name: profile.name,
+          default: index === 0,
+          path: profile.path,
+          channelId: profile.channelId,
+          options: profile.options,
+          resume: profile.resume,
+        })),
+      }),
+    )
   },
 )

@@ -1,4 +1,4 @@
-import type { ConnectorConfig } from "@/connectors/connector-config-schema"
+import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 
 function isConnectorOfType<T extends ConnectorConfig["type"]>(

@@ -19,29 +19,30 @@ import { statusHandler } from "@/gateway/routes/status"
 export type GatewayApp = ReturnType<typeof buildGatewayRoutes>
 
 function buildGatewayRoutes() {
-  return factory
-  .createApp()
-  // Without this, a plain Error thrown by a service (e.g. channels.call() on an
-  // unknown connector) falls through to Hono's default 500 "Internal Server
-  // Error", hiding the real reason from the MCP caller. HTTPException already
-  // carries its own status/body, so delegate to its native response untouched.
-  .onError((error, c) => {
-    if (error instanceof HTTPException) return error.getResponse()
+  return (
+    factory
+      .createApp()
+      // Without this, a plain Error thrown by a service (e.g. channels.call() on an
+      // unknown connector) falls through to Hono's default 500 "Internal Server
+      // Error", hiding the real reason from the MCP caller. HTTPException already
+      // carries its own status/body, so delegate to its native response untouched.
+      .onError((error, c) => {
+        if (error instanceof HTTPException) return error.getResponse()
 
-    const message = error instanceof Error ? error.message : String(error)
+        const message = error instanceof Error ? error.message : String(error)
 
-    return c.json({ error: message }, 500)
-  })
-  .get("/health", ...healthHandler)
-  .get("/status", ...statusHandler)
-  .get("/debug", ...debugHandler)
-  .get("/listeners", ...listenersListHandler)
-  .post("/listeners/:channel/:connector/start", ...listenersStartHandler)
-  .delete("/listeners/:channel/:connector", ...listenersStopHandler)
-  .post("/listeners/:channel/:connector/restart", ...listenersRestartHandler)
-  .post("/channels/:channel/connectors/:connector/call", ...channelsConnectorsCallHandler)
-  .post("/channels/:channel/publish", ...channelsPublishHandler)
-
+        return c.json({ error: message }, 500)
+      })
+      .get("/health", ...healthHandler)
+      .get("/status", ...statusHandler)
+      .get("/debug", ...debugHandler)
+      .get("/listeners", ...listenersListHandler)
+      .post("/listeners/:channel/:connector/start", ...listenersStartHandler)
+      .delete("/listeners/:channel/:connector", ...listenersStopHandler)
+      .post("/listeners/:channel/:connector/restart", ...listenersRestartHandler)
+      .post("/channels/:channel/connectors/:connector/call", ...channelsConnectorsCallHandler)
+      .post("/channels/:channel/publish", ...channelsPublishHandler)
+  )
 }
 
 export const gatewayRoutes = buildGatewayRoutes()

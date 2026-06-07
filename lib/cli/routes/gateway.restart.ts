@@ -12,7 +12,10 @@ On macOS wraps with caffeinate -is by default. Use --no-caffeine to disable.
 
 examples:
   funnel gateway restart
-  funnel gateway restart --no-caffeine`
+  funnel gateway restart --no-caffeine
+
+programmable: funnel.gateway.restart({ caffeinate })
+              funnel.recovery.restartGateway()`
 
 export const gatewayRestartHandler = factory.createHandlers(
   zValidator(

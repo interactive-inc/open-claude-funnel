@@ -30,7 +30,10 @@ examples:
   funnel gateway logs -n 100
   funnel gateway logs --format json | jq 'select(.level == "error")'
 
-see also: fnl debug, fnl gateway sql`
+see also: fnl debug, fnl gateway sql
+
+programmable: this command tails a file directly. For structured introspection,
+              prefer funnel.diagnostics.diagnoseAll() / .recentEvents() in code.`
 
 const logger = new NodeFunnelLogger()
 
