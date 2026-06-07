@@ -288,6 +288,18 @@ describe("LeucoLoggerSqliteSink", () => {
     }).toThrow(/reserved index column name/)
   })
 
+  it("creates the parent directory when it does not exist", () => {
+    const path = join(tmp, "nested", "sub", "dir", "auto.db")
+    const sink = new LeucoLoggerSqliteSink<Event>({ path })
+    const r = sink.insert({ ts: 1, event: { type: "x", payload: "a" } })
+
+    if (r instanceof Error) throw new Error("unexpected")
+    expect(r.seq).toBe(1)
+    expect(sink.getMaxSeq()).toBe(1)
+
+    sink.close()
+  })
+
   it("indexes: ALTER TABLE adds a new column when reopening with extra index", () => {
     type Ev = { type: string; channel_id: string }
     const path = join(tmp, "indexes.db")
