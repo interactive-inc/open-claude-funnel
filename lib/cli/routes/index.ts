@@ -70,7 +70,7 @@ export const routes = factory
   .createApp()
   .onError((error, c) => {
     if (error instanceof HTTPException) {
-      return c.text(`error: ${error.message}`, error.status)
+      return c.text(error.message, error.status)
     }
 
     return c.text(`error: ${error instanceof Error ? error.message : String(error)}`, 400)

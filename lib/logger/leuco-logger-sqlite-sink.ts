@@ -1,5 +1,7 @@
 import { Database } from "bun:sqlite"
 import type { SQLQueryBindings, Statement } from "bun:sqlite"
+import { existsSync, mkdirSync } from "node:fs"
+import { dirname } from "node:path"
 import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
 import type { LeucoLoggerPrimarySink, LeucoLoggerSink } from "@/logger/leuco-logger-sink"
 
@@ -144,6 +146,15 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
   private insertsSinceByteCheck = 0
 
   constructor(props: Props<E, I>) {
+    // `bun:sqlite` does not create the parent directory on open, so a fresh
+    // environment (e.g. `~/.inta/funnel/events/` on first run) errors out with
+    // an opaque `unable to open database file`. Mirror `LeucoHumanFileWriter`'s
+    // `ensureDir()` here. `:memory:` is a sentinel handled by sqlite, not a
+    // path, so skip it.
+    if (props.path !== ":memory:") {
+      const dir = dirname(props.path)
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    }
     this.db = new Database(props.path)
     this.db.run("PRAGMA journal_mode = WAL")
     this.migrate()
