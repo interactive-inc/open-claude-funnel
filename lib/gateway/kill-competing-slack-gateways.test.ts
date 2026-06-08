@@ -77,4 +77,44 @@ describe("killCompetingSlackGateways", () => {
     expect(killed).toEqual([])
     expect(runner.killed).toEqual([])
   })
+
+  test("waits for the competitor to exit and does not force-kill when it shuts down in time", async () => {
+    const runner = new MemoryFunnelProcessRunner().onListProcessesContaining(() =>
+      snapshotsFor(HIRACT_DIR),
+    )
+    // The competitor exits as soon as it is SIGTERM'd.
+    runner.onIsAlive((pid) => !runner.killed.some((entry) => entry.pid === pid))
+
+    const killed = await killCompetingSlackGateways({
+      selfPid: 300,
+      dir: HIRACT_DIR,
+      process: runner,
+    })
+
+    expect(killed).toEqual([100])
+    // SIGTERM only — a clean exit within the grace window means no SIGKILL.
+    expect(runner.killed.map((entry) => entry.signal)).toEqual(["SIGTERM"])
+  })
+
+  test("force-kills a competitor that ignores SIGTERM past the grace window", async () => {
+    const runner = new MemoryFunnelProcessRunner().onListProcessesContaining(() =>
+      snapshotsFor(HIRACT_DIR),
+    )
+    // The competitor never dies, so the grace window must elapse and SIGKILL fire.
+    runner.onIsAlive(() => true)
+
+    const clock = { ms: 0 }
+    const killed = await killCompetingSlackGateways({
+      selfPid: 300,
+      dir: HIRACT_DIR,
+      process: runner,
+      now: () => clock.ms,
+      sleep: async (ms) => {
+        clock.ms += ms
+      },
+    })
+
+    expect(killed).toEqual([100])
+    expect(runner.killed.map((entry) => entry.signal)).toEqual(["SIGTERM", "SIGKILL"])
+  })
 })
