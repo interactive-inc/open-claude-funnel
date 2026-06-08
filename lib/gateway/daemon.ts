@@ -92,7 +92,26 @@ const server = funnel.gatewayServer({
   token: gatewayToken,
 })
 
-await server.start()
+try {
+  await server.start()
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error)
+
+  // A funnel.json-scoped repo and the global install both default to the same
+  // port, so a second scope's daemon dies here on EADDRINUSE. Spell out the
+  // cause instead of dumping a bare bind error into gateway.log.
+  if (message.includes("EADDRINUSE") || message.includes("address already in use")) {
+    logger.error(
+      `gateway port ${PORT} is already in use by another funnel daemon (a different repo/scope). ` +
+        `Set FUNNEL_PORT to a distinct port, or stop the other daemon.`,
+      { port: PORT, dir: funnelDir },
+    )
+  } else {
+    logger.error("gateway failed to start", { error: message })
+  }
+
+  process.exit(1)
+}
 
 // Graceful shutdown: stop listeners so @slack/bolt closes the Socket Mode
 // websocket and Slack drops the connection immediately. A bare process.exit
