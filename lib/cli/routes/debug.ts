@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 
@@ -100,6 +101,7 @@ const resolveTargetChannel = (
 }
 
 export const debugHandler = factory.createHandlers(
+  helpGuard(debugHelp),
   zValidator(
     "query",
     z.object({
@@ -107,7 +109,6 @@ export const debugHandler = factory.createHandlers(
       all: z.enum(["true", "false", ""]).optional(),
       limit: z.string().optional(),
     }),
-    debugHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")
@@ -164,7 +165,8 @@ export const debugHandler = factory.createHandlers(
 )
 
 export const debugEventsHandler = factory.createHandlers(
-  zValidator("query", channelLimitQuery, debugEventsHelp),
+  helpGuard(debugEventsHelp),
+  zValidator("query", channelLimitQuery),
   async (c) => {
     const query = c.req.valid("query")
     const funnel = c.env.funnel
@@ -180,7 +182,8 @@ export const debugEventsHandler = factory.createHandlers(
 )
 
 export const debugDroppedHandler = factory.createHandlers(
-  zValidator("query", channelLimitQuery, debugDroppedHelp),
+  helpGuard(debugDroppedHelp),
+  zValidator("query", channelLimitQuery),
   async (c) => {
     const query = c.req.valid("query")
     const funnel = c.env.funnel
@@ -196,7 +199,8 @@ export const debugDroppedHandler = factory.createHandlers(
 )
 
 export const debugErrorsHandler = factory.createHandlers(
-  zValidator("query", channelLimitQuery, debugErrorsHelp),
+  helpGuard(debugErrorsHelp),
+  zValidator("query", channelLimitQuery),
   async (c) => {
     const query = c.req.valid("query")
     const funnel = c.env.funnel
@@ -212,13 +216,13 @@ export const debugErrorsHandler = factory.createHandlers(
 )
 
 export const debugReplayHandler = factory.createHandlers(
+  helpGuard(debugReplayHelp),
   zValidator(
     "query",
     z.object({
       channel: z.string().optional(),
       seq: z.string().optional(),
     }),
-    debugReplayHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

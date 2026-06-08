@@ -2,6 +2,7 @@ import { join } from "node:path"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
@@ -24,12 +25,12 @@ examples:
 programmable: funnel.gateway.start({ caffeinate })`
 
 export const gatewayStartHandler = factory.createHandlers(
+  helpGuard(startHelp),
   zValidator(
     "query",
     z.object({
       "no-caffeine": z.string().optional(),
     }),
-    startHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

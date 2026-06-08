@@ -1,7 +1,6 @@
 import { HTTPException } from "hono/http-exception"
-import { z } from "zod"
 import { factory } from "@/cli/factory"
-import { zValidator } from "@/cli/router/validator"
+import { helpGuard } from "@/cli/router/help-guard"
 
 const stopHelp = `funnel gateway stop — stop the gateway
 
@@ -13,7 +12,7 @@ examples:
   funnel gateway stop`
 
 export const gatewayStopHandler = factory.createHandlers(
-  zValidator("query", z.object({}), stopHelp),
+  helpGuard(stopHelp),
   async (c) => {
     const funnel = c.env.funnel
 

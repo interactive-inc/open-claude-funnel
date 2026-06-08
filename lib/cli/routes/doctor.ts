@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 
@@ -22,13 +23,13 @@ examples:
   funnel doctor --fix --aggressive`
 
 export const doctorHandler = factory.createHandlers(
+  helpGuard(doctorHelp),
   zValidator(
     "query",
     z.object({
       fix: z.enum(["true", "false", ""]).optional(),
       aggressive: z.enum(["true", "false", ""]).optional(),
     }),
-    doctorHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

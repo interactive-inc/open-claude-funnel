@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 
@@ -15,6 +16,7 @@ output / valid YAML (or raw text when the adapter returns text)`
 
 export const channelsConnectorsRequestHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
+  helpGuard(requestHelp),
   zValidator(
     "query",
     z
@@ -23,7 +25,6 @@ export const channelsConnectorsRequestHandler = factory.createHandlers(
         path: z.string().optional(),
       })
       .passthrough(),
-    requestHelp,
   ),
   async (c) => {
     const param = c.req.valid("param")

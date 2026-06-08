@@ -2,6 +2,7 @@ import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { queryToCliArgs } from "@/cli/router/query-to-cli-args"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 
 export const claudeHelp = `funnel claude — launch Claude Code
@@ -39,6 +40,7 @@ programmable: funnel.claude.launch({ profileId | channelId, options, env, resume
 const RESERVED_KEYS = ["profile", "channel"]
 
 export const claudeHandler = factory.createHandlers(
+  helpGuard(claudeHelp),
   zValidator(
     "query",
     z
@@ -47,7 +49,6 @@ export const claudeHandler = factory.createHandlers(
         channel: z.string().optional(),
       })
       .passthrough(),
-    claudeHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

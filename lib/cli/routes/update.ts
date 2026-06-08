@@ -1,8 +1,7 @@
 import { HTTPException } from "hono/http-exception"
-import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
-import { zValidator } from "@/cli/router/validator"
 
 const updateHelp = `funnel update — update funnel to the latest version
 
@@ -16,7 +15,7 @@ the host (npm / bun / yarn install in the host's own way).`
 const PACKAGE = "@interactive-inc/claude-funnel"
 
 export const updateHandler = factory.createHandlers(
-  zValidator("query", z.object({}), updateHelp),
+  helpGuard(updateHelp),
   async (c) => {
     const runner = new NodeFunnelProcessRunner()
     const exitCode = await runner.attach(["bun", "i", "-g", PACKAGE])

@@ -1,6 +1,5 @@
-import { z } from "zod"
 import { factory } from "@/cli/factory"
-import { zValidator } from "@/cli/router/validator"
+import { helpGuard } from "@/cli/router/help-guard"
 import { renderYaml } from "@/cli/yaml-render"
 
 const groupHelp = `funnel channels / manage subscription boxes
@@ -37,7 +36,7 @@ examples:
   funnel channels prod-inbox`
 
 export const channelsGroupHandler = factory.createHandlers(
-  zValidator("query", z.object({}), groupHelp),
+  helpGuard(groupHelp),
   (c) => {
     const funnel = c.env.funnel
     const channels = funnel.channels.list()

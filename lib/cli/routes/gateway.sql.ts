@@ -2,6 +2,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
@@ -83,6 +84,7 @@ programmable: const reader = new ConnectorDiagnosticSqlReader({ rawPath, process
               / .connectionErrors() are higher level and don't need SQL.`
 
 export const gatewaySqlHandler = factory.createHandlers(
+  helpGuard(sqlHelp),
   zValidator(
     "query",
     z.object({
@@ -91,7 +93,6 @@ export const gatewaySqlHandler = factory.createHandlers(
       channel: z.string().optional(),
       limit: z.string().optional(),
     }),
-    sqlHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

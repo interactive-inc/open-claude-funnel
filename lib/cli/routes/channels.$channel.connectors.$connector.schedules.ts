@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 
 const groupHelp = `funnel channels <ch> connectors <conn> schedules — manage schedule entries
@@ -13,7 +14,7 @@ subcommands:
 
 export const channelsConnectorsSchedulesGroupHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
-  zValidator("query", z.object({}), groupHelp),
+  helpGuard(groupHelp),
   (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel

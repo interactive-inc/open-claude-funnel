@@ -4,6 +4,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 
 const logsHelp = `funnel gateway logs — tail the daemon diagnostic log
@@ -87,13 +88,13 @@ const formatPlain = (entry: LogEntry): string => {
 }
 
 export const gatewayLogsHandler = factory.createHandlers(
+  helpGuard(logsHelp),
   zValidator(
     "query",
     z.object({
       n: z.string().optional(),
       format: z.enum(["plain", "json"]).optional(),
     }),
-    logsHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

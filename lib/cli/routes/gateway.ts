@@ -1,8 +1,7 @@
 import type { Context } from "hono"
-import { z } from "zod"
 import { factory } from "@/cli/factory"
 import type { Env } from "@/cli/factory"
-import { zValidator } from "@/cli/router/validator"
+import { helpGuard } from "@/cli/router/help-guard"
 import { renderYaml } from "@/cli/yaml-render"
 
 const groupHelp = `funnel gateway / manage the funnel daemon
@@ -108,6 +107,6 @@ export const renderGatewayStatus = async (c: Context<Env>) => {
 }
 
 export const gatewayGroupHandler = factory.createHandlers(
-  zValidator("query", z.object({}), groupHelp),
+  helpGuard(groupHelp),
   renderGatewayStatus,
 )

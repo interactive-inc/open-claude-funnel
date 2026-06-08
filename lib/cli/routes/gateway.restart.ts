@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 
 const restartHelp = `funnel gateway restart — restart the gateway
@@ -18,12 +19,12 @@ programmable: funnel.gateway.restart({ caffeinate })
               funnel.recovery.restartGateway()`
 
 export const gatewayRestartHandler = factory.createHandlers(
+  helpGuard(restartHelp),
   zValidator(
     "query",
     z.object({
       "no-caffeine": z.string().optional(),
     }),
-    restartHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

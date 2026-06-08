@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.58.1",
+  "version": "0.59.0",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "keywords": [
     "bun",
@@ -117,7 +117,7 @@
     "prepack": "make build"
   },
   "dependencies": {
-    "@hono/zod-validator": "^0.8.0",
+    "@hono/zod-validator": "0.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@slack/bolt": "^4.7.2",
     "@slack/web-api": "^7.16.0",

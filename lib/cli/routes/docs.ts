@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 
@@ -19,7 +20,7 @@ examples:
   funnel docs debugging`
 
 export const docsIndexHandler = factory.createHandlers(
-  zValidator("query", z.object({}), docsHelp),
+  helpGuard(docsHelp),
   async (c) => {
     const docs = c.env.funnel.docs
 

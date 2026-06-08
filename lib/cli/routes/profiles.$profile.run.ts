@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { queryToCliArgs } from "@/cli/router/query-to-cli-args"
 import { zValidator } from "@/cli/router/validator"
 
@@ -13,7 +14,8 @@ const RESERVED_KEYS: string[] = []
 
 export const profilesLaunchHandler = factory.createHandlers(
   zValidator("param", z.object({ profile: z.string() })),
-  zValidator("query", z.object({}).passthrough(), launchHelp),
+  helpGuard(launchHelp),
+  zValidator("query", z.object({}).passthrough()),
   async (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel

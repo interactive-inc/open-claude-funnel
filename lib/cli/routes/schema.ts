@@ -1,6 +1,5 @@
-import { z } from "zod"
 import { factory } from "@/cli/factory"
-import { zValidator } from "@/cli/router/validator"
+import { helpGuard } from "@/cli/router/help-guard"
 import { funnelJsonSchema } from "@/services/local-config/local-config-json-schema"
 
 const schemaHelp = `funnel schema — print the JSON Schema for funnel.json
@@ -23,7 +22,7 @@ programmable: import { funnelJsonSchema } from "@interactive-inc/claude-funnel/l
               funnelJsonSchema()  // returns the same object as the CLI prints`
 
 export const schemaHandler = factory.createHandlers(
-  zValidator("query", z.object({}), schemaHelp),
+  helpGuard(schemaHelp),
   async (c) => {
     const schema = funnelJsonSchema()
 

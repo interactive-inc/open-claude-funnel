@@ -1,6 +1,5 @@
-import { z } from "zod"
 import { factory } from "@/cli/factory"
-import { zValidator } from "@/cli/router/validator"
+import { helpGuard } from "@/cli/router/help-guard"
 import { renderYaml } from "@/cli/yaml-render"
 
 const groupHelp = `funnel profiles / manage launch profiles
@@ -31,7 +30,7 @@ examples:
   funnel profiles cto run`
 
 export const profilesGroupHandler = factory.createHandlers(
-  zValidator("query", z.object({}), groupHelp),
+  helpGuard(groupHelp),
   (c) => {
     const { profiles } = c.env
     const profileList = profiles.list()

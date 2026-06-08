@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { channelDeliveryModeSchema } from "@/engine/settings/settings-schema"
 
@@ -14,13 +15,13 @@ modes:
 `
 
 export const channelsSetDeliveryHandler = factory.createHandlers(
+  helpGuard(setDeliveryHelp),
   zValidator(
     "param",
     z.object({
       channel: z.string(),
       mode: channelDeliveryModeSchema,
     }),
-    setDeliveryHelp,
   ),
   (c) => {
     const param = c.req.valid("param")

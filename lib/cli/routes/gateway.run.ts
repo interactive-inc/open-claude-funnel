@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 
 const runHelp = `funnel gateway run — run the gateway in foreground
@@ -18,12 +19,12 @@ examples:
 programmable: funnel.runGatewayForeground({ caffeinate })`
 
 export const gatewayRunHandler = factory.createHandlers(
+  helpGuard(runHelp),
   zValidator(
     "query",
     z.object({
       "no-caffeine": z.string().optional(),
     }),
-    runHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")

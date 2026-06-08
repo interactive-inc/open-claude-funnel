@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 import type { Funnel } from "@/funnel"
@@ -118,13 +119,13 @@ const buildStatusReport = async (funnel: Funnel, profiles: FunnelProfiles) => {
 }
 
 export const statusHandler = factory.createHandlers(
+  helpGuard(statusHelp),
   zValidator(
     "query",
     z.object({
       watch: z.enum(["true", "false", ""]).optional(),
       interval: z.string().optional(),
     }),
-    statusHelp,
   ),
   async (c) => {
     const query = c.req.valid("query")
