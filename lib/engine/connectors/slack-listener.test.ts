@@ -6,6 +6,7 @@ import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-di
 
 const hoisted = {
   middlewareHandlers: [] as ((args: unknown) => Promise<void>)[],
+  errorHandlers: [] as ((error: unknown) => Promise<void> | void)[],
   mockApp: null as MockApp | null,
   appConstructorCalls: 0,
   // When set, the next-constructed FakeApp's auth.test rejects with this.
@@ -47,7 +48,9 @@ mock.module("@slack/bolt", () => {
       this.use = mock((handler: (args: unknown) => Promise<void>) => {
         hoisted.middlewareHandlers.push(handler)
       })
-      this.error = mock(() => {})
+      this.error = mock((handler: (error: unknown) => Promise<void> | void) => {
+        hoisted.errorHandlers.push(handler)
+      })
       this.action = mock(() => {})
       this.start = mock(() => Promise.resolve(undefined))
       this.stop = mock(() => Promise.resolve(undefined))
@@ -72,6 +75,7 @@ const buildConfig = (): SlackConnectorConfig => ({
 
 beforeEach(() => {
   hoisted.middlewareHandlers.length = 0
+  hoisted.errorHandlers.length = 0
   hoisted.mockApp = null
   hoisted.appConstructorCalls = 0
   hoisted.authError = null
@@ -79,6 +83,7 @@ beforeEach(() => {
 
 afterEach(() => {
   hoisted.middlewareHandlers.length = 0
+  hoisted.errorHandlers.length = 0
   hoisted.mockApp = null
   hoisted.authError = null
 })
@@ -557,5 +562,41 @@ describe("FunnelSlackListener: non-event payloads do not touch the diagnostic lo
     expect(diagnosticLog.queryRaw({})).toHaveLength(0)
     expect(diagnosticLog.queryProcessed({})).toHaveLength(0)
     expect(next).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("FunnelSlackListener: liveness", () => {
+  test("reports alive after a successful start", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+
+    expect(listener.isAlive()).toBe(true)
+  })
+
+  test("flips to not-alive when a non-recoverable Socket Mode error fires", async () => {
+    // Before the fix, isAlive() was `this.app !== null`, which stays true after
+    // the socket dies, so the supervisor never restarts a silently-dead
+    // connection. The app.error handler must now mark the listener disconnected.
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+
+    await listener.start(async () => {})
+    expect(listener.isAlive()).toBe(true)
+
+    expect(hoisted.errorHandlers).toHaveLength(1)
+    await hoisted.errorHandlers[0]?.(new Error("invalid_auth"))
+
+    expect(listener.isAlive()).toBe(false)
+    expect(diagnosticLog.queryConnection({ status: "error" })[0]?.detail).toBe("invalid_auth")
+  })
+
+  test("is not alive after stop()", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+    await listener.stop()
+
+    expect(listener.isAlive()).toBe(false)
   })
 })

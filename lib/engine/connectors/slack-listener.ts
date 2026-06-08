@@ -50,6 +50,14 @@ export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly onAppCreated: SlackOnAppCreated | null
   private readonly preprocessEvent: SlackPreprocessEvent | null
   private app: App | null = null
+  // Tracks live Socket Mode connectivity. `this.app` only records "did we ever
+  // start"; it stays non-null after the socket dies. @slack/socket-mode handles
+  // recoverable disconnects internally and only surfaces a NON-recoverable
+  // failure (invalid_auth, a RequestError refreshing the WSS URL, …) to
+  // `app.error`, at which point it stops reconnecting. Flipping this false there
+  // is what lets the supervisor's health check see the listener as dead and
+  // restart it — without it, a dead socket reads as alive forever.
+  private connected = false
 
   constructor(deps: Deps) {
     super()
@@ -174,6 +182,11 @@ export class FunnelSlackListener extends FunnelConnectorListener {
 
     app.error(async (error) => {
       const message = messageOf(error)
+      // A non-recoverable Socket Mode error reaches here after the client has
+      // given up reconnecting, so treat the listener as disconnected. The
+      // supervisor's next health check then restarts it (stop → backoff →
+      // start), which re-runs auth.test and reopens the socket.
+      this.connected = false
       this.recordConnection("error", message)
       this.logger?.error("Slack error", { error: message })
     })
@@ -188,6 +201,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     }
 
     this.app = app
+    this.connected = true
     this.recordConnection("connected", "")
   }
 
@@ -202,12 +216,13 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       this.logger?.error("Slack stop error", { error: messageOf(error) })
     } finally {
       this.app = null
+      this.connected = false
       this.recordConnection("stopped", "")
     }
   }
 
   override isAlive(): boolean {
-    return this.app !== null
+    return this.app !== null && this.connected
   }
 
   private recordRaw(eventId: string, event: SlackRawEvent): void {
