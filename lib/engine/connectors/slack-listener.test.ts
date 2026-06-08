@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, vi, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { FunnelSlackListener } from "@/engine/connectors/slack-listener"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 import type { SlackRawEvent } from "@/engine/connectors/slack-event-processor"
@@ -6,6 +6,13 @@ import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-di
 
 const hoisted = {
   middlewareHandlers: [] as ((args: unknown) => Promise<void>)[],
+  // SocketModeClient lifecycle handlers the listener registers, keyed by event
+  // name ("connected" / "disconnected"), so a test can drive the real events.
+  socketHandlers: new Map<string, () => void>(),
+  // Options the listener passed to `new SocketModeReceiver({...})`. Lets a test
+  // pin that autoReconnectEnabled: false is sent through — without it the real
+  // SocketModeClient swallows socket closes and never emits "disconnected".
+  socketModeReceiverOptions: null as Record<string, unknown> | null,
   mockApp: null as MockApp | null,
   appConstructorCalls: 0,
   // When set, the next-constructed FakeApp's auth.test rejects with this.
@@ -13,44 +20,58 @@ const hoisted = {
 }
 
 type MockApp = {
-  use: ReturnType<typeof vi.fn>
-  error: ReturnType<typeof vi.fn>
-  action: ReturnType<typeof vi.fn>
-  start: ReturnType<typeof vi.fn>
-  stop: ReturnType<typeof vi.fn>
+  use: ReturnType<typeof mock>
+  error: ReturnType<typeof mock>
+  action: ReturnType<typeof mock>
+  start: ReturnType<typeof mock>
+  stop: ReturnType<typeof mock>
   client: {
-    auth: { test: ReturnType<typeof vi.fn> }
-    reactions: { add: ReturnType<typeof vi.fn> }
+    auth: { test: ReturnType<typeof mock> }
+    reactions: { add: ReturnType<typeof mock> }
   }
 }
 
-vi.mock("@slack/bolt", () => {
+mock.module("@slack/bolt", () => {
+  class FakeSocketModeClient {
+    on(event: string, handler: () => void): void {
+      hoisted.socketHandlers.set(event, handler)
+    }
+  }
+
+  class FakeSocketModeReceiver {
+    client = new FakeSocketModeClient()
+
+    constructor(options: Record<string, unknown>) {
+      hoisted.socketModeReceiverOptions = options
+    }
+  }
+
   class FakeApp {
-    use: ReturnType<typeof vi.fn>
-    error: ReturnType<typeof vi.fn>
-    action: ReturnType<typeof vi.fn>
-    start: ReturnType<typeof vi.fn>
-    stop: ReturnType<typeof vi.fn>
+    use: ReturnType<typeof mock>
+    error: ReturnType<typeof mock>
+    action: ReturnType<typeof mock>
+    start: ReturnType<typeof mock>
+    stop: ReturnType<typeof mock>
     client = {
       auth: {
-        test: vi.fn(() =>
+        test: mock(() =>
           hoisted.authError
             ? Promise.reject(hoisted.authError)
             : Promise.resolve({ user_id: "U_BOT", bot_id: "B_BOT" }),
         ),
       },
-      reactions: { add: vi.fn(() => Promise.resolve({ ok: true })) },
+      reactions: { add: mock(() => Promise.resolve({ ok: true })) },
     }
 
     constructor() {
       hoisted.appConstructorCalls += 1
-      this.use = vi.fn((handler: (args: unknown) => Promise<void>) => {
+      this.use = mock((handler: (args: unknown) => Promise<void>) => {
         hoisted.middlewareHandlers.push(handler)
       })
-      this.error = vi.fn(() => {})
-      this.action = vi.fn(() => {})
-      this.start = vi.fn(() => Promise.resolve(undefined))
-      this.stop = vi.fn(() => Promise.resolve(undefined))
+      this.error = mock(() => {})
+      this.action = mock(() => {})
+      this.start = mock(() => Promise.resolve(undefined))
+      this.stop = mock(() => Promise.resolve(undefined))
       hoisted.mockApp = this as unknown as MockApp
     }
   }
@@ -58,6 +79,7 @@ vi.mock("@slack/bolt", () => {
   return {
     LogLevel: { ERROR: "ERROR" },
     App: FakeApp,
+    SocketModeReceiver: FakeSocketModeReceiver,
   }
 })
 
@@ -72,6 +94,8 @@ const buildConfig = (): SlackConnectorConfig => ({
 
 beforeEach(() => {
   hoisted.middlewareHandlers.length = 0
+  hoisted.socketHandlers.clear()
+  hoisted.socketModeReceiverOptions = null
   hoisted.mockApp = null
   hoisted.appConstructorCalls = 0
   hoisted.authError = null
@@ -79,6 +103,8 @@ beforeEach(() => {
 
 afterEach(() => {
   hoisted.middlewareHandlers.length = 0
+  hoisted.socketHandlers.clear()
+  hoisted.socketModeReceiverOptions = null
   hoisted.mockApp = null
   hoisted.authError = null
 })
@@ -123,7 +149,7 @@ describe("FunnelSlackListener.onAppCreated", () => {
 
 describe("FunnelSlackListener.preprocessEvent", () => {
   test("drops the event when preprocessEvent returns null", async () => {
-    const notify = vi.fn(async () => {})
+    const notify = mock(async () => {})
     const listener = new FunnelSlackListener({
       config: buildConfig(),
       preprocessEvent: () => null,
@@ -147,7 +173,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 
   test("forwards the transformed event to the processor", async () => {
-    const notify = vi.fn(async () => {})
+    const notify = mock(async () => {})
     const captured: SlackRawEvent[] = []
     const listener = new FunnelSlackListener({
       config: buildConfig(),
@@ -181,7 +207,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 
   test("passes the raw event through when no preprocessEvent is supplied", async () => {
-    const notify = vi.fn(async () => {})
+    const notify = mock(async () => {})
     const listener = new FunnelSlackListener({
       config: buildConfig(),
     })
@@ -204,7 +230,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
 
   test("adds the eyes reaction only after notify resolves", async () => {
     const order: string[] = []
-    const notify = vi.fn(async () => {
+    const notify = mock(async () => {
       order.push("notify")
     })
     const listener = new FunnelSlackListener({ config: buildConfig() })
@@ -230,7 +256,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 
   test("skips the eyes reaction when notify throws (undelivered is not marked seen)", async () => {
-    const notify = vi.fn(async () => {
+    const notify = mock(async () => {
       throw new Error("delivery failed")
     })
     const listener = new FunnelSlackListener({ config: buildConfig() })
@@ -261,12 +287,12 @@ describe("FunnelSlackListener: non-event payloads", () => {
     // an `event` key, halting the chain so app.action handlers (approval
     // buttons) never fired. block_actions/view_submission/commands must pass
     // through to the listeners registered via onAppCreated.
-    const notify = vi.fn(async () => {})
+    const notify = mock(async () => {})
     const listener = new FunnelSlackListener({ config: buildConfig() })
 
     await listener.start(notify)
 
-    const next = vi.fn(async () => {})
+    const next = mock(async () => {})
     await hoisted.middlewareHandlers[0]?.({
       body: { type: "block_actions", actions: [{ action_id: "approve" }] },
       next,
@@ -277,12 +303,12 @@ describe("FunnelSlackListener: non-event payloads", () => {
   })
 
   test("consumes events without calling next() (funnel is the sole event sink)", async () => {
-    const notify = vi.fn(async () => {})
+    const notify = mock(async () => {})
     const listener = new FunnelSlackListener({ config: buildConfig() })
 
     await listener.start(notify)
 
-    const next = vi.fn(async () => {})
+    const next = mock(async () => {})
     await hoisted.middlewareHandlers[0]?.({
       event: {
         type: "message",
@@ -404,7 +430,7 @@ describe("FunnelSlackListener: diagnostic log", () => {
 
   test("records emitted:delivery-failed (not emitted) when notify throws", async () => {
     const diagnosticLog = new MemoryConnectorDiagnosticLog()
-    const notify = vi.fn(async () => {
+    const notify = mock(async () => {
       throw new Error("delivery failed")
     })
     const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
@@ -547,7 +573,7 @@ describe("FunnelSlackListener: non-event payloads do not touch the diagnostic lo
 
     await listener.start(async () => {})
 
-    const next = vi.fn(async () => {})
+    const next = mock(async () => {})
     await hoisted.middlewareHandlers[0]?.({
       body: { type: "block_actions", actions: [{ action_id: "approve" }] },
       next,
@@ -557,5 +583,53 @@ describe("FunnelSlackListener: non-event payloads do not touch the diagnostic lo
     expect(diagnosticLog.queryRaw({})).toHaveLength(0)
     expect(diagnosticLog.queryProcessed({})).toHaveLength(0)
     expect(next).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("FunnelSlackListener: liveness", () => {
+  test("reports alive after a successful start", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+
+    expect(listener.isAlive()).toBe(true)
+  })
+
+  test("constructs the receiver with autoReconnectEnabled: false", async () => {
+    // Load-bearing: with the library default (true) SocketModeClient eats the
+    // socket close into an internal reconnect loop and never emits
+    // `disconnected`, so the whole liveness wiring stays silent forever — the
+    // exact bug. With autoReconnect off, every close emits `disconnected` and
+    // the supervisor's recoverDead owns reconnection.
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+
+    expect(hoisted.socketModeReceiverOptions?.autoReconnectEnabled).toBe(false)
+  })
+
+  test("flips to not-alive when the Socket Mode client disconnects", async () => {
+    // The library emits `disconnected` on every socket close (because
+    // autoReconnect is off). isAlive() must follow it so the supervisor's
+    // recoverDead restarts a silently-dead listener.
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+    expect(listener.isAlive()).toBe(true)
+
+    const onDisconnected = hoisted.socketHandlers.get("disconnected")
+    expect(onDisconnected).toBeDefined()
+    onDisconnected?.()
+
+    expect(listener.isAlive()).toBe(false)
+  })
+
+  test("is not alive after stop()", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+    await listener.stop()
+
+    expect(listener.isAlive()).toBe(false)
   })
 })

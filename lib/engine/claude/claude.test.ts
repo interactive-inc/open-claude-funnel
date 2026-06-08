@@ -15,7 +15,12 @@ const FAKE_CHANNEL: ChannelConfig = {
   connectors: [],
 }
 
-const buildClaude = () => {
+type GatewayStub = {
+  isRunning: () => boolean
+  start: () => Promise<boolean>
+}
+
+const buildClaude = (overrides: { gateway?: GatewayStub } = {}) => {
   const fs = new MemoryFunnelFileSystem()
   const process = new MemoryFunnelProcessRunner().on(() => ({ exitCode: 0 }))
   const store = new MockFunnelSettingsReader({ channels: [FAKE_CHANNEL] })
@@ -32,7 +37,7 @@ const buildClaude = () => {
     findInstalledName: (_cwd: string): string | null => null,
     install: (_cwd: string): void => {},
   }
-  const gateway = {
+  const gateway = overrides.gateway ?? {
     isRunning: () => true,
     start: async () => true,
   }
@@ -104,6 +109,22 @@ describe("FunnelClaude", () => {
     const { claude } = buildClaude()
 
     await expect(claude.launch({ channel: "nope" })).rejects.toThrow(/not found/)
+  })
+
+  test("launch aborts when the gateway fails to start", async () => {
+    // A port collision (two scoped repos on the shared default port) makes the
+    // spawned daemon die on EADDRINUSE, so start() returns false. Launching
+    // anyway would attach the agent's MCP to a different repo's gateway and
+    // receive no events — so launch must fail loudly instead.
+    const { claude, fs } = buildClaude({
+      gateway: { isRunning: () => false, start: async () => false },
+    })
+
+    fs.mkdirSync("/work", { recursive: true })
+
+    await expect(claude.launch({ channel: "ops", cwd: "/work" })).rejects.toThrow(
+      /gateway failed to start/,
+    )
   })
 
   test("launch refuses to start a profile that is already running", async () => {

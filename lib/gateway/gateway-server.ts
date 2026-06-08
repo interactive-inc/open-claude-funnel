@@ -182,6 +182,14 @@ export class FunnelGatewayServer {
 
     const app = this.buildApp()
 
+    // Kill any same-dir competitor BEFORE binding and opening our Socket Mode
+    // connection. Doing it here (not after the bind) frees the port if a stale
+    // same-dir daemon still holds it, and the kill waits for the competitor to
+    // exit — so its Slack socket is closed before ours opens. Otherwise two
+    // Socket Mode connections with the same token overlap and Slack splits
+    // inbound events between them.
+    await this.killCompetingSlackIfNeeded()
+
     this.startedAt = this.nowMs()
     this.server = Bun.serve<WsData>({
       port: this.port,
@@ -256,6 +264,15 @@ export class FunnelGatewayServer {
 
       const requestedChannel = url.searchParams.get("channel") ?? ""
       const channel = requestedChannel ? this.resolveChannel(requestedChannel) : null
+
+      if (requestedChannel && !channel) {
+        // Reject rather than upgrade: a client subscribing to a channel this
+        // gateway does not know would connect "successfully" and then silently
+        // receive nothing (matchesClient filters every event). That is the
+        // wrong-gateway-on-a-shared-port failure — surface it instead.
+        return new Response(`unknown channel "${requestedChannel}"`, { status: 404 })
+      }
+
       const channelId = channel?.id ?? requestedChannel
       const channelName = channel?.name ?? null
       const connectors = channel?.connectors ?? []
@@ -335,6 +352,7 @@ export class FunnelGatewayServer {
     base.use((c, next) => {
       c.set("deps", {
         selfPid: this.selfPid,
+        dir: this.dir,
         broadcaster: this.broadcaster,
         supervisor: this.supervisor,
         channels: this.channels,
@@ -400,26 +418,30 @@ export class FunnelGatewayServer {
     }
   }
 
-  private async bootListeners(): Promise<void> {
-    const allConnectors = this.channels.listAllConnectors()
+  private async killCompetingSlackIfNeeded(): Promise<void> {
+    if (!this.killCompetingSlack) return
 
-    if (this.killCompetingSlack && allConnectors.some((c) => c.type === "slack")) {
-      const killed = await killCompetingSlackGateways({
-        selfPid: this.selfPid,
-        dir: this.dir,
-        process: this.process,
-        logger: this.logger,
+    const hasSlack = this.channels.listAllConnectors().some((c) => c.type === "slack")
+
+    if (!hasSlack) return
+
+    const killed = await killCompetingSlackGateways({
+      selfPid: this.selfPid,
+      dir: this.dir,
+      process: this.process,
+      logger: this.logger,
+    })
+
+    if (killed.length > 0) {
+      this.logger?.info("killed competing Slack gateway processes", {
+        event_type: "system",
+        action: "kill_competing",
+        pids: killed.join(","),
       })
-
-      if (killed.length > 0) {
-        this.logger?.info("killed competing Slack gateway processes", {
-          event_type: "system",
-          action: "kill_competing",
-          pids: killed.join(","),
-        })
-      }
     }
+  }
 
+  private async bootListeners(): Promise<void> {
     await this.supervisor.startAll()
 
     for (const entry of this.supervisor.list()) {

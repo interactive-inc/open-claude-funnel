@@ -1,4 +1,4 @@
-import { App, LogLevel } from "@slack/bolt"
+import { App, LogLevel, SocketModeReceiver } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
@@ -50,6 +50,14 @@ export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly onAppCreated: SlackOnAppCreated | null
   private readonly preprocessEvent: SlackPreprocessEvent | null
   private app: App | null = null
+  // Tracks live Socket Mode connectivity. `this.app` only records "did we ever
+  // start" — it stays non-null after the socket dies. The flag is driven by the
+  // SocketModeClient's own `connected`/`disconnected` events (wired in start()
+  // with autoReconnectEnabled=false so every close fires `disconnected`), so
+  // isAlive() reflects the real socket state and the supervisor restarts a
+  // dead listener. Reconnect lives in the supervisor's recoverDead, not in
+  // SocketModeClient — which silently swallows non-recoverable retry failures.
+  private connected = false
 
   constructor(deps: Deps) {
     super()
@@ -78,10 +86,32 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       label: `${this.config.name}.appToken`,
     })
 
+    // Construct the Socket Mode receiver ourselves (instead of `socketMode: true`)
+    // so we can observe the underlying client's connection lifecycle AND drive
+    // its reconnect policy. autoReconnectEnabled=false is load-bearing: with the
+    // library's default (true), SocketModeClient swallows the socket close into
+    // an internal reconnect loop and never emits `disconnected` until shutdown.
+    // A non-recoverable failure (invalid_auth, RequestError, …) then throws into
+    // an unhandled rejection, leaving `connected` true forever — the exact bug.
+    // With autoReconnect off, every socket close emits `disconnected` and the
+    // supervisor's recoverDead (stop → backoff → start) owns reconnection,
+    // re-running auth.test and reopening the socket.
+    const receiver = new SocketModeReceiver({
+      appToken,
+      logLevel: LogLevel.ERROR,
+      autoReconnectEnabled: false,
+    })
+
+    receiver.client.on("connected", () => {
+      this.connected = true
+    })
+    receiver.client.on("disconnected", () => {
+      this.connected = false
+    })
+
     const app = new App({
       token: botToken,
-      appToken,
-      socketMode: true,
+      receiver,
       logLevel: LogLevel.ERROR,
     })
 
@@ -188,6 +218,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     }
 
     this.app = app
+    this.connected = true
     this.recordConnection("connected", "")
   }
 
@@ -202,12 +233,13 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       this.logger?.error("Slack stop error", { error: messageOf(error) })
     } finally {
       this.app = null
+      this.connected = false
       this.recordConnection("stopped", "")
     }
   }
 
   override isAlive(): boolean {
-    return this.app !== null
+    return this.app !== null && this.connected
   }
 
   private recordRaw(eventId: string, event: SlackRawEvent): void {

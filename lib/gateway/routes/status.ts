@@ -7,6 +7,7 @@ export const statusHandler = factory.createHandlers((c) => {
   return c.json({
     ok: true,
     pid: deps.selfPid,
+    funnelDir: deps.dir,
     uptimeMs: deps.uptimeMs(),
     clients: deps.broadcaster.listChannels(),
     listeners: deps.supervisor.list(),

@@ -251,4 +251,52 @@ describe("FunnelListenerSupervisor", () => {
 
     await supervisor.stopAll()
   })
+
+  test("recoverDead really restarts the listener even when stop() throws", async () => {
+    class FlakyStopListener extends FunnelConnectorListener {
+      alive = false
+      startCalls = 0
+      stopThrowsLeft = 1
+
+      async start(): Promise<void> {
+        this.startCalls += 1
+        this.alive = true
+      }
+
+      async stop(): Promise<void> {
+        this.alive = false
+
+        if (this.stopThrowsLeft > 0) {
+          this.stopThrowsLeft -= 1
+          throw new Error("stop boom")
+        }
+      }
+
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listener = new FlakyStopListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      sleep: async () => {},
+      healthCheckIntervalMs: 1,
+    })
+
+    await supervisor.start("ops", "cron")
+    expect(listener.startCalls).toBe(1)
+
+    listener.alive = false
+
+    await supervisor.runHealthCheckForTest()
+
+    expect(listener.startCalls).toBe(2)
+    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+  })
 })

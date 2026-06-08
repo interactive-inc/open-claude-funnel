@@ -121,6 +121,33 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
     expect(res.status).toBe(200)
   })
 
+  test("/health reports the daemon funnelDir so a wrong-gateway-on-a-shared-port is detectable", async () => {
+    active = await startServer("secret-dir")
+    const url = `http://localhost:${active.httpServer.port}/health`
+    const res = await fetch(url)
+    const body = JSON.parse(await res.text())
+
+    expect(res.status).toBe(200)
+    expect(body.funnelDir).toBe("/funnel")
+  })
+
+  test("/ws upgrade is rejected with 404 for a channel this gateway does not know", async () => {
+    // Before the fix the upgrade succeeded for any channel and then silently
+    // delivered nothing — the wrong-gateway-on-a-shared-port symptom.
+    active = await startServer("")
+    const url = `http://localhost:${active.httpServer.port}/ws?channel=ghost`
+    const res = await fetch(url, {
+      headers: {
+        upgrade: "websocket",
+        connection: "Upgrade",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-version": "13",
+      },
+    })
+
+    expect(res.status).toBe(404)
+  })
+
   test("/listeners returns 401 without bearer token", async () => {
     active = await startServer("secret-5")
     const url = `http://localhost:${active.httpServer.port}/listeners`
