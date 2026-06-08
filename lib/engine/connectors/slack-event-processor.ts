@@ -1,4 +1,5 @@
 import { minifySlackEvent } from "@/engine/connectors/minify-slack-event"
+import type { SlackEvent, SlackMessageEvent } from "@/engine/connectors/slack-event-types"
 
 export type SlackRawEvent = Record<string, unknown>
 
@@ -20,6 +21,7 @@ export type SlackProcessedSkip = { skip: true; reason: SlackSkipReason }
 
 export type SlackProcessedEmit = {
   skip: false
+  event: SlackEvent
   content: string
   meta: Record<string, string>
   shouldReact: boolean
@@ -94,13 +96,29 @@ export class FunnelSlackEventProcessor {
     if (userId === this.ownBotUserId) return { skip: true, reason: "skip:self-user" }
     if (botId === this.ownBotId) return { skip: true, reason: "skip:self-bot" }
 
-    const text = getString(event, "text") ?? ""
-    const mentioned = text.includes(`<@${this.ownBotUserId}>`)
+    const rawText = getString(event, "text") ?? ""
+    const mentioned = rawText.includes(`<@${this.ownBotUserId}>`)
     const threadTs = getString(event, "thread_ts") ?? getString(event, "ts") ?? ""
+    const ts = getString(event, "ts") ?? ""
+    const source = eventType === "app_mention" ? "app_mention" : "message"
     const emitted = this.minify ? minifySlackEvent(event) : event
+
+    const message: SlackMessageEvent = {
+      kind: "message",
+      channel: channelId,
+      user: userId ?? "",
+      rawText,
+      text: stripMention(rawText, this.ownBotUserId),
+      threadTs,
+      ts,
+      isThreadRoot: threadTs === ts,
+      mentioned,
+      source,
+    }
 
     return {
       skip: false,
+      event: message,
       content: JSON.stringify(emitted),
       meta: {
         event_type: "slack",
@@ -111,7 +129,10 @@ export class FunnelSlackEventProcessor {
       },
       shouldReact: mentioned,
       channel: channelId,
-      timestamp: getString(event, "ts") ?? "",
+      timestamp: ts,
     }
   }
 }
+
+const stripMention = (text: string, botUserId: string): string =>
+  text.replace(new RegExp(`<@${botUserId}>`, "g"), "").trim()
