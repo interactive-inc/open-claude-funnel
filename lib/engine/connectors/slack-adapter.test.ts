@@ -89,3 +89,60 @@ describe("FunnelSlackAdapter", () => {
     )
   })
 })
+
+describe("FunnelSlackAdapter domain methods", () => {
+  test("postMessage sends chat.postMessage with thread_ts", async () => {
+    const apiCall = vi.fn(async () => ({ ok: true }))
+    const client: SlackWebClientLike = { apiCall }
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    await adapter.postMessage({ channel: "C1", text: "hello", threadTs: "1.0" })
+
+    expect(apiCall).toHaveBeenCalledWith("chat.postMessage", {
+      channel: "C1",
+      text: "hello",
+      thread_ts: "1.0",
+    })
+  })
+
+  test("postMessage omits thread_ts when not provided", async () => {
+    const apiCall = vi.fn(async () => ({ ok: true }))
+    const client: SlackWebClientLike = { apiCall }
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    await adapter.postMessage({ channel: "C1", text: "hello" })
+
+    expect(apiCall).toHaveBeenCalledWith("chat.postMessage", {
+      channel: "C1",
+      text: "hello",
+    })
+  })
+
+  test("addReaction sends reactions.add", async () => {
+    const apiCall = vi.fn(async () => ({ ok: true }))
+    const client: SlackWebClientLike = { apiCall }
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    await adapter.addReaction({ channel: "C1", timestamp: "1.0", name: "eyes" })
+
+    expect(apiCall).toHaveBeenCalledWith("reactions.add", {
+      channel: "C1",
+      timestamp: "1.0",
+      name: "eyes",
+    })
+  })
+
+  test("removeReaction sends reactions.remove", async () => {
+    const apiCall = vi.fn(async () => ({ ok: true }))
+    const client: SlackWebClientLike = { apiCall }
+    const adapter = new FunnelSlackAdapter({ config, client })
+
+    await adapter.removeReaction({ channel: "C1", timestamp: "1.0", name: "eyes" })
+
+    expect(apiCall).toHaveBeenCalledWith("reactions.remove", {
+      channel: "C1",
+      timestamp: "1.0",
+      name: "eyes",
+    })
+  })
+})

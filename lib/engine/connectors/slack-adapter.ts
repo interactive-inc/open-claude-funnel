@@ -75,4 +75,44 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
       throw error
     }
   }
+
+  async postMessage(props: {
+    channel: string
+    text: string
+    threadTs?: string
+  }): Promise<unknown> {
+    return this.call({
+      method: "post",
+      path: "chat.postMessage",
+      body: {
+        channel: props.channel,
+        text: props.text,
+        ...(props.threadTs ? { thread_ts: props.threadTs } : {}),
+      },
+    })
+  }
+
+  async addReaction(props: {
+    channel: string
+    timestamp: string
+    name: string
+  }): Promise<unknown> {
+    return this.call({
+      method: "post",
+      path: "reactions.add",
+      body: { channel: props.channel, timestamp: props.timestamp, name: props.name },
+    })
+  }
+
+  async removeReaction(props: {
+    channel: string
+    timestamp: string
+    name: string
+  }): Promise<unknown> {
+    return this.call({
+      method: "post",
+      path: "reactions.remove",
+      body: { channel: props.channel, timestamp: props.timestamp, name: props.name },
+    })
+  }
 }
