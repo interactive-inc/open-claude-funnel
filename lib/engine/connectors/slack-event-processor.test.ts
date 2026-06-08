@@ -45,13 +45,15 @@ describe("FunnelSlackEventProcessor", () => {
       expect(result.meta.channel_id).toBe("C1")
       expect(result.meta.mentioned).toBe("false")
       expect(result.shouldReact).toBe(false)
-      expect(result.event.kind).toBe("message")
-      expect(result.event.channel).toBe("C1")
-      expect(result.event.user).toBe("UOTHER")
-      expect(result.event.text).toBe("hello")
-      expect(result.event.mentioned).toBe(false)
-      expect(result.event.source).toBe("message")
-      expect(result.event.isThreadRoot).toBe(true)
+
+      const event = result.event
+      if (event.kind !== "message") throw new Error("expected message")
+      expect(event.channel).toBe("C1")
+      expect(event.user).toBe("UOTHER")
+      expect(event.text).toBe("hello")
+      expect(event.mentioned).toBe(false)
+      expect(event.source).toBe("message")
+      expect(event.isThreadRoot).toBe(true)
     }
   })
 
@@ -68,9 +70,12 @@ describe("FunnelSlackEventProcessor", () => {
     if (!result.skip) {
       expect(result.meta.mentioned).toBe("true")
       expect(result.shouldReact).toBe(true)
-      expect(result.event.mentioned).toBe(true)
-      expect(result.event.rawText).toBe("hi <@UBOT>!")
-      expect(result.event.text).toBe("hi !")
+
+      const event = result.event
+      if (event.kind !== "message") throw new Error("expected message")
+      expect(event.mentioned).toBe(true)
+      expect(event.rawText).toBe("hi <@UBOT>!")
+      expect(event.text).toBe("hi !")
     }
   })
 
@@ -85,8 +90,10 @@ describe("FunnelSlackEventProcessor", () => {
 
     expect(result.skip).toBe(false)
     if (!result.skip) {
-      expect(result.event.source).toBe("app_mention")
-      expect(result.event.text).toBe("ping")
+      const event = result.event
+      if (event.kind !== "message") throw new Error("expected message")
+      expect(event.source).toBe("app_mention")
+      expect(event.text).toBe("ping")
     }
   })
 
@@ -102,8 +109,10 @@ describe("FunnelSlackEventProcessor", () => {
 
     expect(result.skip).toBe(false)
     if (!result.skip) {
-      expect(result.event.isThreadRoot).toBe(false)
-      expect(result.event.threadTs).toBe("1.0")
+      const event = result.event
+      if (event.kind !== "message") throw new Error("expected message")
+      expect(event.isThreadRoot).toBe(false)
+      expect(event.threadTs).toBe("1.0")
     }
   })
 

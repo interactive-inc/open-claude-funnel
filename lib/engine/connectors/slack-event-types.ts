@@ -11,4 +11,13 @@ export type SlackMessageEvent = {
   source: "app_mention" | "message"
 }
 
-export type SlackEvent = SlackMessageEvent
+export type SlackReactionEvent = {
+  kind: "reaction_added" | "reaction_removed"
+  channel: string
+  user: string
+  emoji: string
+  targetTs: string
+  targetUser: string | null
+}
+
+export type SlackEvent = SlackMessageEvent | SlackReactionEvent
