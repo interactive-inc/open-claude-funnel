@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it } from "vitest"
 import { LeucoLoggerMemorySink } from "@/logger/leuco-logger-memory-sink"
 
 type Event = { type: string; n: number }

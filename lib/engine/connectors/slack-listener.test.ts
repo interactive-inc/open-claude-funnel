@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, vi, test } from "vitest"
 import { FunnelSlackListener } from "@/engine/connectors/slack-listener"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 import type { SlackRawEvent } from "@/engine/connectors/slack-event-processor"
@@ -13,44 +13,44 @@ const hoisted = {
 }
 
 type MockApp = {
-  use: ReturnType<typeof mock>
-  error: ReturnType<typeof mock>
-  action: ReturnType<typeof mock>
-  start: ReturnType<typeof mock>
-  stop: ReturnType<typeof mock>
+  use: ReturnType<typeof vi.fn>
+  error: ReturnType<typeof vi.fn>
+  action: ReturnType<typeof vi.fn>
+  start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
   client: {
-    auth: { test: ReturnType<typeof mock> }
-    reactions: { add: ReturnType<typeof mock> }
+    auth: { test: ReturnType<typeof vi.fn> }
+    reactions: { add: ReturnType<typeof vi.fn> }
   }
 }
 
-mock.module("@slack/bolt", () => {
+vi.mock("@slack/bolt", () => {
   class FakeApp {
-    use: ReturnType<typeof mock>
-    error: ReturnType<typeof mock>
-    action: ReturnType<typeof mock>
-    start: ReturnType<typeof mock>
-    stop: ReturnType<typeof mock>
+    use: ReturnType<typeof vi.fn>
+    error: ReturnType<typeof vi.fn>
+    action: ReturnType<typeof vi.fn>
+    start: ReturnType<typeof vi.fn>
+    stop: ReturnType<typeof vi.fn>
     client = {
       auth: {
-        test: mock(() =>
+        test: vi.fn(() =>
           hoisted.authError
             ? Promise.reject(hoisted.authError)
             : Promise.resolve({ user_id: "U_BOT", bot_id: "B_BOT" }),
         ),
       },
-      reactions: { add: mock(() => Promise.resolve({ ok: true })) },
+      reactions: { add: vi.fn(() => Promise.resolve({ ok: true })) },
     }
 
     constructor() {
       hoisted.appConstructorCalls += 1
-      this.use = mock((handler: (args: unknown) => Promise<void>) => {
+      this.use = vi.fn((handler: (args: unknown) => Promise<void>) => {
         hoisted.middlewareHandlers.push(handler)
       })
-      this.error = mock(() => {})
-      this.action = mock(() => {})
-      this.start = mock(() => Promise.resolve(undefined))
-      this.stop = mock(() => Promise.resolve(undefined))
+      this.error = vi.fn(() => {})
+      this.action = vi.fn(() => {})
+      this.start = vi.fn(() => Promise.resolve(undefined))
+      this.stop = vi.fn(() => Promise.resolve(undefined))
       hoisted.mockApp = this as unknown as MockApp
     }
   }
@@ -123,7 +123,7 @@ describe("FunnelSlackListener.onAppCreated", () => {
 
 describe("FunnelSlackListener.preprocessEvent", () => {
   test("drops the event when preprocessEvent returns null", async () => {
-    const notify = mock(async () => {})
+    const notify = vi.fn(async () => {})
     const listener = new FunnelSlackListener({
       config: buildConfig(),
       preprocessEvent: () => null,
@@ -147,7 +147,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 
   test("forwards the transformed event to the processor", async () => {
-    const notify = mock(async () => {})
+    const notify = vi.fn(async () => {})
     const captured: SlackRawEvent[] = []
     const listener = new FunnelSlackListener({
       config: buildConfig(),
@@ -181,7 +181,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 
   test("passes the raw event through when no preprocessEvent is supplied", async () => {
-    const notify = mock(async () => {})
+    const notify = vi.fn(async () => {})
     const listener = new FunnelSlackListener({
       config: buildConfig(),
     })
@@ -204,7 +204,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
 
   test("adds the eyes reaction only after notify resolves", async () => {
     const order: string[] = []
-    const notify = mock(async () => {
+    const notify = vi.fn(async () => {
       order.push("notify")
     })
     const listener = new FunnelSlackListener({ config: buildConfig() })
@@ -230,7 +230,7 @@ describe("FunnelSlackListener.preprocessEvent", () => {
   })
 
   test("skips the eyes reaction when notify throws (undelivered is not marked seen)", async () => {
-    const notify = mock(async () => {
+    const notify = vi.fn(async () => {
       throw new Error("delivery failed")
     })
     const listener = new FunnelSlackListener({ config: buildConfig() })
@@ -261,12 +261,12 @@ describe("FunnelSlackListener: non-event payloads", () => {
     // an `event` key, halting the chain so app.action handlers (approval
     // buttons) never fired. block_actions/view_submission/commands must pass
     // through to the listeners registered via onAppCreated.
-    const notify = mock(async () => {})
+    const notify = vi.fn(async () => {})
     const listener = new FunnelSlackListener({ config: buildConfig() })
 
     await listener.start(notify)
 
-    const next = mock(async () => {})
+    const next = vi.fn(async () => {})
     await hoisted.middlewareHandlers[0]?.({
       body: { type: "block_actions", actions: [{ action_id: "approve" }] },
       next,
@@ -277,12 +277,12 @@ describe("FunnelSlackListener: non-event payloads", () => {
   })
 
   test("consumes events without calling next() (funnel is the sole event sink)", async () => {
-    const notify = mock(async () => {})
+    const notify = vi.fn(async () => {})
     const listener = new FunnelSlackListener({ config: buildConfig() })
 
     await listener.start(notify)
 
-    const next = mock(async () => {})
+    const next = vi.fn(async () => {})
     await hoisted.middlewareHandlers[0]?.({
       event: {
         type: "message",
@@ -404,7 +404,7 @@ describe("FunnelSlackListener: diagnostic log", () => {
 
   test("records emitted:delivery-failed (not emitted) when notify throws", async () => {
     const diagnosticLog = new MemoryConnectorDiagnosticLog()
-    const notify = mock(async () => {
+    const notify = vi.fn(async () => {
       throw new Error("delivery failed")
     })
     const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
@@ -547,7 +547,7 @@ describe("FunnelSlackListener: non-event payloads do not touch the diagnostic lo
 
     await listener.start(async () => {})
 
-    const next = mock(async () => {})
+    const next = vi.fn(async () => {})
     await hoisted.middlewareHandlers[0]?.({
       body: { type: "block_actions", actions: [{ action_id: "approve" }] },
       next,

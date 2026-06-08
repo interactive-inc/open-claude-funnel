@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { channelWsProtocols, channelWsUrl } from "@/gateway/channel-ws-url"
 
 describe("channelWsUrl", () => {

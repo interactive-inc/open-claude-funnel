@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-processor"
 
 const make = () => new FunnelDiscordEventProcessor({ ownUserId: "UBOT" })

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelDiscordAdapter } from "@/engine/connectors/discord-adapter"
 import { MemoryFunnelHttpClient } from "@/engine/http/memory-http-client"
 

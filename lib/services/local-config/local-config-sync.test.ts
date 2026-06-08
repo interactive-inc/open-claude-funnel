@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { minifySlackEvent } from "@/engine/connectors/minify-slack-event"
 
 describe("minifySlackEvent", () => {

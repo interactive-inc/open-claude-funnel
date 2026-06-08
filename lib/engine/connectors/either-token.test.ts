@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { appTokenSlot, botTokenSlot, type EitherToken } from "@/engine/connectors/either-token"
 
 describe("botTokenSlot", () => {

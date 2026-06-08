@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelSlackEventProcessor } from "@/engine/connectors/slack-event-processor"
 
 const make = () => new FunnelSlackEventProcessor({ ownBotUserId: "UBOT", ownBotId: "BBOT" })

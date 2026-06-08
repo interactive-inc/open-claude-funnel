@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,6 +6,8 @@ import { PRESETS, PRESETS_BY_CHANNEL } from "@/cli/routes/gateway.sql"
 import type { ConnectorConnectionStatus } from "@/gateway/diagnostic-log/diagnostic-log"
 import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
 import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+
+const isBun = typeof globalThis.Bun !== "undefined"
 
 // ATTACH needs real files (":memory:" can't be cross-referenced), so the preset
 // SQL is exercised against on-disk DBs seeded for two channels.
@@ -64,7 +66,7 @@ afterEach(() => {
   }
 })
 
-describe("gateway sql presets", () => {
+describe.skipIf(!isBun)("gateway sql presets", () => {
   test("channel-filtered presets cover the same keys as the base presets", () => {
     expect(Object.keys(PRESETS_BY_CHANNEL).sort()).toEqual(Object.keys(PRESETS).sort())
   })

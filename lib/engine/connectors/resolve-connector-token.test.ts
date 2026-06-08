@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 
 describe("resolveConnectorToken", () => {

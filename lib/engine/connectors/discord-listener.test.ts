@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, vi, test } from "vitest"
 import { FunnelDiscordListener } from "@/engine/connectors/discord-listener"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
 import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
@@ -14,28 +14,28 @@ const hoisted = {
 
 type MockClient = {
   user: { id: string } | null
-  on: ReturnType<typeof mock>
-  login: ReturnType<typeof mock>
-  destroy: ReturnType<typeof mock>
+  on: ReturnType<typeof vi.fn>
+  login: ReturnType<typeof vi.fn>
+  destroy: ReturnType<typeof vi.fn>
 }
 
-mock.module("discord.js", () => {
+vi.mock("discord.js", () => {
   class FakeClient {
     user: { id: string } | null = null
-    on: ReturnType<typeof mock>
-    login: ReturnType<typeof mock>
-    destroy: ReturnType<typeof mock>
+    on: ReturnType<typeof vi.fn>
+    login: ReturnType<typeof vi.fn>
+    destroy: ReturnType<typeof vi.fn>
 
     constructor() {
-      this.on = mock((event: string, handler: Handler) => {
+      this.on = vi.fn((event: string, handler: Handler) => {
         hoisted.handlers.set(event, handler)
       })
-      this.login = mock(() => {
+      this.login = vi.fn(() => {
         if (hoisted.loginError) return Promise.reject(hoisted.loginError)
         this.user = { id: hoisted.ownUserId }
         return Promise.resolve("ok")
       })
-      this.destroy = mock(() => Promise.resolve(undefined))
+      this.destroy = vi.fn(() => Promise.resolve(undefined))
       hoisted.mockClient = this as unknown as MockClient
     }
   }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { dispatchClaude } from "@/cli/dispatch-claude"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"

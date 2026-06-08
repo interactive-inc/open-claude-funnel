@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, vi, test } from "vitest"
 import { FunnelSlackAdapter, type SlackWebClientLike } from "@/engine/connectors/slack-adapter"
 
 const config = {
@@ -12,7 +12,7 @@ const config = {
 
 describe("FunnelSlackAdapter", () => {
   test("calls client.apiCall(path, body)", async () => {
-    const apiCall = mock(async () => ({ ok: true }))
+    const apiCall = vi.fn(async () => ({ ok: true }))
     const client: SlackWebClientLike = { apiCall }
 
     const adapter = new FunnelSlackAdapter({ config, client })
@@ -28,7 +28,7 @@ describe("FunnelSlackAdapter", () => {
   })
 
   test("passes {} when body is not an object", async () => {
-    const apiCall = mock(async () => ({ ok: true }))
+    const apiCall = vi.fn(async () => ({ ok: true }))
     const client: SlackWebClientLike = { apiCall }
 
     const adapter = new FunnelSlackAdapter({ config, client })
@@ -43,7 +43,7 @@ describe("FunnelSlackAdapter", () => {
       code: "slack_webapi_platform_error",
       data: { ok: false, error: "channel_not_found" },
     })
-    const apiCall = mock(async () => {
+    const apiCall = vi.fn(async () => {
       throw slackError
     })
     const client: SlackWebClientLike = { apiCall }
@@ -64,7 +64,7 @@ describe("FunnelSlackAdapter", () => {
       code: "slack_webapi_rate_limited_error",
       data: { ok: false, error: "ratelimited", retryAfter: 30 },
     })
-    const apiCall = mock(async () => {
+    const apiCall = vi.fn(async () => {
       throw slackError
     })
     const client: SlackWebClientLike = { apiCall }
@@ -77,7 +77,7 @@ describe("FunnelSlackAdapter", () => {
   })
 
   test("rethrows non-Slack errors so infrastructure failures still surface as 500", async () => {
-    const apiCall = mock(async () => {
+    const apiCall = vi.fn(async () => {
       throw new Error("ECONNREFUSED")
     })
     const client: SlackWebClientLike = { apiCall }

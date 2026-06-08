@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
 import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+
+const isBun = typeof globalThis.Bun !== "undefined"
 
 // ATTACH needs two real files (":memory:" can't be cross-referenced), so the
 // reader is exercised against on-disk DBs the writer produced.
@@ -57,7 +59,7 @@ afterEach(() => {
   }
 })
 
-describe("ConnectorDiagnosticSqlReader", () => {
+describe.skipIf(!isBun)("ConnectorDiagnosticSqlReader", () => {
   test("exposes the raw view with payload pulled out of the nested JSON", () => {
     const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
 

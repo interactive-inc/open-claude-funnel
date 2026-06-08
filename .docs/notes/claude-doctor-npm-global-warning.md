@@ -68,4 +68,3 @@ claude doctor が誤検知を出すとき、claude 側のファイルだけ見�
 ## claude doctor は Claude から実行しない
 
 `claude doctor` は出力後に `Enter to continue · f to fix with Claude` の対話プロンプトに入り、明示的な入力がないと終了しない。Bash 経由で実行するとそのままハングするので、Claude が自動実行するコマンドとして使ってはいけない。ユーザーに実行してもらい、出力結果を貼り付けてもらう運用にする。
-

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { FunnelScheduleListener } from "@/engine/connectors/schedule-listener"
 import type {
   ScheduleConnectorConfig,

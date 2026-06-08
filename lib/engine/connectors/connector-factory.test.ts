@@ -1,20 +1,18 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 import { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
 
-// Mock Bolt so createListener(...).start() runs without a real socket. The
-// factory test only needs the listener to reach its first recordConnection.
-mock.module("@slack/bolt", () => {
+vi.mock("@slack/bolt", () => {
   class FakeApp {
-    use = mock(() => {})
-    error = mock(() => {})
-    action = mock(() => {})
-    start = mock(() => Promise.resolve(undefined))
-    stop = mock(() => Promise.resolve(undefined))
+    use = vi.fn()
+    error = vi.fn()
+    action = vi.fn()
+    start = vi.fn(() => Promise.resolve(undefined))
+    stop = vi.fn(() => Promise.resolve(undefined))
     client = {
-      auth: { test: mock(() => Promise.resolve({ user_id: "U", bot_id: "B" })) },
-      reactions: { add: mock(() => Promise.resolve({ ok: true })) },
+      auth: { test: vi.fn(() => Promise.resolve({ user_id: "U", bot_id: "B" })) },
+      reactions: { add: vi.fn(() => Promise.resolve({ ok: true })) },
     }
   }
 

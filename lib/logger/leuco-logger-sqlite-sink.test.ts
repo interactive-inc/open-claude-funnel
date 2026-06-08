@@ -1,12 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll, beforeAll, describe, expect, it } from "bun:test"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { LeucoLoggerSqliteSink } from "@/logger/leuco-logger-sqlite-sink"
+
+const isBun = typeof globalThis.Bun !== "undefined"
 
 type Event = { type: string; payload: string }
 
-describe("LeucoLoggerSqliteSink", () => {
+describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   let tmp: string
 
   beforeAll(() => {

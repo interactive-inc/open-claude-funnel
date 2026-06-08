@@ -1,8 +1,10 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it } from "vitest"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { SqliteFunnelEventLog } from "@/gateway/event-log/sqlite-event-log"
 
-describe("SqliteFunnelEventLog", () => {
+const isBun = typeof globalThis.Bun !== "undefined"
+
+describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
   it("returns 0 from findMaxOffset on a fresh database", () => {
     const store = new SqliteFunnelEventLog({ path: ":memory:" })
     expect(store.findMaxOffset()).toBe(0)

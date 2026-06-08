@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it } from "vitest"
 import { LeucoHumanLogger } from "@/logger/leuco-human-logger"
 import type { LeucoHumanRecord } from "@/logger/leuco-human-record"
 import type { LeucoHumanWriter } from "@/logger/leuco-human-writer"

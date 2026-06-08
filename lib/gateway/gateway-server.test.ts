@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "vitest"
 import type { Server } from "bun"
+
+const isBun = typeof globalThis.Bun !== "undefined"
 import { Hono } from "hono"
 import { Funnel } from "@/funnel"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
@@ -82,7 +84,7 @@ afterEach(async () => {
   }
 })
 
-describe("FunnelGatewayServer auth integration", () => {
+describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
   test("/status returns 401 without bearer token", async () => {
     active = await startServer("secret-1")
     const url = `http://localhost:${active.httpServer.port}/status`
@@ -182,7 +184,7 @@ describe("FunnelGatewayServer auth integration", () => {
   })
 })
 
-describe("FunnelGatewayServer extraRoutes", () => {
+describe.skipIf(!isBun)("FunnelGatewayServer extraRoutes", () => {
   test("host routes are mounted and answer requests", async () => {
     const extras = new Hono<Env>()
     extras.get("/extra/ping", (c) => c.text("pong"))
@@ -222,7 +224,7 @@ describe("FunnelGatewayServer extraRoutes", () => {
   })
 })
 
-describe("FunnelGatewayServer event log", () => {
+describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
   test("onEvent observes emitted events and an injected log records them", () => {
     const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({
@@ -270,7 +272,7 @@ describe("FunnelGatewayServer event log", () => {
   })
 })
 
-describe("FunnelGatewayServer bind address", () => {
+describe.skipIf(!isBun)("FunnelGatewayServer bind address", () => {
   test("binds to loopback by default", async () => {
     active = await startServerOn({ token: "secret" })
 
@@ -302,7 +304,7 @@ describe("FunnelGatewayServer bind address", () => {
   })
 })
 
-describe("FunnelGatewayServer error responses", () => {
+describe.skipIf(!isBun)("FunnelGatewayServer error responses", () => {
   const startWithChannel = async () => {
     const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({

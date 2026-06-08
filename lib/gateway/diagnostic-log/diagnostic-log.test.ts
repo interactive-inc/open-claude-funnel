@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { Database } from "bun:sqlite"
 import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -6,6 +6,8 @@ import { join } from "node:path"
 import { ConnectorDiagnosticLog } from "@/gateway/diagnostic-log/diagnostic-log"
 import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
 import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+
+const isBun = typeof globalThis.Bun !== "undefined"
 
 const buildSqlite = (): SqliteConnectorDiagnosticLog => {
   return new SqliteConnectorDiagnosticLog({
@@ -15,12 +17,9 @@ const buildSqlite = (): SqliteConnectorDiagnosticLog => {
   })
 }
 
-// Both implementations must behave identically against the port contract, so
-// every behavioral test runs against both. The Sqlite one also gets the
-// oversize test below, which is implementation-specific.
 const implementations: { name: string; build: () => ConnectorDiagnosticLog }[] = [
   { name: "MemoryConnectorDiagnosticLog", build: () => new MemoryConnectorDiagnosticLog() },
-  { name: "SqliteConnectorDiagnosticLog", build: buildSqlite },
+  ...(isBun ? [{ name: "SqliteConnectorDiagnosticLog", build: buildSqlite }] : []),
 ]
 
 const raw = (over: Partial<Parameters<ConnectorDiagnosticLog["recordRaw"]>[0]> = {}) => ({
@@ -205,7 +204,7 @@ for (const impl of implementations) {
   })
 }
 
-describe("SqliteConnectorDiagnosticLog oversize handling", () => {
+describe.skipIf(!isBun)("SqliteConnectorDiagnosticLog oversize handling", () => {
   test("offloads a payload over the cap to metadata-only, staying valid JSON", () => {
     const log = buildSqlite()
     const huge = "x".repeat(300 * 1024)
@@ -317,7 +316,7 @@ describe("SqliteConnectorDiagnosticLog oversize handling", () => {
   })
 })
 
-describe("SqliteConnectorDiagnosticLog retention", () => {
+describe.skipIf(!isBun)("SqliteConnectorDiagnosticLog retention", () => {
   test("rawMaxRows caps the raw table independently of the verdict cap", () => {
     const log = new SqliteConnectorDiagnosticLog({
       rawPath: ":memory:",
@@ -367,7 +366,7 @@ describe("SqliteConnectorDiagnosticLog retention", () => {
   })
 })
 
-describe("SqliteConnectorDiagnosticLog forward-compat", () => {
+describe.skipIf(!isBun)("SqliteConnectorDiagnosticLog forward-compat", () => {
   let rawPath = ""
   let processedPath = ""
   let connectionPath = ""

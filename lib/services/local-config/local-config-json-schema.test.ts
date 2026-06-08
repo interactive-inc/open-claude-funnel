@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { funnelJsonSchema } from "@/services/local-config/local-config-json-schema"
 
 describe("funnelJsonSchema", () => {

@@ -6,7 +6,10 @@ export default defineConfig({
   ssr: { external: ["bun", "bun:sqlite"] },
   fmt: { semi: false },
   lint: {
-    ignorePatterns: ["node_modules/**", "lib/**/*.test.ts", "lib/**/*.test.tsx"],
+    ignorePatterns: ["node_modules/**"],
+  },
+  test: {
+    setupFiles: ["./vitest.setup.ts"],
   },
   pack: {
     entry: {
