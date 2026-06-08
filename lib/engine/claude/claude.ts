@@ -119,7 +119,19 @@ export class FunnelClaude {
 
     if (!this.gateway.isRunning()) {
       this.logger?.info(`starting gateway automatically`)
-      await this.gateway.start()
+      const started = await this.gateway.start()
+
+      if (!started) {
+        // Launching anyway would point the MCP child at whatever gateway holds
+        // the port. For a funnel.json-scoped repo on the shared default port
+        // that is a DIFFERENT repo's gateway, which has no such channel, so the
+        // agent connects but never receives events. Fail loudly instead.
+        throw new Error(
+          `gateway failed to start on port ${resolveFunnelPort()}; another funnel daemon ` +
+            `(a different repo/scope) may already hold it. ` +
+            `See 'fnl gateway logs' and 'ps -o pid,args= | grep funnel-gateway'.`,
+        )
+      }
     }
 
     if (options.profileId) {

@@ -264,6 +264,15 @@ export class FunnelGatewayServer {
 
       const requestedChannel = url.searchParams.get("channel") ?? ""
       const channel = requestedChannel ? this.resolveChannel(requestedChannel) : null
+
+      if (requestedChannel && !channel) {
+        // Reject rather than upgrade: a client subscribing to a channel this
+        // gateway does not know would connect "successfully" and then silently
+        // receive nothing (matchesClient filters every event). That is the
+        // wrong-gateway-on-a-shared-port failure — surface it instead.
+        return new Response(`unknown channel "${requestedChannel}"`, { status: 404 })
+      }
+
       const channelId = channel?.id ?? requestedChannel
       const channelName = channel?.name ?? null
       const connectors = channel?.connectors ?? []
@@ -343,6 +352,7 @@ export class FunnelGatewayServer {
     base.use((c, next) => {
       c.set("deps", {
         selfPid: this.selfPid,
+        dir: this.dir,
         broadcaster: this.broadcaster,
         supervisor: this.supervisor,
         channels: this.channels,
