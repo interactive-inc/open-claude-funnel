@@ -1,7 +1,16 @@
 import { factory } from "@/cli/factory"
 
-const help = `funnel channels <channel> connectors rename <connector> <new-name>
+const help = `funnel channels <channel> connectors rename <old> <new> — rename a connector
 
-usage: funnel channels <channel> connectors rename <connector> <new-name>`
+usage: funnel channels <channel> connectors rename <old> <new>
+
+Renames the connector in the configuration file. Tokens, type, and
+schedules are preserved. The gateway picks up the new name on the
+next reload.
+
+examples:
+  funnel channels production connectors rename slack-1 slack-main
+
+see also: funnel channels <channel> connectors`
 
 export const channelsConnectorsRenameHelpHandler = factory.createHandlers((c) => c.text(help))
