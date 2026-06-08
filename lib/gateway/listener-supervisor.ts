@@ -204,8 +204,6 @@ export class FunnelListenerSupervisor {
 
     try {
       await entry.listener.stop()
-      this.running.delete(key)
-      this.failureCounts.delete(key)
       this.logger?.info(`${entry.config.type} listener stopped`, {
         channel: channelName,
         connector: connectorName,
@@ -228,6 +226,14 @@ export class FunnelListenerSupervisor {
       })
 
       return { ok: false, reason: err.message }
+    } finally {
+      // Drop the entry from the registry whether or not listener.stop() threw.
+      // A throwing stop used to leave the entry behind, so the next start() saw
+      // `running.has(key) === true` and returned "already running" without
+      // reconstructing the listener — a dead listener got stuck in the registry
+      // and the supervisor's recoverDead loop spun forever without restarting.
+      this.running.delete(key)
+      this.failureCounts.delete(key)
     }
   }
 
@@ -298,6 +304,11 @@ export class FunnelListenerSupervisor {
 
     clearInterval(this.healthCheckTimer)
     this.healthCheckTimer = null
+  }
+
+  /** Run one health-check pass synchronously. Test-only seam. */
+  async runHealthCheckForTest(): Promise<void> {
+    await this.runHealthCheck()
   }
 
   private async runHealthCheck(): Promise<void> {
