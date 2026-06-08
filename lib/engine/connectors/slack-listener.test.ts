@@ -9,6 +9,10 @@ const hoisted = {
   // SocketModeClient lifecycle handlers the listener registers, keyed by event
   // name ("connected" / "disconnected"), so a test can drive the real events.
   socketHandlers: new Map<string, () => void>(),
+  // Options the listener passed to `new SocketModeReceiver({...})`. Lets a test
+  // pin that autoReconnectEnabled: false is sent through — without it the real
+  // SocketModeClient swallows socket closes and never emits "disconnected".
+  socketModeReceiverOptions: null as Record<string, unknown> | null,
   mockApp: null as MockApp | null,
   appConstructorCalls: 0,
   // When set, the next-constructed FakeApp's auth.test rejects with this.
@@ -36,6 +40,10 @@ mock.module("@slack/bolt", () => {
 
   class FakeSocketModeReceiver {
     client = new FakeSocketModeClient()
+
+    constructor(options: Record<string, unknown>) {
+      hoisted.socketModeReceiverOptions = options
+    }
   }
 
   class FakeApp {
@@ -87,6 +95,7 @@ const buildConfig = (): SlackConnectorConfig => ({
 beforeEach(() => {
   hoisted.middlewareHandlers.length = 0
   hoisted.socketHandlers.clear()
+  hoisted.socketModeReceiverOptions = null
   hoisted.mockApp = null
   hoisted.appConstructorCalls = 0
   hoisted.authError = null
@@ -95,6 +104,7 @@ beforeEach(() => {
 afterEach(() => {
   hoisted.middlewareHandlers.length = 0
   hoisted.socketHandlers.clear()
+  hoisted.socketModeReceiverOptions = null
   hoisted.mockApp = null
   hoisted.authError = null
 })
@@ -585,11 +595,23 @@ describe("FunnelSlackListener: liveness", () => {
     expect(listener.isAlive()).toBe(true)
   })
 
+  test("constructs the receiver with autoReconnectEnabled: false", async () => {
+    // Load-bearing: with the library default (true) SocketModeClient eats the
+    // socket close into an internal reconnect loop and never emits
+    // `disconnected`, so the whole liveness wiring stays silent forever — the
+    // exact bug. With autoReconnect off, every close emits `disconnected` and
+    // the supervisor's recoverDead owns reconnection.
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+
+    expect(hoisted.socketModeReceiverOptions?.autoReconnectEnabled).toBe(false)
+  })
+
   test("flips to not-alive when the Socket Mode client disconnects", async () => {
-    // Before the fix, isAlive() was `this.app !== null`, which stays true after
-    // the socket dies, so the supervisor never restarts a silently-dead
-    // connection. Liveness must follow the SocketModeClient's `disconnected`
-    // event — the actual signal the library emits when the socket drops.
+    // The library emits `disconnected` on every socket close (because
+    // autoReconnect is off). isAlive() must follow it so the supervisor's
+    // recoverDead restarts a silently-dead listener.
     const listener = new FunnelSlackListener({ config: buildConfig() })
 
     await listener.start(async () => {})
@@ -600,19 +622,6 @@ describe("FunnelSlackListener: liveness", () => {
     onDisconnected?.()
 
     expect(listener.isAlive()).toBe(false)
-  })
-
-  test("reports alive again when the client reconnects", async () => {
-    const listener = new FunnelSlackListener({ config: buildConfig() })
-
-    await listener.start(async () => {})
-    hoisted.socketHandlers.get("disconnected")?.()
-    expect(listener.isAlive()).toBe(false)
-
-    // A recoverable blip the library auto-recovers from re-emits `connected`.
-    hoisted.socketHandlers.get("connected")?.()
-
-    expect(listener.isAlive()).toBe(true)
   })
 
   test("is not alive after stop()", async () => {
