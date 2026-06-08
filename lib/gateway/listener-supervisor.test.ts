@@ -143,4 +143,62 @@ describe("FunnelListenerSupervisor", () => {
       type: "schedule",
     })
   })
+
+  test("recoverDead really restarts the listener even when stop() throws", async () => {
+    // A FakeListener whose stop() throws once and then behaves normally — the
+    // shape of a future connector with a flaky stop. Before the fix, a throwing
+    // stop left the entry in `running`, so the supervisor's next start() saw
+    // it and returned "already running" — the dead listener stayed dead and the
+    // recoverDead loop spun forever without ever calling listener.start again.
+    class FlakyStopListener extends FunnelConnectorListener {
+      alive = false
+      startCalls = 0
+      stopThrowsLeft = 1
+
+      async start(): Promise<void> {
+        this.startCalls += 1
+        this.alive = true
+      }
+
+      async stop(): Promise<void> {
+        this.alive = false
+
+        if (this.stopThrowsLeft > 0) {
+          this.stopThrowsLeft -= 1
+          throw new Error("stop boom")
+        }
+      }
+
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listener = new FlakyStopListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      // Drive runHealthCheck deterministically (no real timers).
+      sleep: async () => {},
+      healthCheckIntervalMs: 1,
+    })
+
+    await supervisor.start("ops", "cron")
+    expect(listener.startCalls).toBe(1)
+
+    // Mark the listener dead so the next health-check tick runs recoverDead.
+    listener.alive = false
+
+    // Drive one full health-check pass: stop (throws) → sleep → start.
+    await supervisor.runHealthCheckForTest()
+
+    // Pre-fix: stop's throw left the entry behind, start short-circuited with
+    // "already running", and listener.start was NOT called a second time.
+    expect(listener.startCalls).toBe(2)
+    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+  })
 })
