@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { LeucoHumanLogger } from "@/logger/leuco-human-logger"
-import type { LeucoHumanRecord } from "@/logger/leuco-human-record"
-import type { LeucoHumanWriter } from "@/logger/leuco-human-writer"
+import { FunnelTextLog } from "@/logger/funnel-text-log"
+import type { FunnelTextEntry } from "@/logger/funnel-text-entry"
+import type { FunnelTextWriter } from "@/logger/funnel-text-writer"
 
-class FakeWriter implements LeucoHumanWriter {
-  readonly records: LeucoHumanRecord[] = []
+class FakeWriter implements FunnelTextWriter {
+  readonly records: FunnelTextEntry[] = []
   closed = 0
 
-  write(record: LeucoHumanRecord): void {
+  write(record: FunnelTextEntry): void {
     this.records.push(record)
   }
 
@@ -16,10 +16,10 @@ class FakeWriter implements LeucoHumanWriter {
   }
 }
 
-describe("LeucoHumanLogger", () => {
+describe("FunnelTextLog", () => {
   it("emits info, warn, error records to the writer", () => {
     const writer = new FakeWriter()
-    const log = new LeucoHumanLogger({ writer })
+    const log = new FunnelTextLog({ writer })
 
     log.info("hello", { port: 9742 })
     log.warn("slow")
@@ -37,7 +37,7 @@ describe("LeucoHumanLogger", () => {
 
   it("respects minimum level", () => {
     const writer = new FakeWriter()
-    const log = new LeucoHumanLogger({ writer, level: "warn" })
+    const log = new FunnelTextLog({ writer, level: "warn" })
 
     log.info("dropped")
     log.warn("kept")
@@ -48,12 +48,12 @@ describe("LeucoHumanLogger", () => {
 
   it("dropping at minimum level skips writer entirely", () => {
     let called = 0
-    const writer: LeucoHumanWriter = {
+    const writer: FunnelTextWriter = {
       write: () => {
         called += 1
       },
     }
-    const log = new LeucoHumanLogger({ writer, level: "error" })
+    const log = new FunnelTextLog({ writer, level: "error" })
 
     log.info("dropped")
     log.warn("dropped")
@@ -63,7 +63,7 @@ describe("LeucoHumanLogger", () => {
 
   it("uses the injected clock for ts", () => {
     const writer = new FakeWriter()
-    const log = new LeucoHumanLogger({ writer, now: () => 1700000000000 })
+    const log = new FunnelTextLog({ writer, now: () => 1700000000000 })
 
     log.info("hi")
 
@@ -71,13 +71,13 @@ describe("LeucoHumanLogger", () => {
   })
 
   it("isolates a throwing writer and surfaces errors via onWriteError", () => {
-    const failing: LeucoHumanWriter = {
+    const failing: FunnelTextWriter = {
       write() {
         throw new Error("disk full")
       },
     }
     const errors: Error[] = []
-    const log = new LeucoHumanLogger({
+    const log = new FunnelTextLog({
       writer: failing,
       onWriteError: (e) => errors.push(e),
     })
@@ -89,13 +89,13 @@ describe("LeucoHumanLogger", () => {
   })
 
   it("treats writer-returned Error like a thrown one", () => {
-    const failing: LeucoHumanWriter = {
+    const failing: FunnelTextWriter = {
       write() {
         return new Error("nope")
       },
     }
     const errors: Error[] = []
-    const log = new LeucoHumanLogger({
+    const log = new FunnelTextLog({
       writer: failing,
       onWriteError: (e) => errors.push(e),
     })
@@ -108,7 +108,7 @@ describe("LeucoHumanLogger", () => {
 
   it("close calls writer.close once", () => {
     const writer = new FakeWriter()
-    const log = new LeucoHumanLogger({ writer })
+    const log = new FunnelTextLog({ writer })
 
     log.close()
 
@@ -116,13 +116,13 @@ describe("LeucoHumanLogger", () => {
   })
 
   it("close swallows writer.close exceptions", () => {
-    const writer: LeucoHumanWriter = {
+    const writer: FunnelTextWriter = {
       write: () => {},
       close: () => {
         throw new Error("close failed")
       },
     }
-    const log = new LeucoHumanLogger({ writer })
+    const log = new FunnelTextLog({ writer })
 
     expect(() => log.close()).not.toThrow()
   })

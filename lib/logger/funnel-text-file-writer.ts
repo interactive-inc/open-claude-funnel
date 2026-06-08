@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs"
 import { dirname } from "node:path"
-import type { LeucoHumanRecord } from "@/logger/leuco-human-record"
-import type { LeucoHumanWriter } from "@/logger/leuco-human-writer"
+import type { FunnelTextEntry } from "@/logger/funnel-text-entry"
+import type { FunnelTextWriter } from "@/logger/funnel-text-writer"
 
 type Props = {
   /** Filesystem path. Parent directory is created on construct. */
@@ -18,7 +18,7 @@ type Props = {
 /**
  * Appends one JSON line per record to a file. Optional one-keep size
  * rotation. Designed for diagnostic logs a human tails (`tail -f file |
- * jq`); not for replay or queries — use `LeucoLoggerSqliteSink` if you
+ * jq`); not for replay or queries — use `FunnelLogSqliteSink` if you
  * need indexed lookups.
  *
  * Writes are synchronous (`appendFileSync`), so each line is durable
@@ -26,7 +26,7 @@ type Props = {
  * high-volume logging consider buffering at the call site or using a
  * different writer.
  */
-export class LeucoHumanFileWriter implements LeucoHumanWriter {
+export class FunnelTextFileWriter implements FunnelTextWriter {
   private readonly path: string
   private readonly maxBytes: number | null
 
@@ -36,7 +36,7 @@ export class LeucoHumanFileWriter implements LeucoHumanWriter {
     this.ensureDir()
   }
 
-  write(record: LeucoHumanRecord): void | Error {
+  write(record: FunnelTextEntry): void | Error {
     try {
       const line = `${JSON.stringify(record)}\n`
       this.rotateIfNeeded(Buffer.byteLength(line))

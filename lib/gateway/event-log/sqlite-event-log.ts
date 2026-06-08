@@ -5,7 +5,7 @@ import {
   FunnelEventLog,
   type FunnelEventRecord,
 } from "@/gateway/event-log/event-log"
-import { LeucoLoggerSqliteSink } from "@/logger/leuco-logger-sqlite-sink"
+import { FunnelLogSqliteSink } from "@/logger/funnel-log-sqlite-sink"
 
 const MAX_CONTENT_CHARS = 2000
 
@@ -44,7 +44,7 @@ type Props = {
  * (`getMaxSeq()` at startup) correct without per-event coordination.
  */
 export class SqliteFunnelEventLog extends FunnelEventLog {
-  private readonly sink: LeucoLoggerSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>
+  private readonly sink: FunnelLogSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>
   private readonly now: () => number
   private readonly logger: FunnelLogger | undefined
 
@@ -52,7 +52,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     super()
     this.now = props.now ?? (() => Date.now())
     this.logger = props.logger
-    this.sink = new LeucoLoggerSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>({
+    this.sink = new FunnelLogSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>({
       path: props.path,
       indexes: ["channel_id", "connector_id"],
       extractIndexes: (event) => ({
@@ -99,7 +99,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
    * so this returns the full slice and lets the caller filter.
    */
   loadSince(since: number): ReplayableEvent[] {
-    const records = this.sink.getRecords({ sinceSeq: since })
+    const records = this.sink.query({ sinceSeq: since })
     const out: ReplayableEvent[] = []
     for (const record of records) {
       out.push({
@@ -127,7 +127,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     }
     if (props.connectorId !== undefined) where.connector_id = props.connectorId
 
-    const records = this.sink.getRecords({
+    const records = this.sink.query({
       where,
       ...(props.sinceSeq !== undefined ? { sinceSeq: props.sinceSeq } : {}),
       ...(props.limit !== undefined ? { limit: props.limit } : {}),

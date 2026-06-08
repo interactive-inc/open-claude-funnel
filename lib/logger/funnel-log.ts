@@ -1,25 +1,25 @@
-import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
-import type { LeucoLoggerPrimarySink, LeucoLoggerSink } from "@/logger/leuco-logger-sink"
+import type { FunnelLogEntry } from "@/logger/funnel-log-entry"
+import type { FunnelLogPrimarySink, FunnelLogSink } from "@/logger/funnel-log-sink"
 
-type Listener<E> = (record: LeucoLoggerRecord<E>) => void
+type Listener<E> = (record: FunnelLogEntry<E>) => void
 
 type SinkErrorHandler<E> = (
   error: Error,
-  record: LeucoLoggerRecord<E>,
-  sink: LeucoLoggerSink<E>,
+  record: FunnelLogEntry<E>,
+  sink: FunnelLogSink<E>,
 ) => void
 
-export type LeucoLoggerValidator<E> = (
+export type FunnelLogValidator<E> = (
   event: unknown,
 ) => { success: true; data: E } | { success: false; error: Error }
 
 type Props<E> = {
   /** Validates each event before emission. Use `schema.safeParse` from any validation library, or a plain function. */
-  validate: LeucoLoggerValidator<E>
-  /** Owns seq assignment + durability. Use `LeucoLoggerSqliteSink` for multi-process safety. */
-  primary: LeucoLoggerPrimarySink<E>
+  validate: FunnelLogValidator<E>
+  /** Owns seq assignment + durability. Use `FunnelLogSqliteSink` for multi-process safety. */
+  primary: FunnelLogPrimarySink<E>
   /** Optional fanout for already-sequenced records (memory ring, stdout, network mirror). */
-  relays?: ReadonlyArray<LeucoLoggerSink<E>>
+  relays?: ReadonlyArray<FunnelLogSink<E>>
   /** Override for tests. Defaults to `Date.now`. */
   now?: () => number
   /** Observer for relay failures. Default: silently swallow. */
@@ -33,7 +33,7 @@ type Props<E> = {
  *
  * Splitting "primary" from "relays" makes the seq invariant honest: there
  * is exactly one source of truth (the primary's atomic insert). Two
- * `LeucoLogger` instances pointed at the same SQLite file therefore see
+ * `FunnelLog` instances pointed at the same SQLite file therefore see
  * one monotonic stream without bus-level coordination. Relays mirror
  * already-sequenced records, so they can be added or removed without
  * affecting correctness.
@@ -46,10 +46,10 @@ type Props<E> = {
  *   - A subscriber that throws is contained; the rest of the fanout
  *     completes normally.
  */
-export class LeucoLogger<E> {
-  private readonly validate: LeucoLoggerValidator<E>
-  private readonly primary: LeucoLoggerPrimarySink<E>
-  private readonly relays: ReadonlyArray<LeucoLoggerSink<E>>
+export class FunnelLog<E> {
+  private readonly validate: FunnelLogValidator<E>
+  private readonly primary: FunnelLogPrimarySink<E>
+  private readonly relays: ReadonlyArray<FunnelLogSink<E>>
   private readonly now: () => number
   private readonly onSinkError: SinkErrorHandler<E> | null
   private readonly listeners = new Set<Listener<E>>()
@@ -62,7 +62,7 @@ export class LeucoLogger<E> {
     this.onSinkError = props.onSinkError ?? null
   }
 
-  emit(event: E): LeucoLoggerRecord<E> | Error {
+  emit(event: E): FunnelLogEntry<E> | Error {
     const parsed = this.validate(event)
     if (!parsed.success) return parsed.error
 
@@ -92,7 +92,7 @@ export class LeucoLogger<E> {
     for (const relay of this.relays) this.callClose(relay)
   }
 
-  private callPrimary(event: E): LeucoLoggerRecord<E> | Error {
+  private callPrimary(event: E): FunnelLogEntry<E> | Error {
     try {
       return this.primary.insert({ ts: this.now(), event })
     } catch (e) {
@@ -100,7 +100,7 @@ export class LeucoLogger<E> {
     }
   }
 
-  private fanOutToRelays(record: LeucoLoggerRecord<E>): void {
+  private fanOutToRelays(record: FunnelLogEntry<E>): void {
     for (const relay of this.relays) {
       const error = this.callRelay(relay, record)
       if (!error) continue
@@ -108,7 +108,7 @@ export class LeucoLogger<E> {
     }
   }
 
-  private callRelay(relay: LeucoLoggerSink<E>, record: LeucoLoggerRecord<E>): Error | null {
+  private callRelay(relay: FunnelLogSink<E>, record: FunnelLogEntry<E>): Error | null {
     try {
       const outcome = relay.write(record)
       return outcome instanceof Error ? outcome : null
@@ -117,7 +117,7 @@ export class LeucoLogger<E> {
     }
   }
 
-  private fanOutToListeners(record: LeucoLoggerRecord<E>): void {
+  private fanOutToListeners(record: FunnelLogEntry<E>): void {
     for (const listener of this.listeners) {
       try {
         listener(record)

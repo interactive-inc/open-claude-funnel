@@ -2,13 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { LeucoLoggerSqliteSink } from "@/logger/leuco-logger-sqlite-sink"
+import { FunnelLogSqliteSink } from "@/logger/funnel-log-sqlite-sink"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 
 type Event = { type: string; payload: string }
 
-describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
+describe.skipIf(!isBun)("FunnelLogSqliteSink", () => {
   let tmp: string
 
   beforeAll(() => {
@@ -20,13 +20,13 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   })
 
   it("returns 0 from getMaxSeq on a fresh database", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     expect(sink.getMaxSeq()).toBe(0)
     sink.close()
   })
 
-  it("insert assigns seq via SQLite rowid and reads back via getRecords", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+  it("insert assigns seq via SQLite rowid and reads back via query", () => {
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     const a = sink.insert({ ts: 100, event: { type: "hello", payload: "a" } })
     const b = sink.insert({ ts: 200, event: { type: "bye", payload: "b" } })
 
@@ -34,7 +34,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
     expect(a.seq).toBe(1)
     expect(b.seq).toBe(2)
 
-    const all = sink.getRecords()
+    const all = sink.query()
     expect(all.map((r) => r.seq)).toEqual([1, 2])
     expect(all[0]?.event).toEqual({ type: "hello", payload: "a" })
     expect(all[0]?.ts).toBe(100)
@@ -44,48 +44,48 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   })
 
   it("filters by event.type", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     sink.insert({ ts: 1, event: { type: "hello", payload: "a" } })
     sink.insert({ ts: 2, event: { type: "bye", payload: "b" } })
     sink.insert({ ts: 3, event: { type: "hello", payload: "c" } })
 
-    const hellos = sink.getRecords({ type: "hello" })
+    const hellos = sink.query({ type: "hello" })
     expect(hellos.map((r) => r.seq)).toEqual([1, 3])
 
     sink.close()
   })
 
   it("filters by sinceSeq for replay", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     sink.insert({ ts: 1, event: { type: "x", payload: "a" } })
     sink.insert({ ts: 2, event: { type: "x", payload: "b" } })
     sink.insert({ ts: 3, event: { type: "x", payload: "c" } })
 
-    const recent = sink.getRecords({ sinceSeq: 1 })
+    const recent = sink.query({ sinceSeq: 1 })
     expect(recent.map((r) => r.seq)).toEqual([2, 3])
 
     sink.close()
   })
 
   it("respects limit", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     for (const i of [1, 2, 3, 4, 5]) {
       sink.insert({ ts: i, event: { type: "x", payload: String(i) } })
     }
 
-    const page = sink.getRecords({ limit: 2 })
+    const page = sink.query({ limit: 2 })
     expect(page.map((r) => r.seq)).toEqual([1, 2])
 
     sink.close()
   })
 
   it("trims oldest rows when maxRows is exceeded", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:", maxRows: 3 })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:", maxRows: 3 })
     for (const i of [1, 2, 3, 4, 5]) {
       sink.insert({ ts: i, event: { type: "x", payload: String(i) } })
     }
 
-    const remaining = sink.getRecords()
+    const remaining = sink.query()
     expect(remaining.map((r) => r.seq)).toEqual([3, 4, 5])
     expect(sink.getMaxSeq()).toBe(5)
 
@@ -94,7 +94,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
 
   it("trims rows older than maxAgeMs on every insert", () => {
     let now = 1000
-    const sink = new LeucoLoggerSqliteSink<Event>({
+    const sink = new FunnelLogSqliteSink<Event>({
       path: ":memory:",
       maxAgeMs: 100,
       now: () => now,
@@ -107,14 +107,14 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
     now = 1200
     sink.insert({ ts: 1200, event: { type: "x", payload: "newest" } })
 
-    const remaining = sink.getRecords()
+    const remaining = sink.query()
     expect(remaining.map((r) => r.event.payload)).toEqual(["newest"])
 
     sink.close()
   })
 
   it("insertMany writes in a single transaction and assigns contiguous seq", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     const result = sink.insertMany([
       { ts: 1, event: { type: "x", payload: "a" } },
       { ts: 2, event: { type: "x", payload: "b" } },
@@ -129,7 +129,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   })
 
   it("insertMany returns [] for an empty batch without touching the database", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     const result = sink.insertMany([])
 
     expect(Array.isArray(result) && result.length === 0).toBe(true)
@@ -139,7 +139,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   })
 
   it("write accepts a pre-assigned seq for replication scenarios", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     const outcome = sink.write({ seq: 100, ts: 1, event: { type: "x", payload: "a" } })
 
     expect(outcome).toBeUndefined()
@@ -153,7 +153,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   })
 
   it("write returns Error on seq collision", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     sink.insert({ ts: 1, event: { type: "x", payload: "a" } })
     const outcome = sink.write({ seq: 1, ts: 2, event: { type: "x", payload: "dup" } })
 
@@ -164,8 +164,8 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
 
   it("two sinks against the same file see one monotonically increasing seq stream", () => {
     const path = join(tmp, "shared.db")
-    const a = new LeucoLoggerSqliteSink<Event>({ path })
-    const b = new LeucoLoggerSqliteSink<Event>({ path })
+    const a = new FunnelLogSqliteSink<Event>({ path })
+    const b = new FunnelLogSqliteSink<Event>({ path })
 
     const r1 = a.insert({ ts: 1, event: { type: "x", payload: "a1" } })
     const r2 = b.insert({ ts: 2, event: { type: "x", payload: "b1" } })
@@ -185,12 +185,12 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
 
   it("survives a reopen with the same file: getMaxSeq returns the persisted value", () => {
     const path = join(tmp, "reopen.db")
-    const first = new LeucoLoggerSqliteSink<Event>({ path })
+    const first = new FunnelLogSqliteSink<Event>({ path })
     first.insert({ ts: 1, event: { type: "x", payload: "a" } })
     first.insert({ ts: 2, event: { type: "x", payload: "b" } })
     first.close()
 
-    const second = new LeucoLoggerSqliteSink<Event>({ path })
+    const second = new FunnelLogSqliteSink<Event>({ path })
     expect(second.getMaxSeq()).toBe(2)
     const next = second.insert({ ts: 3, event: { type: "x", payload: "c" } })
     if (next instanceof Error) throw new Error("unexpected")
@@ -199,14 +199,14 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   })
 
   it("migrate advances PRAGMA user_version to the latest schema", () => {
-    const sink = new LeucoLoggerSqliteSink<Event>({ path: ":memory:" })
+    const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
     expect(sink.getSchemaVersion()).toBe(1)
     sink.close()
   })
 
   it("indexes: store and filter by caller-defined columns", () => {
     type ChannelEvent = { type: string; channel_id: string; connector_id: string }
-    const sink = new LeucoLoggerSqliteSink<ChannelEvent, ["channel_id", "connector_id"]>({
+    const sink = new FunnelLogSqliteSink<ChannelEvent, ["channel_id", "connector_id"]>({
       path: ":memory:",
       indexes: ["channel_id", "connector_id"],
       extractIndexes: (e) => ({
@@ -219,10 +219,10 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
     sink.insert({ ts: 2, event: { type: "msg", channel_id: "c1", connector_id: "k2" } })
     sink.insert({ ts: 3, event: { type: "msg", channel_id: "c2", connector_id: "k1" } })
 
-    const c1Only = sink.getRecords({ where: { channel_id: "c1" } })
+    const c1Only = sink.query({ where: { channel_id: "c1" } })
     expect(c1Only.map((r) => r.seq)).toEqual([1, 2])
 
-    const c1k2 = sink.getRecords({ where: { channel_id: "c1", connector_id: "k2" } })
+    const c1k2 = sink.query({ where: { channel_id: "c1", connector_id: "k2" } })
     expect(c1k2.map((r) => r.seq)).toEqual([2])
 
     sink.close()
@@ -230,7 +230,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
 
   it("indexes: combine where with sinceSeq, type, and limit", () => {
     type Ev = { type: string; channel_id: string }
-    const sink = new LeucoLoggerSqliteSink<Ev, ["channel_id"]>({
+    const sink = new FunnelLogSqliteSink<Ev, ["channel_id"]>({
       path: ":memory:",
       indexes: ["channel_id"],
       extractIndexes: (e) => ({ channel_id: e.channel_id }),
@@ -240,7 +240,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
       sink.insert({ ts: i, event: { type: "x", channel_id: i % 2 === 0 ? "c1" : "c2" } })
     }
 
-    const filtered = sink.getRecords({
+    const filtered = sink.query({
       sinceSeq: 1,
       type: "x",
       where: { channel_id: "c1" },
@@ -253,7 +253,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
 
   it("indexes: where supports IS NULL via explicit null value", () => {
     type Ev = { type: string; channel_id: string | null }
-    const sink = new LeucoLoggerSqliteSink<Ev, ["channel_id"]>({
+    const sink = new FunnelLogSqliteSink<Ev, ["channel_id"]>({
       path: ":memory:",
       indexes: ["channel_id"],
       extractIndexes: (e) => ({ channel_id: e.channel_id }),
@@ -262,7 +262,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
     sink.insert({ ts: 1, event: { type: "x", channel_id: "c1" } })
     sink.insert({ ts: 2, event: { type: "x", channel_id: null } })
 
-    const nulls = sink.getRecords({ where: { channel_id: null } })
+    const nulls = sink.query({ where: { channel_id: null } })
     expect(nulls.map((r) => r.seq)).toEqual([2])
 
     sink.close()
@@ -271,7 +271,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   it("indexes: rejects invalid column name (SQL injection guard)", () => {
     type Ev = { type: string }
     expect(() => {
-      new LeucoLoggerSqliteSink<Ev, ["bad name; DROP TABLE leuco_log"]>({
+      new FunnelLogSqliteSink<Ev, ["bad name; DROP TABLE leuco_log"]>({
         path: ":memory:",
         indexes: ["bad name; DROP TABLE leuco_log"],
         extractIndexes: () => ({ "bad name; DROP TABLE leuco_log": null }),
@@ -282,7 +282,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
   it("indexes: rejects reserved column names", () => {
     type Ev = { type: string }
     expect(() => {
-      new LeucoLoggerSqliteSink<Ev, ["seq"]>({
+      new FunnelLogSqliteSink<Ev, ["seq"]>({
         path: ":memory:",
         indexes: ["seq"],
         extractIndexes: () => ({ seq: null }),
@@ -292,7 +292,7 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
 
   it("creates the parent directory when it does not exist", () => {
     const path = join(tmp, "nested", "sub", "dir", "auto.db")
-    const sink = new LeucoLoggerSqliteSink<Event>({ path })
+    const sink = new FunnelLogSqliteSink<Event>({ path })
     const r = sink.insert({ ts: 1, event: { type: "x", payload: "a" } })
 
     if (r instanceof Error) throw new Error("unexpected")
@@ -306,21 +306,21 @@ describe.skipIf(!isBun)("LeucoLoggerSqliteSink", () => {
     type Ev = { type: string; channel_id: string }
     const path = join(tmp, "indexes.db")
 
-    const first = new LeucoLoggerSqliteSink<Ev>({ path })
+    const first = new FunnelLogSqliteSink<Ev>({ path })
     first.insert({ ts: 1, event: { type: "x", channel_id: "c1" } })
     first.close()
 
-    const second = new LeucoLoggerSqliteSink<Ev, ["channel_id"]>({
+    const second = new FunnelLogSqliteSink<Ev, ["channel_id"]>({
       path,
       indexes: ["channel_id"],
       extractIndexes: (e) => ({ channel_id: e.channel_id }),
     })
     second.insert({ ts: 2, event: { type: "x", channel_id: "c2" } })
 
-    const filtered = second.getRecords({ where: { channel_id: "c2" } })
+    const filtered = second.query({ where: { channel_id: "c2" } })
     expect(filtered.map((r) => r.seq)).toEqual([2])
 
-    const all = second.getRecords()
+    const all = second.query()
     expect(all.length).toBe(2)
     expect(all[0]?.event).toEqual({ type: "x", channel_id: "c1" })
 

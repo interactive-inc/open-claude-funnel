@@ -1,29 +1,29 @@
-import type { LeucoHumanLevel, LeucoHumanRecord } from "@/logger/leuco-human-record"
-import type { LeucoHumanWriter } from "@/logger/leuco-human-writer"
+import type { FunnelTextLevel, FunnelTextEntry } from "@/logger/funnel-text-entry"
+import type { FunnelTextWriter } from "@/logger/funnel-text-writer"
 
-type WriteErrorHandler = (error: Error, record: LeucoHumanRecord) => void
+type WriteErrorHandler = (error: Error, record: FunnelTextEntry) => void
 
 type Props = {
-  /** Where records go. Use `LeucoHumanStdoutWriter`, `LeucoHumanFileWriter`, or your own. */
-  writer: LeucoHumanWriter
+  /** Where records go. Use `FunnelTextStdoutWriter`, `FunnelTextFileWriter`, or your own. */
+  writer: FunnelTextWriter
   /** Minimum level to emit. Lower-rank records are dropped. Default: "info". */
-  level?: LeucoHumanLevel
+  level?: FunnelTextLevel
   /** Override for tests. Defaults to `Date.now`. */
   now?: () => number
   /** Observer for writer failures. Default: silently swallow. */
   onWriteError?: WriteErrorHandler
 }
 
-const LEVEL_RANK: Record<LeucoHumanLevel, number> = {
+const LEVEL_RANK: Record<FunnelTextLevel, number> = {
   info: 0,
   warn: 1,
   error: 2,
 }
 
 /**
- * Human-facing diagnostic logger. The companion to `LeucoLogger`: where
- * `LeucoLogger` is for schema-validated, replayable domain events,
- * `LeucoHumanLogger` is for free-form info/warn/error messages destined
+ * Human-facing diagnostic logger. The companion to `FunnelLog`: where
+ * `FunnelLog` is for schema-validated, replayable domain events,
+ * `FunnelTextLog` is for free-form info/warn/error messages destined
  * for a human tailing a log or skimming during incident response.
  *
  * Keeping the two separate matters operationally:
@@ -35,12 +35,12 @@ const LEVEL_RANK: Record<LeucoHumanLevel, number> = {
  *     query `WHERE seq > ?`).
  *
  * The writer is a port. Level gating happens here so writers receive only
- * what is worth persisting. Failure isolation matches `LeucoLogger`: a
+ * what is worth persisting. Failure isolation matches `FunnelLog`: a
  * writer that throws or returns Error is contained, surfaced via
  * `onWriteError`, and never blocks the caller.
  */
-export class LeucoHumanLogger {
-  private readonly writer: LeucoHumanWriter
+export class FunnelTextLog {
+  private readonly writer: FunnelTextWriter
   private readonly minRank: number
   private readonly now: () => number
   private readonly onWriteError: WriteErrorHandler | null
@@ -73,10 +73,10 @@ export class LeucoHumanLogger {
     }
   }
 
-  private emit(level: LeucoHumanLevel, message: string, meta?: Record<string, unknown>): void {
+  private emit(level: FunnelTextLevel, message: string, meta?: Record<string, unknown>): void {
     if (LEVEL_RANK[level] < this.minRank) return
 
-    const record: LeucoHumanRecord = {
+    const record: FunnelTextEntry = {
       ts: this.now(),
       level,
       message,
@@ -87,7 +87,7 @@ export class LeucoHumanLogger {
     if (error && this.onWriteError) this.onWriteError(error, record)
   }
 
-  private callWriter(record: LeucoHumanRecord): Error | null {
+  private callWriter(record: FunnelTextEntry): Error | null {
     try {
       const outcome = this.writer.write(record)
       return outcome instanceof Error ? outcome : null

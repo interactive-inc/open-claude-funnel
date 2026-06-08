@@ -1,16 +1,16 @@
-export type LeucoHumanLevel = "info" | "warn" | "error"
+export type FunnelTextLevel = "info" | "warn" | "error"
 
 /**
- * One human-facing diagnostic log entry. Distinct from `LeucoLoggerRecord`
+ * One human-facing diagnostic log entry. Distinct from `FunnelLogEntry`
  * (which wraps a schema-validated domain event) — this is the free-form,
  * for-humans-tailing-a-log shape: a level, a message, and optional meta.
  *
  * `meta` is `null` rather than `undefined` when absent so writers can
  * persist a uniform shape (no missing-key ambiguity in JSON Lines).
  */
-export type LeucoHumanRecord = {
+export type FunnelTextEntry = {
   ts: number
-  level: LeucoHumanLevel
+  level: FunnelTextLevel
   message: string
   meta: Record<string, unknown> | null
 }

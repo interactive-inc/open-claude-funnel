@@ -1,5 +1,5 @@
 import { chmodSync } from "node:fs"
-import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
+import type { FunnelLogEntry } from "@/logger/funnel-log-entry"
 import { FunnelLogger } from "@/engine/logger/logger"
 import {
   type ConnectorConnectionEvent,
@@ -19,7 +19,7 @@ import {
   type StoredProcessedEvent,
   type StoredRawEvent,
 } from "@/gateway/diagnostic-log/diagnostic-log"
-import { LeucoLoggerSqliteSink } from "@/logger/leuco-logger-sqlite-sink"
+import { FunnelLogSqliteSink } from "@/logger/funnel-log-sqlite-sink"
 
 /**
  * Cap on a raw payload kept verbatim. The point of the raw table is to see
@@ -59,7 +59,7 @@ type Props = {
 type WhereClause = { connector_id?: string | null; channel_id?: string | null }
 
 /**
- * Default `ConnectorDiagnosticLog`: three independent `LeucoLoggerSqliteSink`s, one
+ * Default `ConnectorDiagnosticLog`: three independent `FunnelLogSqliteSink`s, one
  * per table (raw / processed / connection), in separate files. Each sink
  * indexes the columns its queries filter on — `event_id` / `connector_id` /
  * `channel_id` for raw, plus `outcome` for processed and `status` for
@@ -73,9 +73,9 @@ type WhereClause = { connector_id?: string | null; channel_id?: string | null }
  * therefore stays valid JSON.
  */
 export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
-  private readonly raw: LeucoLoggerSqliteSink<ConnectorRawEvent, RawIndexes>
-  private readonly processed: LeucoLoggerSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>
-  private readonly connection: LeucoLoggerSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>
+  private readonly raw: FunnelLogSqliteSink<ConnectorRawEvent, RawIndexes>
+  private readonly processed: FunnelLogSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>
+  private readonly connection: FunnelLogSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>
   private readonly now: () => number
   private readonly logger: FunnelLogger | undefined
 
@@ -95,7 +95,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       ...ageCap,
       ...(rawMax !== undefined ? { maxRows: rawMax } : {}),
     }
-    this.raw = new LeucoLoggerSqliteSink<ConnectorRawEvent, RawIndexes>({
+    this.raw = new FunnelLogSqliteSink<ConnectorRawEvent, RawIndexes>({
       path: props.rawPath,
       indexes: ["event_id", "connector_id", "channel_id"],
       extractIndexes: (event) => ({
@@ -105,7 +105,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       }),
       ...rawCap,
     })
-    this.processed = new LeucoLoggerSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>({
+    this.processed = new FunnelLogSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>({
       path: props.processedPath,
       indexes: ["event_id", "connector_id", "channel_id", "outcome"],
       extractIndexes: (event) => ({
@@ -116,7 +116,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       }),
       ...verdictCap,
     })
-    this.connection = new LeucoLoggerSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>({
+    this.connection = new FunnelLogSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>({
       path: props.connectionPath,
       indexes: ["connector_id", "channel_id", "status"],
       extractIndexes: (event) => ({
@@ -173,14 +173,14 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   // A diagnostic store that swallows its own write failures is the one thing
   // it must not do: surface the error so a disk-full or locked WAL is visible.
-  private report(table: string, result: LeucoLoggerRecord<unknown> | Error): void {
+  private report(table: string, result: FunnelLogEntry<unknown> | Error): void {
     if (result instanceof Error) {
       this.logger?.error("diagnostic log insert failed", { table, error: result.message })
     }
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
-    const records = this.raw.getRecords({
+    const records = this.raw.query({
       ...(query.type !== undefined ? { type: query.type } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
       where: buildWhere(query),
@@ -202,7 +202,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     const where: WhereClause & { outcome?: string } = buildWhere(query)
     if (query.outcome !== undefined) where.outcome = query.outcome
 
-    const records = this.processed.getRecords({
+    const records = this.processed.query({
       ...(query.type !== undefined ? { type: query.type } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
       where,
@@ -225,7 +225,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     const where: WhereClause & { status?: string } = buildWhere(query)
     if (query.status !== undefined) where.status = query.status
 
-    const records = this.connection.getRecords({
+    const records = this.connection.query({
       ...(query.type !== undefined ? { type: query.type } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
       where,

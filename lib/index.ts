@@ -8,6 +8,7 @@
 //   "@interactive-inc/claude-funnel/recovery"      self-healing primitives
 //   "@interactive-inc/claude-funnel/doctor"        one-shot diagnose + safe fixes
 //   "@interactive-inc/claude-funnel/docs"          embedded documentation
+//   "@interactive-inc/claude-funnel/logger"        generic event log + human diagnostic log
 //
 // Claude Code integration (FunnelClaude, FunnelMcp) is intentionally not
 // exposed as a sub-entry — use the Funnel facade's .claude getter instead.
@@ -52,9 +53,14 @@ export * from "@/engine/id/id-generator"
 export * from "@/engine/id/node-id-generator"
 export * from "@/engine/id/memory-id-generator"
 
+export * from "@/engine/http/http-client"
+export * from "@/engine/http/node-http-client"
+export * from "@/engine/http/memory-http-client"
+
 export * from "@/engine/error/on-funnel-error"
 
 // Connectors
+export * from "@/engine/connectors/connector-adapter"
 export * from "@/engine/connectors/connector-factory"
 export * from "@/engine/connectors/connector-config-schema"
 export * from "@/engine/connectors/connector-listener"

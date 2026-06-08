@@ -2,8 +2,8 @@ import { Database } from "bun:sqlite"
 import type { SQLQueryBindings, Statement } from "bun:sqlite"
 import { existsSync, mkdirSync } from "node:fs"
 import { dirname } from "node:path"
-import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
-import type { LeucoLoggerPrimarySink, LeucoLoggerSink } from "@/logger/leuco-logger-sink"
+import type { FunnelLogEntry } from "@/logger/funnel-log-entry"
+import type { FunnelLogPrimarySink, FunnelLogSink } from "@/logger/funnel-log-sink"
 
 type IndexValues<I extends ReadonlyArray<string>> = Record<I[number], string | null>
 
@@ -35,7 +35,7 @@ type Props<E, I extends ReadonlyArray<string>> = I extends readonly []
       extractIndexes: (event: E) => IndexValues<I>
     }
 
-type GetRecordsProps<I extends ReadonlyArray<string>> = {
+type QueryFilter<I extends ReadonlyArray<string>> = {
   /** Return only records with seq strictly greater than this. */
   sinceSeq?: number
   /** Filter by the top-level `event.type` discriminator. */
@@ -83,9 +83,15 @@ const RESERVED_COLUMNS: ReadonlySet<string> = new Set(["seq", "ts", "type", "eve
  */
 const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
   [
-    "CREATE TABLE IF NOT EXISTS leuco_log (seq INTEGER PRIMARY KEY, ts INTEGER NOT NULL, type TEXT, event TEXT NOT NULL)",
-    "CREATE INDEX IF NOT EXISTS idx_leuco_log_ts ON leuco_log (ts)",
-    "CREATE INDEX IF NOT EXISTS idx_leuco_log_type ON leuco_log (type)",
+    "CREATE TABLE IF NOT EXISTS logs (seq INTEGER PRIMARY KEY, ts INTEGER NOT NULL, type TEXT, event TEXT NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)",
+    "CREATE INDEX IF NOT EXISTS idx_logs_type ON logs (type)",
+  ],
+  [
+    "DROP TABLE IF EXISTS leuco_log",
+    "CREATE TABLE IF NOT EXISTS logs (seq INTEGER PRIMARY KEY, ts INTEGER NOT NULL, type TEXT, event TEXT NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)",
+    "CREATE INDEX IF NOT EXISTS idx_logs_type ON logs (type)",
   ],
 ]
 
@@ -96,7 +102,7 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
  * from a backup stream).
  *
  * Concurrency model: seq is `INTEGER PRIMARY KEY`, so SQLite assigns it
- * atomically via `lastInsertRowid`. Two `LeucoLogger` instances pointed
+ * atomically via `lastInsertRowid`. Two `FunnelLog` instances pointed
  * at the same database file therefore see one monotonically increasing
  * seq stream without any bus-level coordination — the database itself is
  * the synchronization point.
@@ -108,7 +114,7 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
  * a new index to an existing database is a no-downtime operation.
  *
  * Type safety: the second generic parameter `I` is the literal tuple of
- * index column names. `extractIndexes` and `getRecords({ where })` are
+ * index column names. `extractIndexes` and `query({ where })` are
  * both type-checked against this tuple, so a typo at the call site is a
  * compile-time error rather than a silent miss at runtime.
  *
@@ -119,8 +125,8 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
  * for ~10–100x throughput at the cost of one fsync per batch instead of
  * one per row.
  */
-export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = readonly []>
-  implements LeucoLoggerPrimarySink<E>, LeucoLoggerSink<E>
+export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = readonly []>
+  implements FunnelLogPrimarySink<E>, FunnelLogSink<E>
 {
   private readonly db: Database
   private readonly maxRows: number | null
@@ -148,7 +154,7 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
   constructor(props: Props<E, I>) {
     // `bun:sqlite` does not create the parent directory on open, so a fresh
     // environment (e.g. `~/.inta/funnel/events/` on first run) errors out with
-    // an opaque `unable to open database file`. Mirror `LeucoHumanFileWriter`'s
+    // an opaque `unable to open database file`. Mirror `FunnelTextFileWriter`'s
     // `ensureDir()` here. `:memory:` is a sentinel handled by sqlite, not a
     // path, so skip it.
     if (props.path !== ":memory:") {
@@ -185,27 +191,27 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     const cols = ["ts", "type", "event", ...this.indexes]
     const placeholders = cols.map(() => "?").join(", ")
     this.insertStmt = this.db.prepare(
-      `INSERT INTO leuco_log (${cols.join(", ")}) VALUES (${placeholders})`,
+      `INSERT INTO logs (${cols.join(", ")}) VALUES (${placeholders})`,
     )
 
     const colsWithSeq = ["seq", ...cols]
     const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
     this.insertWithSeqStmt = this.db.prepare(
-      `INSERT INTO leuco_log (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
+      `INSERT INTO logs (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
     )
 
-    this.maxSeqStmt = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS max FROM leuco_log")
-    this.countStmt = this.db.prepare("SELECT COUNT(*) AS n FROM leuco_log")
+    this.maxSeqStmt = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS max FROM logs")
+    this.countStmt = this.db.prepare("SELECT COUNT(*) AS n FROM logs")
     this.trimRowsStmt = this.db.prepare(
-      "DELETE FROM leuco_log WHERE seq <= (SELECT seq FROM leuco_log ORDER BY seq DESC LIMIT 1 OFFSET ?)",
+      "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
     )
-    this.trimAgeStmt = this.db.prepare("DELETE FROM leuco_log WHERE ts < ?")
+    this.trimAgeStmt = this.db.prepare("DELETE FROM logs WHERE ts < ?")
     this.trimOldestStmt = this.db.prepare(
-      "DELETE FROM leuco_log WHERE seq IN (SELECT seq FROM leuco_log ORDER BY seq ASC LIMIT ?)",
+      "DELETE FROM logs WHERE seq IN (SELECT seq FROM logs ORDER BY seq ASC LIMIT ?)",
     )
   }
 
-  insert(input: { ts: number; event: E }): LeucoLoggerRecord<E> | Error {
+  insert(input: { ts: number; event: E }): FunnelLogEntry<E> | Error {
     try {
       const params = this.buildInsertParams(input.ts, input.event)
       const result = this.insertStmt.run(...params)
@@ -217,11 +223,11 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     }
   }
 
-  insertMany(inputs: ReadonlyArray<{ ts: number; event: E }>): LeucoLoggerRecord<E>[] | Error {
+  insertMany(inputs: ReadonlyArray<{ ts: number; event: E }>): FunnelLogEntry<E>[] | Error {
     if (inputs.length === 0) return []
 
     try {
-      const records: LeucoLoggerRecord<E>[] = []
+      const records: FunnelLogEntry<E>[] = []
       const apply = this.db.transaction((batch: ReadonlyArray<{ ts: number; event: E }>) => {
         for (const input of batch) {
           const params = this.buildInsertParams(input.ts, input.event)
@@ -241,7 +247,7 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     }
   }
 
-  write(record: LeucoLoggerRecord<E>): void | Error {
+  write(record: FunnelLogEntry<E>): void | Error {
     try {
       const params: SQLQueryBindings[] = [
         record.seq,
@@ -259,7 +265,7 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     return row ? row.max : 0
   }
 
-  getRecords(props: GetRecordsProps<I> = {}): LeucoLoggerRecord<E>[] {
+  query(props: QueryFilter<I> = {}): FunnelLogEntry<E>[] {
     const conditions: string[] = ["seq > ?"]
     const params: SQLQueryBindings[] = [props.sinceSeq ?? 0]
 
@@ -279,7 +285,7 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
     // ascending in JS so the returned slice is always chronological regardless
     // of which end the limit clipped.
     const dir = props.order === "desc" ? "DESC" : "ASC"
-    const sql = `SELECT seq, ts, type, event FROM leuco_log WHERE ${conditions.join(" AND ")} ORDER BY seq ${dir} LIMIT ?`
+    const sql = `SELECT seq, ts, type, event FROM logs WHERE ${conditions.join(" AND ")} ORDER BY seq ${dir} LIMIT ?`
     const stmt = this.db.prepare<EventRow, SQLQueryBindings[]>(sql)
     const rows = stmt.all(...params)
 
@@ -391,7 +397,7 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
 
   /** Drop every row and reclaim the file space. Used by `<log>.clear()`. */
   clear(): void {
-    this.db.run("DELETE FROM leuco_log")
+    this.db.run("DELETE FROM logs")
     this.db.run("VACUUM")
     this.insertsSinceByteCheck = 0
   }
@@ -399,16 +405,16 @@ export class LeucoLoggerSqliteSink<E, const I extends ReadonlyArray<string> = re
   private syncIndexColumns(): void {
     const existing = new Set(
       this.db
-        .prepare<ColumnRow, []>("PRAGMA table_info(leuco_log)")
+        .prepare<ColumnRow, []>("PRAGMA table_info(logs)")
         .all()
         .map((r) => r.name),
     )
 
     for (const col of this.indexes) {
       if (!existing.has(col)) {
-        this.db.run(`ALTER TABLE leuco_log ADD COLUMN ${col} TEXT`)
+        this.db.run(`ALTER TABLE logs ADD COLUMN ${col} TEXT`)
       }
-      this.db.run(`CREATE INDEX IF NOT EXISTS idx_leuco_log_${col} ON leuco_log (${col})`)
+      this.db.run(`CREATE INDEX IF NOT EXISTS idx_logs_${col} ON logs (${col})`)
     }
   }
 
@@ -449,7 +455,7 @@ function extractType(event: unknown): string | null {
   return typeof t === "string" ? t : null
 }
 
-function toRecord<E>(row: EventRow): LeucoLoggerRecord<E> {
+function toRecord<E>(row: EventRow): FunnelLogEntry<E> {
   return {
     seq: row.seq,
     ts: row.ts,

@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.57.0",
+  "version": "0.58.0",
   "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
   "keywords": [
     "bun",
@@ -101,6 +101,11 @@
       "types": "./dist/connectors/schedule.d.ts",
       "import": "./dist/connectors/schedule.js",
       "default": "./dist/connectors/schedule.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "import": "./dist/logger.js",
+      "default": "./dist/logger.js"
     },
     "./bin": "./dist/bin.js",
     "./package.json": "./package.json"

@@ -1,5 +1,5 @@
-import type { LeucoHumanRecord } from "@/logger/leuco-human-record"
-import type { LeucoHumanWriter } from "@/logger/leuco-human-writer"
+import type { FunnelTextEntry } from "@/logger/funnel-text-entry"
+import type { FunnelTextWriter } from "@/logger/funnel-text-writer"
 
 type Stream = { write(s: string): void }
 
@@ -13,14 +13,14 @@ type Props = {
  * for foreground daemons, dev runs, and short-lived processes where a
  * file-backed log would be overkill.
  */
-export class LeucoHumanStdoutWriter implements LeucoHumanWriter {
+export class FunnelTextStdoutWriter implements FunnelTextWriter {
   private readonly out: Stream
 
   constructor(props: Props = {}) {
     this.out = props.out ?? process.stdout
   }
 
-  write(record: LeucoHumanRecord): void {
+  write(record: FunnelTextEntry): void {
     this.out.write(`${JSON.stringify(record)}\n`)
   }
 }

@@ -1,4 +1,4 @@
-import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
+import type { FunnelLogEntry } from "@/logger/funnel-log-entry"
 
 /**
  * Relay sink. Receives records that already have a `seq` assigned by the
@@ -10,8 +10,8 @@ import type { LeucoLoggerRecord } from "@/logger/leuco-logger-record"
  * `onSinkError`. Throwing is also tolerated (the bus catches), but
  * returning is preferred so the failure path is part of the type.
  */
-export type LeucoLoggerSink<E> = {
-  write(record: LeucoLoggerRecord<E>): void | Error
+export type FunnelLogSink<E> = {
+  write(record: FunnelLogEntry<E>): void | Error
   close?(): void
 }
 
@@ -26,8 +26,8 @@ export type LeucoLoggerSink<E> = {
  * `getMaxSeq` is the highest seq currently in the sink — used for
  * observability and for replay seeding by clients reading the store.
  */
-export type LeucoLoggerPrimarySink<E> = {
-  insert(input: { ts: number; event: E }): LeucoLoggerRecord<E> | Error
+export type FunnelLogPrimarySink<E> = {
+  insert(input: { ts: number; event: E }): FunnelLogEntry<E> | Error
   getMaxSeq(): number
   close?(): void
 }

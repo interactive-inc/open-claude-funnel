@@ -2,9 +2,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { LeucoHumanFileWriter } from "@/logger/leuco-human-file-writer"
+import { FunnelTextFileWriter } from "@/logger/funnel-text-file-writer"
 
-describe("LeucoHumanFileWriter", () => {
+describe("FunnelTextFileWriter", () => {
   let tmp: string
 
   beforeAll(() => {
@@ -17,7 +17,7 @@ describe("LeucoHumanFileWriter", () => {
 
   it("appends one JSON line per record", () => {
     const path = join(tmp, "append.log")
-    const w = new LeucoHumanFileWriter({ path })
+    const w = new FunnelTextFileWriter({ path })
 
     w.write({ ts: 1, level: "info", message: "a", meta: null })
     w.write({ ts: 2, level: "warn", message: "b", meta: { x: 1 } })
@@ -42,7 +42,7 @@ describe("LeucoHumanFileWriter", () => {
 
   it("creates parent directories on construct", () => {
     const path = join(tmp, "deep", "nested", "file.log")
-    const w = new LeucoHumanFileWriter({ path })
+    const w = new FunnelTextFileWriter({ path })
 
     w.write({ ts: 1, level: "info", message: "hi", meta: null })
 
@@ -51,7 +51,7 @@ describe("LeucoHumanFileWriter", () => {
 
   it("rotates to .1 when maxBytes is exceeded", () => {
     const path = join(tmp, "rotate.log")
-    const w = new LeucoHumanFileWriter({ path, maxBytes: 200 })
+    const w = new FunnelTextFileWriter({ path, maxBytes: 200 })
 
     for (const i of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       w.write({
