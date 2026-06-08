@@ -143,4 +143,112 @@ describe("FunnelListenerSupervisor", () => {
       type: "schedule",
     })
   })
+
+  test("startAll starts listeners concurrently — a failing one does not block others", async () => {
+    const goodListener = new FakeListener()
+    const badConfig: ConnectorConfig = { id: "co-2", type: "slack", name: "bad-slack" } as ConnectorConfig
+    const badView: ChannelConnectorView = { ...badConfig, channelId: "ch-1", channelName: "ops" }
+
+    class FailingListener extends FunnelConnectorListener {
+      async start(): Promise<void> {
+        throw new Error("auth failed")
+      }
+      async stop(): Promise<void> {}
+      override isAlive(): boolean {
+        return false
+      }
+    }
+
+    const failingListener = new FailingListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [badView, view],
+        createListener: (_ch: string, name: string) => {
+          if (name === "bad-slack") return { config: badConfig, channelId: "ch-1", listener: failingListener }
+          return { config, channelId: "ch-1", listener: goodListener }
+        },
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+    })
+
+    await supervisor.startAll()
+
+    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(supervisor.isRunning("ops", "bad-slack")).toBe(false)
+
+    await supervisor.stopAll()
+  })
+
+  test("start times out when listener.start() hangs", async () => {
+    class HangingListener extends FunnelConnectorListener {
+      async start(): Promise<void> {
+        await new Promise(() => {})
+      }
+      async stop(): Promise<void> {}
+      override isAlive(): boolean {
+        return false
+      }
+    }
+
+    const listener = new HangingListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      startTimeoutMs: 50,
+      sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
+    })
+
+    const result = await supervisor.start("ops", "cron")
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toMatch(/timed out/)
+  })
+
+  test("failed listeners are retried by health check via pendingRetry", async () => {
+    let startAttempts = 0
+
+    class EventuallyGoodListener extends FunnelConnectorListener {
+      alive = false
+      async start(): Promise<void> {
+        startAttempts++
+        if (startAttempts <= 1) throw new Error("not ready yet")
+        this.alive = true
+      }
+      async stop(): Promise<void> {
+        this.alive = false
+      }
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listener = new EventuallyGoodListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      healthCheckIntervalMs: 10,
+      sleep: (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 10))),
+    })
+
+    await supervisor.startAll()
+
+    expect(supervisor.isRunning("ops", "cron")).toBe(false)
+    expect(startAttempts).toBe(1)
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(startAttempts).toBe(2)
+
+    await supervisor.stopAll()
+  })
 })

@@ -41,6 +41,10 @@ type Deps = {
   onError?: OnFunnelError
   healthCheckIntervalMs?: number
   maxBackoffMs?: number
+  /** Per-listener timeout for `start()`. A listener that hangs beyond this is
+   *  treated as a startup failure — it won't block other listeners or the
+   *  health-check loop. Defaults to 30 seconds. */
+  startTimeoutMs?: number
   sleep?: (ms: number) => Promise<void>
   now?: () => number
 }
@@ -48,6 +52,7 @@ type Deps = {
 const defaultOnError: OnFunnelError = () => {}
 const DEFAULT_HEALTH_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BACKOFF_MS = 60_000
+const DEFAULT_START_TIMEOUT_MS = 30_000
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((r) => {
@@ -88,10 +93,13 @@ export class FunnelListenerSupervisor {
   private readonly stats = new Map<string, ListenerStats>()
   private readonly healthCheckIntervalMs: number
   private readonly maxBackoffMs: number
+  private readonly startTimeoutMs: number
   private readonly sleep: (ms: number) => Promise<void>
   private readonly now: () => number
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null
   private healthCheckInFlight = false
+  /** Connectors that failed initial start — retried by the health check. */
+  private readonly pendingRetry = new Map<string, { channelName: string; connectorName: string }>()
 
   constructor(deps: Deps) {
     this.channels = deps.channels
@@ -100,6 +108,7 @@ export class FunnelListenerSupervisor {
     this.onError = deps.onError ?? defaultOnError
     this.healthCheckIntervalMs = deps.healthCheckIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
     this.maxBackoffMs = deps.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
+    this.startTimeoutMs = deps.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
     this.sleep = deps.sleep ?? defaultSleep
     this.now = deps.now ?? (() => Date.now())
   }
@@ -160,13 +169,19 @@ export class FunnelListenerSupervisor {
     }
 
     try {
-      await created.listener.start(bind)
+      await Promise.race([
+        created.listener.start(bind),
+        this.sleep(this.startTimeoutMs).then(() => {
+          throw new Error(`listener start timed out after ${this.startTimeoutMs}ms`)
+        }),
+      ])
       this.running.set(key, {
         config: created.config,
         channelName,
         channelId: created.channelId,
         listener: created.listener,
       })
+      this.pendingRetry.delete(key)
       this.ensureStats(key)
       this.logger?.info(`${created.config.type} listener started`, {
         channel: channelName,
@@ -245,8 +260,18 @@ export class FunnelListenerSupervisor {
   async startAll(): Promise<void> {
     const all = this.channels.listAllConnectors()
 
-    for (const view of all) {
-      await this.start(view.channelName, view.name)
+    const results = await Promise.allSettled(
+      all.map((view) => this.start(view.channelName, view.name)),
+    )
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!
+      const view = all[i]!
+
+      if (result.status === "rejected" || (result.status === "fulfilled" && !result.value.ok)) {
+        const key = FunnelListenerSupervisor.keyOf(view.channelName, view.name)
+        this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
+      }
     }
 
     this.startHealthCheck()
@@ -254,6 +279,7 @@ export class FunnelListenerSupervisor {
 
   async stopAll(): Promise<void> {
     this.stopHealthCheck()
+    this.pendingRetry.clear()
 
     for (const [, entry] of [...this.running.entries()]) {
       await this.stop(entry.channelName, entry.config.name)
@@ -313,6 +339,32 @@ export class FunnelListenerSupervisor {
         }
 
         await this.recoverDead(entry.channelName, entry.config.name, entry.config.type)
+      }
+
+      for (const [key, pending] of [...this.pendingRetry.entries()]) {
+        if (this.running.has(key)) {
+          this.pendingRetry.delete(key)
+          continue
+        }
+
+        this.logger?.info("retrying failed listener", {
+          channel: pending.channelName,
+          connector: pending.connectorName,
+        })
+
+        const failureCount = this.failureCounts.get(key) ?? 0
+        const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
+
+        await this.sleep(backoffMs)
+
+        const result = await this.start(pending.channelName, pending.connectorName)
+
+        if (result.ok) {
+          this.pendingRetry.delete(key)
+          this.failureCounts.delete(key)
+        } else {
+          this.failureCounts.set(key, failureCount + 1)
+        }
       }
     } finally {
       this.healthCheckInFlight = false

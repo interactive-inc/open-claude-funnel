@@ -4,9 +4,12 @@ import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/cli/yaml-render"
 
-const showHelp = `funnel channels <channel> connectors show <connector> / show connector config
+const showHelp = `funnel channels <channel> connectors <connector> / show connector config
 
-usage / funnel channels <channel> connectors show <connector>
+subcommands:
+  rename <new> / rename this connector
+  request --method=... / call outbound API
+  schedules / manage schedule entries (schedule type only)
 
 output / valid YAML`
 

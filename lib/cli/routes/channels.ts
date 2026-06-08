@@ -11,9 +11,20 @@ subcommands:
   (none) / list every channel with its connectors
   add <name> / create a channel
   remove <name> / delete a channel
+  rename <old> <new> / rename a channel
   <name> / show one channel
+  <name> set delivery fanout|exclusive / change routing mode
+  <name> publish --content=... / push content into a channel
+  <name> validate / check connector configuration
   <name> connectors / list connectors
   <name> connectors add <c> --type=... / add a connector
+  <name> connectors remove <c> / remove a connector
+  <name> connectors set <c> [--bot-token=...] / update connector fields
+  <name> connectors rename <c> <new> / rename a connector
+  <name> connectors <c> request --method=... / call outbound API
+  <name> connectors <c> schedules / list schedule entries
+  <name> connectors <c> schedules add <id> / add a schedule entry
+  <name> connectors <c> schedules remove <id> / remove a schedule entry
 
 output / valid YAML
 

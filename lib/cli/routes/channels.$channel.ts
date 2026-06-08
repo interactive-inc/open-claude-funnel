@@ -6,6 +6,13 @@ import { renderYaml } from "@/cli/yaml-render"
 
 const showHelp = `funnel channels <name> / show channel details
 
+subcommands:
+  set delivery fanout|exclusive / change routing mode
+  publish --content=... / push content into the channel
+  validate / check connector configuration
+  rename <new> / rename this channel
+  connectors / manage connectors (add, remove, set, rename, request, schedules)
+
 output / valid YAML`
 
 export const channelsShowHandler = factory.createHandlers(

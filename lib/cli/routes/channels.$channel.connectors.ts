@@ -3,9 +3,22 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-const groupHelp = `funnel channels <channel> connectors — list connectors in a channel
+const groupHelp = `funnel channels <channel> connectors — manage connectors in a channel
 
-usage: funnel channels <channel> connectors`
+usage: funnel channels <channel> connectors [subcommand]
+
+subcommands:
+  (none) / list connectors
+  add <c> --type=... / add a connector
+  remove <c> / remove a connector
+  set <c> [--bot-token=...] / update connector fields
+  rename <c> <new> / rename a connector
+  <c> / show one connector
+  <c> rename <new> / rename (alternative form)
+  <c> request --method=... / call connector outbound API
+  <c> schedules / list schedule entries (schedule type only)
+  <c> schedules add <id> --cron=... --prompt=... / add a schedule entry
+  <c> schedules remove <id> / remove a schedule entry`
 
 export const channelsConnectorsGroupHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string() })),

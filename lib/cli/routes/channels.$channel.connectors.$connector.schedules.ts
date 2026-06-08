@@ -2,9 +2,14 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
 
-const groupHelp = `funnel channels <ch> connectors <conn> schedules — list schedule entries
+const groupHelp = `funnel channels <ch> connectors <conn> schedules — manage schedule entries
 
-usage: funnel channels <ch> connectors <conn> schedules`
+usage: funnel channels <ch> connectors <conn> schedules [subcommand]
+
+subcommands:
+  (none) / list schedule entries
+  add <id> --cron=... --prompt=... [--enabled=true] [--catchup-policy=latest|all|skip] / add entry
+  remove <id> / remove entry`
 
 export const channelsConnectorsSchedulesGroupHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
