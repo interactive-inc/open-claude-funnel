@@ -7,6 +7,7 @@ import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { Funnel } from "@/funnel"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { buildServiceRoutes } from "@/gateway/service-routes"
+import { isAddressInUseError } from "@/gateway/is-address-in-use-error"
 import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
 
 // Raw rows can each hold up to ~256 KiB, so they get a tight cap (~5k rows ≈
@@ -95,19 +96,21 @@ const server = funnel.gatewayServer({
 try {
   await server.start()
 } catch (error) {
-  const message = error instanceof Error ? error.message : String(error)
-
   // A funnel.json-scoped repo and the global install both default to the same
   // port, so a second scope's daemon dies here on EADDRINUSE. Spell out the
-  // cause instead of dumping a bare bind error into gateway.log.
-  if (message.includes("EADDRINUSE") || message.includes("address already in use")) {
+  // cause instead of dumping a bare bind error into gateway.log. Bun puts the
+  // EADDRINUSE marker on error.code (the message is only "Is port N in use?"),
+  // so the check goes through isAddressInUseError rather than a message match.
+  if (isAddressInUseError(error)) {
     logger.error(
       `gateway port ${PORT} is already in use by another funnel daemon (a different repo/scope). ` +
         `Set FUNNEL_PORT to a distinct port, or stop the other daemon.`,
       { port: PORT, dir: funnelDir },
     )
   } else {
-    logger.error("gateway failed to start", { error: message })
+    logger.error("gateway failed to start", {
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 
   process.exit(1)
