@@ -1,4 +1,4 @@
-import { App, LogLevel } from "@slack/bolt"
+import { App, LogLevel, SocketModeReceiver } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
@@ -51,12 +51,12 @@ export class FunnelSlackListener extends FunnelConnectorListener {
   private readonly preprocessEvent: SlackPreprocessEvent | null
   private app: App | null = null
   // Tracks live Socket Mode connectivity. `this.app` only records "did we ever
-  // start"; it stays non-null after the socket dies. @slack/socket-mode handles
-  // recoverable disconnects internally and only surfaces a NON-recoverable
-  // failure (invalid_auth, a RequestError refreshing the WSS URL, …) to
-  // `app.error`, at which point it stops reconnecting. Flipping this false there
-  // is what lets the supervisor's health check see the listener as dead and
-  // restart it — without it, a dead socket reads as alive forever.
+  // start" — it stays non-null after the socket dies. The flag is driven by the
+  // SocketModeClient's own `connected` / `disconnected` events (wired in start()),
+  // so isAlive() reflects the real socket state and the supervisor restarts a
+  // dead-but-not-reconnecting listener. (Bolt's `app.error` is NOT a usable
+  // signal here: the SocketModeReceiver only forwards `slack_event`, so a
+  // background socket death never reaches it.)
   private connected = false
 
   constructor(deps: Deps) {
@@ -86,10 +86,23 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       label: `${this.config.name}.appToken`,
     })
 
+    // Construct the Socket Mode receiver ourselves (instead of `socketMode: true`)
+    // so we can observe the underlying client's connection lifecycle. The client
+    // emits `connected` / `disconnected` on every socket transition; a
+    // non-recoverable reconnect failure leaves it `disconnected` and never
+    // emits `connected` again, which is exactly when isAlive() must read false.
+    const receiver = new SocketModeReceiver({ appToken, logLevel: LogLevel.ERROR })
+
+    receiver.client.on("connected", () => {
+      this.connected = true
+    })
+    receiver.client.on("disconnected", () => {
+      this.connected = false
+    })
+
     const app = new App({
       token: botToken,
-      appToken,
-      socketMode: true,
+      receiver,
       logLevel: LogLevel.ERROR,
     })
 
@@ -182,11 +195,6 @@ export class FunnelSlackListener extends FunnelConnectorListener {
 
     app.error(async (error) => {
       const message = messageOf(error)
-      // A non-recoverable Socket Mode error reaches here after the client has
-      // given up reconnecting, so treat the listener as disconnected. The
-      // supervisor's next health check then restarts it (stop → backoff →
-      // start), which re-runs auth.test and reopens the socket.
-      this.connected = false
       this.recordConnection("error", message)
       this.logger?.error("Slack error", { error: message })
     })

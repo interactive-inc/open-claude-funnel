@@ -6,7 +6,9 @@ import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-di
 
 const hoisted = {
   middlewareHandlers: [] as ((args: unknown) => Promise<void>)[],
-  errorHandlers: [] as ((error: unknown) => Promise<void> | void)[],
+  // SocketModeClient lifecycle handlers the listener registers, keyed by event
+  // name ("connected" / "disconnected"), so a test can drive the real events.
+  socketHandlers: new Map<string, () => void>(),
   mockApp: null as MockApp | null,
   appConstructorCalls: 0,
   // When set, the next-constructed FakeApp's auth.test rejects with this.
@@ -26,6 +28,16 @@ type MockApp = {
 }
 
 mock.module("@slack/bolt", () => {
+  class FakeSocketModeClient {
+    on(event: string, handler: () => void): void {
+      hoisted.socketHandlers.set(event, handler)
+    }
+  }
+
+  class FakeSocketModeReceiver {
+    client = new FakeSocketModeClient()
+  }
+
   class FakeApp {
     use: ReturnType<typeof mock>
     error: ReturnType<typeof mock>
@@ -48,9 +60,7 @@ mock.module("@slack/bolt", () => {
       this.use = mock((handler: (args: unknown) => Promise<void>) => {
         hoisted.middlewareHandlers.push(handler)
       })
-      this.error = mock((handler: (error: unknown) => Promise<void> | void) => {
-        hoisted.errorHandlers.push(handler)
-      })
+      this.error = mock(() => {})
       this.action = mock(() => {})
       this.start = mock(() => Promise.resolve(undefined))
       this.stop = mock(() => Promise.resolve(undefined))
@@ -61,6 +71,7 @@ mock.module("@slack/bolt", () => {
   return {
     LogLevel: { ERROR: "ERROR" },
     App: FakeApp,
+    SocketModeReceiver: FakeSocketModeReceiver,
   }
 })
 
@@ -75,7 +86,7 @@ const buildConfig = (): SlackConnectorConfig => ({
 
 beforeEach(() => {
   hoisted.middlewareHandlers.length = 0
-  hoisted.errorHandlers.length = 0
+  hoisted.socketHandlers.clear()
   hoisted.mockApp = null
   hoisted.appConstructorCalls = 0
   hoisted.authError = null
@@ -83,7 +94,7 @@ beforeEach(() => {
 
 afterEach(() => {
   hoisted.middlewareHandlers.length = 0
-  hoisted.errorHandlers.length = 0
+  hoisted.socketHandlers.clear()
   hoisted.mockApp = null
   hoisted.authError = null
 })
@@ -574,21 +585,34 @@ describe("FunnelSlackListener: liveness", () => {
     expect(listener.isAlive()).toBe(true)
   })
 
-  test("flips to not-alive when a non-recoverable Socket Mode error fires", async () => {
+  test("flips to not-alive when the Socket Mode client disconnects", async () => {
     // Before the fix, isAlive() was `this.app !== null`, which stays true after
     // the socket dies, so the supervisor never restarts a silently-dead
-    // connection. The app.error handler must now mark the listener disconnected.
-    const diagnosticLog = new MemoryConnectorDiagnosticLog()
-    const listener = new FunnelSlackListener({ config: buildConfig(), diagnosticLog })
+    // connection. Liveness must follow the SocketModeClient's `disconnected`
+    // event — the actual signal the library emits when the socket drops.
+    const listener = new FunnelSlackListener({ config: buildConfig() })
 
     await listener.start(async () => {})
     expect(listener.isAlive()).toBe(true)
 
-    expect(hoisted.errorHandlers).toHaveLength(1)
-    await hoisted.errorHandlers[0]?.(new Error("invalid_auth"))
+    const onDisconnected = hoisted.socketHandlers.get("disconnected")
+    expect(onDisconnected).toBeDefined()
+    onDisconnected?.()
 
     expect(listener.isAlive()).toBe(false)
-    expect(diagnosticLog.queryConnection({ status: "error" })[0]?.detail).toBe("invalid_auth")
+  })
+
+  test("reports alive again when the client reconnects", async () => {
+    const listener = new FunnelSlackListener({ config: buildConfig() })
+
+    await listener.start(async () => {})
+    hoisted.socketHandlers.get("disconnected")?.()
+    expect(listener.isAlive()).toBe(false)
+
+    // A recoverable blip the library auto-recovers from re-emits `connected`.
+    hoisted.socketHandlers.get("connected")?.()
+
+    expect(listener.isAlive()).toBe(true)
   })
 
   test("is not alive after stop()", async () => {
