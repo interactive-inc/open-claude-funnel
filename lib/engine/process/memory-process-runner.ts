@@ -32,6 +32,8 @@ export type AliveStub = (pid: number) => boolean
 
 export type ProcessListStub = (marker: string) => ProcessSnapshot[]
 
+export type StartTimeStub = (pid: number) => string | null
+
 export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
   readonly calls: MemoryProcessCall[] = []
   readonly killed: { pid: number; signal: string }[] = []
@@ -39,6 +41,7 @@ export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
   private syncHandler: MemoryProcessSyncHandler = () => empty
   private aliveStub: AliveStub | null = null
   private listStub: ProcessListStub | null = null
+  private startTimeStub: StartTimeStub | null = null
 
   on(handler: MemoryProcessHandler): this {
     this.handler = handler
@@ -60,6 +63,12 @@ export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
 
   onListProcessesContaining(stub: ProcessListStub): this {
     this.listStub = stub
+
+    return this
+  }
+
+  onGetStartTime(stub: StartTimeStub): this {
+    this.startTimeStub = stub
 
     return this
   }
@@ -127,5 +136,11 @@ export class MemoryFunnelProcessRunner extends FunnelProcessRunner {
     if (this.listStub) return this.listStub(marker)
 
     return []
+  }
+
+  getStartTime(pid: number): string | null {
+    if (this.startTimeStub) return this.startTimeStub(pid)
+
+    return null
   }
 }
