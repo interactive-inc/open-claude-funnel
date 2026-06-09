@@ -122,6 +122,14 @@ export class NodeFunnelProcessRunner extends FunnelProcessRunner {
     return this.listProcessesContainingPosix(marker)
   }
 
+  getStartTime(pid: number): string | null {
+    if (!Number.isInteger(pid) || pid <= 0) return null
+
+    if (isWindows()) return this.getStartTimeWindows(pid)
+
+    return this.getStartTimePosix(pid)
+  }
+
   private isAlivePosix(pid: number): boolean {
     const result = this.runSync(["ps", "-p", String(pid), "-o", "state="])
 
@@ -168,6 +176,34 @@ export class NodeFunnelProcessRunner extends FunnelProcessRunner {
     }
 
     return snapshots
+  }
+
+  private getStartTimePosix(pid: number): string | null {
+    // `ps -p <pid> -o lstart=` returns a fixed-format absolute timestamp that
+    // is stable across `ps` invocations for the same process. PID reuse after
+    // an abnormal death would produce a different lstart value.
+    const result = this.runSync(["ps", "-p", String(pid), "-o", "lstart="])
+
+    if (result.exitCode !== 0) return null
+
+    const value = result.stdout.trim()
+
+    if (!value) return null
+
+    return value
+  }
+
+  private getStartTimeWindows(pid: number): string | null {
+    const script = `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Select-Object -ExpandProperty CreationDate | ForEach-Object { $_.ToString("o") }`
+    const result = this.runSync(["powershell", "-NoProfile", "-Command", script])
+
+    if (result.exitCode !== 0) return null
+
+    const value = result.stdout.trim()
+
+    if (!value) return null
+
+    return value
   }
 
   private listProcessesContainingWindows(marker: string): ProcessSnapshot[] {

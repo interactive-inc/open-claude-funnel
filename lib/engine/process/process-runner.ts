@@ -40,7 +40,9 @@ export type ProcessSnapshot = {
  * callers do not branch on `process.platform`. `isAlive` checks whether a PID
  * names a live (non-zombie) process; `listProcessesContaining` enumerates
  * processes whose command line includes `marker`, used for funnel-gateway tag
- * matching across daemons that share a home dir.
+ * matching across daemons that share a home dir. `getStartTime` returns a
+ * stable string identifying when a PID was started, used to detect PID reuse
+ * after the original process died abnormally (no exit hook fired).
  */
 export abstract class FunnelProcessRunner {
   abstract run(command: string[], options?: RunOptions): Promise<RunResult>
@@ -50,4 +52,5 @@ export abstract class FunnelProcessRunner {
   abstract kill(pid: number, signal?: string): void
   abstract isAlive(pid: number): boolean
   abstract listProcessesContaining(marker: string): ProcessSnapshot[]
+  abstract getStartTime(pid: number): string | null
 }
