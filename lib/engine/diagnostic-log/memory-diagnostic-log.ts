@@ -10,7 +10,7 @@ import {
   type StoredConnectionEvent,
   type StoredProcessedEvent,
   type StoredRawEvent,
-} from "@/gateway/diagnostic-log/diagnostic-log"
+} from "@/engine/diagnostic-log/diagnostic-log"
 
 /**
  * In-process `ConnectorDiagnosticLog` backed by one array per table. Used by tests

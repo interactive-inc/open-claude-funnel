@@ -3,9 +3,9 @@ import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PRESETS, PRESETS_BY_CHANNEL } from "@/cli/routes/gateway.sql"
-import type { ConnectorConnectionStatus } from "@/gateway/diagnostic-log/diagnostic-log"
-import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
-import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+import type { ConnectorConnectionStatus } from "@/engine/diagnostic-log/diagnostic-log"
+import { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
+import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 

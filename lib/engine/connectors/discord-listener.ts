@@ -1,12 +1,13 @@
 import { Client, GatewayIntentBits, Partials } from "discord.js"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-processor"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type {
   ConnectorConnectionStatus,
   ConnectorDiagnosticLog,
-} from "@/gateway/diagnostic-log/diagnostic-log"
+} from "@/engine/diagnostic-log/diagnostic-log"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
 
 type Deps = {
@@ -95,13 +96,15 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       }
 
       // Record the verdict only after delivery resolves, and reflect a failed
-      // delivery as its own outcome. notify failures are swallowed (not
-      // rethrown) here, but the diagnostic row is still kept.
+      // delivery as its own outcome. Unlike Slack (Bolt routes handler throws
+      // to app.error) a rethrow here would surface as an unhandledRejection —
+      // discord.js does not catch async listener errors — so the failure is
+      // swallowed after the diagnostic row and error log are written.
       try {
         await notify(result.content, result.meta)
       } catch (error) {
         this.recordProcessed(eventId, rawEvent, "emitted:delivery-failed", result.content)
-        this.logger?.error("discord notify error", { error: messageOf(error) })
+        this.logger?.error("discord notify error", { error: errorMessageOf(error) })
         return
       }
 
@@ -117,8 +120,8 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
     })
 
     client.on("error", (error) => {
-      this.recordConnection("error", messageOf(error))
-      this.logger?.error("discord client error", { error: messageOf(error) })
+      this.recordConnection("error", errorMessageOf(error))
+      this.logger?.error("discord client error", { error: errorMessageOf(error) })
     })
 
     try {
@@ -134,7 +137,7 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       // login both validates the token and opens the gateway, so a bad token
       // surfaces here. Discord has no separate auth check (unlike Slack's
       // auth.test), so all login failures land as a single "error".
-      this.recordConnection("error", messageOf(error))
+      this.recordConnection("error", errorMessageOf(error))
       throw error
     }
 
@@ -149,8 +152,8 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       await this.client.destroy()
       this.recordConnection("disconnected", "")
     } catch (error) {
-      this.recordConnection("error", messageOf(error))
-      this.logger?.error("discord stop error", { error: messageOf(error) })
+      this.recordConnection("error", errorMessageOf(error))
+      this.logger?.error("discord stop error", { error: errorMessageOf(error) })
     } finally {
       this.client = null
       this.recordConnection("stopped", "")
@@ -196,8 +199,4 @@ export class FunnelDiscordListener extends FunnelConnectorListener {
       detail,
     })
   }
-}
-
-const messageOf = (error: unknown): string => {
-  return error instanceof Error ? error.message : String(error)
 }

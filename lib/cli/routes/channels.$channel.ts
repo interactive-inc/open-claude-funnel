@@ -3,7 +3,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 
 const showHelp = `funnel channels <name> / show channel details
 

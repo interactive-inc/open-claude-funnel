@@ -2,7 +2,8 @@ import type { Context } from "hono"
 import { factory } from "@/cli/factory"
 import type { Env } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
-import { renderYaml } from "@/cli/yaml-render"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 
 const groupHelp = `funnel gateway / manage the funnel daemon
 
@@ -70,7 +71,7 @@ export const renderGatewayStatus = async (c: Context<Env>) => {
     return c.text(renderYaml({ running: false }), 503)
   }
 
-  const res = await fetch(`http://127.0.0.1:${status.port}/status`).catch(() => null)
+  const res = await fetch(`${gatewayLoopbackUrl(status.port)}/status`).catch(() => null)
 
   if (!res) {
     return c.text(

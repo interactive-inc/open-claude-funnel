@@ -7,7 +7,7 @@ import type {
 import { ScheduleStateStore } from "@/engine/connectors/schedule-state-store"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
-import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
 const buildEntry = (overrides: Partial<ScheduleEntry> = {}): ScheduleEntry => ({
   id: "e1",

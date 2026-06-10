@@ -1,4 +1,4 @@
-import type { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
+import type { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
 
 export type DiagnosticEvent = {
   seq: number | null

@@ -1,6 +1,6 @@
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 
 const groupHelp = `funnel profiles / manage launch profiles
 

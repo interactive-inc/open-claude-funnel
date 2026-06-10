@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, vi, test } from "vitest"
 import { FunnelDiscordListener } from "@/engine/connectors/discord-listener"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
-import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
 type Handler = (...args: unknown[]) => void | Promise<void>
 

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { gatewayLoopbackUrl } from "@/gateway/gateway-base-url"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 
 type Deps = {
   port: number

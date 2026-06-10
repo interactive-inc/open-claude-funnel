@@ -8,7 +8,7 @@ import { Funnel } from "@/funnel"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { buildServiceRoutes } from "@/gateway/service-routes"
 import { isAddressInUseError } from "@/gateway/is-address-in-use-error"
-import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
 
 // Raw rows can each hold up to ~256 KiB, so they get a tight cap (~5k rows ≈
 // 1.3 GiB worst case); the small verdict/lifecycle rows get a looser one.

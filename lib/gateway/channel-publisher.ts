@@ -1,4 +1,4 @@
-import { gatewayLoopbackUrl } from "@/gateway/gateway-base-url"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import {
   publishResponseSchema,
   type PublishRequest,

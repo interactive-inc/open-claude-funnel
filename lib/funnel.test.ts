@@ -44,7 +44,7 @@ describe("Funnel facade", () => {
     expect(funnel.profiles.get("default")?.channelId).toBe(channel.id)
   })
 
-  test("channels.remove works without a profileChecker wired", () => {
+  test("channels.remove refuses while a profile still references the channel", () => {
     const funnel = buildFunnel()
     const channel = funnel.channels.add({ name: "ops" })
 
@@ -53,6 +53,10 @@ describe("Funnel facade", () => {
       path: "/repo",
       channelId: channel.id,
     })
+
+    expect(() => funnel.channels.remove("ops")).toThrow("referenced by a profile")
+
+    funnel.profiles.remove("default")
 
     expect(() => funnel.channels.remove("ops")).not.toThrow()
   })

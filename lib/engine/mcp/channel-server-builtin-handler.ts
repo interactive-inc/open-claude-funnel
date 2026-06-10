@@ -6,7 +6,7 @@ import {
   type ToolResult,
 } from "@/engine/mcp/channel-server-http"
 import type { BuiltinToolName } from "@/engine/mcp/channel-server-tools"
-import { FunnelDocs } from "@/services/docs/funnel-docs"
+import { FunnelDocs } from "@/engine/docs/funnel-docs"
 
 type ChannelSummary = { id: string; name: string }
 

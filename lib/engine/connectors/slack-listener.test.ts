@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { FunnelSlackListener } from "@/engine/connectors/slack-listener"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 import type { SlackRawEvent } from "@/engine/connectors/slack-event-processor"
-import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
 const hoisted = {
   middlewareHandlers: [] as ((args: unknown) => Promise<void>)[],

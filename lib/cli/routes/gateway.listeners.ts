@@ -1,7 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 
 const listenersHelp = `funnel gateway listeners / show running connector listeners
 

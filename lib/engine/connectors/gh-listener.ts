@@ -1,12 +1,13 @@
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import type {
   ConnectorConnectionStatus,
   ConnectorDiagnosticLog,
-} from "@/gateway/diagnostic-log/diagnostic-log"
+} from "@/engine/diagnostic-log/diagnostic-log"
 import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
 
 const ghNotificationSchema = z.object({
@@ -166,8 +167,12 @@ export class FunnelGhListener extends FunnelConnectorListener {
       this.since = nextSince
       this.bootstrapped = true
     } catch (error) {
+      // Lands here on process spawn failures, JSON.parse errors, and notify
+      // throws. Recording the connection row keeps these visible to
+      // diagnostics alongside the gh-api / schema failures recorded above.
+      this.recordConnection("error", errorMessageOf(error))
       this.logger?.error("gh poll error", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessageOf(error),
       })
     }
   }

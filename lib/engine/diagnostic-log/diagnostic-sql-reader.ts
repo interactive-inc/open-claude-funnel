@@ -15,7 +15,7 @@ type Row = Record<string, unknown>
  * Read-only SQL surface over the three diagnostic tables, for Claude to query
  * the log with arbitrary `SELECT`s. It opens all files read-only and exposes
  * three views — `raw`, `processed`, `connection` — that hide the storage
- * details (the physical table is `leuco_log` and each row's columns live
+ * details (the physical table is `logs` and each row's columns live
  * inside a JSON `event` blob): the views surface the columns as plain fields,
  * with `payload` already pulled out of the nested JSON.
  *

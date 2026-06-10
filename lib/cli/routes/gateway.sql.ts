@@ -4,9 +4,9 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
-import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
+import { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
 
 export const PRESETS: Record<string, string> = {
   recent: "SELECT seq, ts, type, outcome FROM processed ORDER BY seq DESC LIMIT 20",

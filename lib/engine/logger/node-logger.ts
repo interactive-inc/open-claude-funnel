@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { redactSecrets } from "@/engine/logger/redact-secrets"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
 const defaultLogFile = (): string => join(funnelTmpDir(), "funnel.log")
@@ -45,6 +46,8 @@ export class NodeFunnelLogger extends FunnelLogger {
       ...(meta ? { meta } : {}),
     }
 
-    appendFileSync(this.file, `${JSON.stringify(entry)}\n`)
+    // Redact on the serialized line so secrets are caught wherever they hide —
+    // message text, nested meta values, or stringified error payloads alike.
+    appendFileSync(this.file, `${redactSecrets(JSON.stringify(entry))}\n`)
   }
 }

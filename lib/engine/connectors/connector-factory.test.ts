@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
-import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
 vi.mock("@slack/bolt", () => {
   class FakeApp {

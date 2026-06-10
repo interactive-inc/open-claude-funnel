@@ -1,11 +1,12 @@
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import { matchCron } from "@/engine/connectors/match-cron"
 import { ScheduleStateStore } from "@/engine/connectors/schedule-state-store"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type {
   ConnectorConnectionStatus,
   ConnectorDiagnosticLog,
-} from "@/gateway/diagnostic-log/diagnostic-log"
+} from "@/engine/diagnostic-log/diagnostic-log"
 import type {
   ScheduleConnectorConfig,
   ScheduleEntry,
@@ -192,7 +193,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
         this.logger?.error("schedule onFired callback failed", {
           connector: this.config.name,
           id: entry.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessageOf(error),
         })
       }
     }
@@ -242,7 +243,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private logInvalidCron(entry: Pick<ScheduleEntry, "id" | "cron">, error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = errorMessageOf(error)
 
     this.recordConnection("error", `invalid cron "${entry.cron}" (entry ${entry.id}): ${message}`)
     this.logger?.error("invalid cron expression in schedule", {

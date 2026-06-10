@@ -13,7 +13,7 @@ import {
   type SlackOnAppCreated,
   type SlackPreprocessEvent,
 } from "@/engine/connectors/slack-listener"
-import type { ConnectorDiagnosticLog } from "@/gateway/diagnostic-log/diagnostic-log"
+import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelLogger } from "@/engine/logger/logger"

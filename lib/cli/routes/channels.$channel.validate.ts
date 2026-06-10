@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { zValidator } from "@/cli/router/validator"
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 import { HTTPException } from "hono/http-exception"
 
 type ConnectorIssue = {

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 import { handleBuiltinTool } from "@/engine/mcp/channel-server-builtin-handler"
 import { buildChannelServerInstructions } from "@/engine/mcp/channel-server-instructions"
 import {
@@ -18,7 +18,7 @@ import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
 import { readGatewayToken } from "@/engine/mcp/read-gateway-token"
 import { settingsSchema } from "@/engine/settings/settings-schema"
 import { resolveFunnelPort } from "@/engine/settings/settings-store"
-import { gatewayLoopbackUrl } from "@/gateway/gateway-base-url"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 
 const DEFAULT_FUNNEL_DIR = join(homedir(), ".funnel")
 

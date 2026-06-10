@@ -1,6 +1,7 @@
 import { join } from "node:path"
 import type { Hono } from "hono"
 import { hc } from "hono/client"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import type { GatewayApp } from "@/gateway/routes"
 import {
   FunnelConnectorFactory,
@@ -12,7 +13,7 @@ import { FunnelClaude } from "@/engine/claude/claude"
 import { FileProcessGuard } from "@/engine/claude/file-process-guard"
 import { FunnelDiagnostics } from "@/services/diagnostics/funnel-diagnostics"
 import { FunnelDoctor } from "@/services/doctor/funnel-doctor"
-import { FunnelDocs } from "@/services/docs/funnel-docs"
+import { FunnelDocs } from "@/engine/docs/funnel-docs"
 import { FunnelLocalConfig } from "@/services/local-config/local-config"
 import { FunnelLocalConfigSync } from "@/services/local-config/local-config-sync"
 import { FunnelMcp } from "@/engine/mcp/mcp"
@@ -40,7 +41,7 @@ import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
-import type { ConnectorDiagnosticLog } from "@/gateway/diagnostic-log/diagnostic-log"
+import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { Env } from "@/gateway/factory"
 import { FunnelGateway } from "@/gateway/gateway"
 import { FunnelGatewayServer, type GatewayEventStore } from "@/gateway/gateway-server"
@@ -193,11 +194,16 @@ export class Funnel {
       scheduleListenerOptions: props.scheduleListenerOptions,
     })
 
+    this.profiles = new FunnelProfiles({ store, idGenerator, fs })
+
+    // profiles doubles as the ProfileChannelChecker so channels.remove can
+    // refuse to orphan a profile that still points at the channel.
     this.channels = new FunnelChannels({
       store,
       factory,
       clock,
       idGenerator,
+      profileChecker: this.profiles,
     })
 
     this.gateway = new FunnelGateway({
@@ -224,7 +230,6 @@ export class Funnel {
     })
 
     const mcp = new FunnelMcp({ fs })
-    this.profiles = new FunnelProfiles({ store, idGenerator, fs })
     this.localConfig = new FunnelLocalConfig({ fs })
     this.localConfigSync = new FunnelLocalConfigSync({
       channels: this.channels,
@@ -337,6 +342,6 @@ export class Funnel {
   gatewayClient(): ReturnType<typeof hc<GatewayApp>> {
     const { port } = this.gateway.getStatus()
 
-    return hc<GatewayApp>(`http://127.0.0.1:${port}`)
+    return hc<GatewayApp>(gatewayLoopbackUrl(port))
   }
 }

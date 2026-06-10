@@ -1,4 +1,5 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 
 const RECONNECT_DELAY = 1000
 const MAX_RECONNECT_DELAY = 10000
@@ -12,6 +13,8 @@ type Props = {
 type State = {
   reconnectDelay: number
   lastOffset: number
+  isStarted: boolean
+  hasPendingReconnect: boolean
 }
 
 /**
@@ -20,13 +23,21 @@ type State = {
  * Reconnects with exponential backoff and replays missed events via `?since=<offset>`.
  */
 export class FunnelChannelSubscriber {
-  private readonly state: State = { reconnectDelay: RECONNECT_DELAY, lastOffset: 0 }
+  private readonly state: State = {
+    reconnectDelay: RECONNECT_DELAY,
+    lastOffset: 0,
+    isStarted: false,
+    hasPendingReconnect: false,
+  }
 
   constructor(private readonly props: Props) {
     Object.freeze(this)
   }
 
   start(): void {
+    if (this.state.isStarted) return
+
+    this.state.isStarted = true
     this.connect()
   }
 
@@ -43,8 +54,16 @@ export class FunnelChannelSubscriber {
     ws.addEventListener("message", (event) => this.handleMessage(event))
 
     ws.addEventListener("close", () => {
+      // A socket emits close once, but a stray double-start or an error+close
+      // pair must never stack reconnect loops — one pending attempt at a time.
+      if (this.state.hasPendingReconnect) return
+
+      this.state.hasPendingReconnect = true
       process.stderr.write(`funnel: disconnected, reconnecting in ${this.state.reconnectDelay}ms\n`)
-      setTimeout(() => this.connect(), this.state.reconnectDelay)
+      setTimeout(() => {
+        this.state.hasPendingReconnect = false
+        this.connect()
+      }, this.state.reconnectDelay)
       this.state.reconnectDelay = Math.min(this.state.reconnectDelay * 2, MAX_RECONNECT_DELAY)
     })
 
@@ -72,9 +91,7 @@ export class FunnelChannelSubscriber {
         },
       })
     } catch (error) {
-      process.stderr.write(
-        `funnel: error: ${error instanceof Error ? error.message : String(error)}\n`,
-      )
+      process.stderr.write(`funnel: error: ${errorMessageOf(error)}\n`)
     }
   }
 }

@@ -1,4 +1,4 @@
-import { renderYaml } from "@/cli/yaml-render"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 
 export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean }
 

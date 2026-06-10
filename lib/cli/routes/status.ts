@@ -2,7 +2,8 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
-import { renderYaml } from "@/cli/yaml-render"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { renderYaml } from "@/engine/yaml/yaml-render"
 import type { Funnel } from "@/funnel"
 import type { FunnelProfiles } from "@/engine/profiles/profiles"
 
@@ -61,7 +62,7 @@ const buildStatusReport = async (funnel: Funnel, profiles: FunnelProfiles) => {
   let gatewayData: GatewayStatus | null = null
 
   if (gatewayStatus.running) {
-    const res = await fetch(`http://127.0.0.1:${gatewayStatus.port}/status`).catch(() => null)
+    const res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`).catch(() => null)
 
     if (res && res.ok) {
       const body: unknown = await res.json()
@@ -93,6 +94,10 @@ const buildStatusReport = async (funnel: Funnel, profiles: FunnelProfiles) => {
     gateway: gatewayStatus.running
       ? {
           running: true,
+          // A daemon whose PID is alive but whose HTTP surface stopped
+          // answering is a distinct failure mode — surface it instead of
+          // letting it masquerade as healthy with null fields.
+          responsive: gatewayData !== null,
           pid: gatewayStatus.pid,
           port: gatewayStatus.port,
           uptimeMs: gatewayData?.uptimeMs ?? null,

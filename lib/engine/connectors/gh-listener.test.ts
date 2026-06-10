@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { FunnelGhListener } from "@/engine/connectors/gh-listener"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
-import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
 const config = { type: "gh" as const, id: "g-id", name: "g" }
 

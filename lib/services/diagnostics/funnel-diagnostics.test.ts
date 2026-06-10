@@ -3,7 +3,7 @@ import { rmSync } from "node:fs"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
 import { FunnelDiagnostics } from "@/services/diagnostics/funnel-diagnostics"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 

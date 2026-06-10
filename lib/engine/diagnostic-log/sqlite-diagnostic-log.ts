@@ -18,7 +18,7 @@ import {
   type StoredConnectionEvent,
   type StoredProcessedEvent,
   type StoredRawEvent,
-} from "@/gateway/diagnostic-log/diagnostic-log"
+} from "@/engine/diagnostic-log/diagnostic-log"
 import { FunnelLogSqliteSink } from "@/logger/funnel-log-sqlite-sink"
 
 /**

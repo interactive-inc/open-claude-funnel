@@ -3,9 +3,9 @@ import { Database } from "bun:sqlite"
 import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ConnectorDiagnosticLog } from "@/gateway/diagnostic-log/diagnostic-log"
-import { MemoryConnectorDiagnosticLog } from "@/gateway/diagnostic-log/memory-diagnostic-log"
-import { SqliteConnectorDiagnosticLog } from "@/gateway/diagnostic-log/sqlite-diagnostic-log"
+import { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
+import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 

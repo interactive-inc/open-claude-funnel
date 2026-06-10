@@ -54,12 +54,12 @@ gateway 内に常駐する 2 つの裏方。Supervisor は Listener の起動 / 
 
 ### Diagnostics と Recovery と Doctor と Docs サービス
 
-エンジン（コアドメイン）の上に乗る interface-layer の orchestrator 群。`lib/services/` 直下に置く（engine と混ぜない — engine は名詞、services は動詞）。プログラマブル API・CLI・MCP の三経路から同じロジックを呼ぶための薄い service 群で、すべて narrow interface に依存し `Funnel` facade に乗る。
+エンジン（コアドメイン）の上に乗る interface-layer の orchestrator 群。`lib/services/` 直下に置く（engine と混ぜない — engine は名詞、services は動詞）。プログラマブル API・CLI・MCP の三経路から同じロジックを呼ぶための薄い service 群で、すべて narrow interface に依存し `Funnel` facade に乗る。例外は Docs で、依存ゼロの静的データなので engine（`lib/engine/docs/`）に置く（MCP server が engine 内から参照するため）。
 
 - `FunnelDiagnostics`（`lib/services/diagnostics/`）— `diagnose()` / `diagnoseAll()` / `recentEvents()` / `droppedEvents()` / `connectionErrors()` / `replay()`。read-side のみで mutation しない。`/tmp/funnel/connector-*.db` の SQL を読む
 - `FunnelRecovery`（`lib/services/recovery/`）— `ensureGatewayRunning()` / `restartGateway()` / `restartListener()` / `restartAllDeadListeners()`。すべて `RecoveryResult { ok, actions, message }` を返す（throw しない）。building block 扱いで CLI / MCP からは直接呼ばない（Doctor が orchestrate する）
 - `FunnelDoctor`（`lib/services/doctor/`）— `run(mode)` 1 つだけ。`mode` は `off`（読み取り）/ `safe`（gateway 起動 + dead listener 再起動）/ `aggressive`（さらに gateway 再起動）。CLI の `fnl doctor`、MCP の `fnl_doctor`、SDK の `funnel.doctor.run()` がすべてこれを呼ぶ
-- `FunnelDocs`（`lib/services/docs/`）— `list()` / `get(topic)`。本文は `lib/services/docs/topics/docs-*.ts` から import
+- `FunnelDocs`（`lib/engine/docs/`）— `list()` / `get(topic)`。本文は `lib/engine/docs/topics/docs-*.ts` から import
 
 ### イベントの旅
 
@@ -244,7 +244,7 @@ graph TD
 
 ### lib/services
 
-エンジンの上に乗る interface-layer の orchestrator（動詞）。engine の primitive を組み合わせて 1 つの意味ある操作にまとめる薄い層で、CLI / MCP / SDK の 3 経路から同じ実装を呼ばせるために存在する。現在のサービスは `diagnostics` / `recovery` / `doctor` / `docs` / `local-config` の 5 つで、すべて narrow interface だけに依存し具体クラスを知らない。engine は services を知らない（依存は services → engine の一方向）。
+エンジンの上に乗る interface-layer の orchestrator（動詞）。engine の primitive を組み合わせて 1 つの意味ある操作にまとめる薄い層で、CLI / MCP / SDK の 3 経路から同じ実装を呼ばせるために存在する。現在のサービスは `diagnostics` / `recovery` / `doctor` / `local-config` の 4 つで、すべて narrow interface だけに依存し具体クラスを知らない。engine は services を知らない（依存は services → engine の一方向）。docs は依存ゼロの静的データなので engine 側（`lib/engine/docs/`）にある。
 
 ### lib/engine/connectors
 
@@ -291,7 +291,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - `--channel <name>` 等の名前は CLI ハンドラ層で id に解決してから engine に渡す。engine 側は id を受け取る
 - claude への argv 転送は `dispatchClaude` の `parse` で funnel 専用フラグ（`--profile` / `-p` / `--channel` / `--help` / `-h`）だけ取り出し、残りは verbatim に append。`queryToCliArgs` は他コマンド経路だけが使う
 - 各 route の help text 末尾に `programmable: funnel.<surface>.<method>()` を 1 行入れる（CLI と SDK の対応を Claude が辿れるように）。SDK 等価が無いコマンド（`fnl update` 等）はその旨を明記する
-- ドキュメント本文（`lib/services/docs/topics/docs-*.ts`）は `programmable API:` セクションと `related: fnl docs ...` 行で締める
+- ドキュメント本文（`lib/engine/docs/topics/docs-*.ts`）は `programmable API:` セクションと `related: fnl docs ...` 行で締める
 
 ### CLI と MCP と SDK の三方共有パターン
 
@@ -324,9 +324,9 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 
 ### ドキュメントの所在
 
-ユーザー向けドキュメントは `lib/services/docs/topics/docs-<topic>.ts` に置く（`fnl docs <topic>` で引ける）。README.md や外部 doc サイトは持たない。新しいトピックを追加する手順。
+ユーザー向けドキュメントは `lib/engine/docs/topics/docs-<topic>.ts` に置く（`fnl docs <topic>` で引ける）。README.md や外部 doc サイトは持たない。新しいトピックを追加する手順。
 
-- `lib/services/docs/topics/docs-<name>.ts` を書く（`export const docs<Name> = ...`）
+- `lib/engine/docs/topics/docs-<name>.ts` を書く（`export const docs<Name> = ...`）
 - `lib/engine/docs/funnel-docs.ts` の `DOCS` と `SUMMARIES` に追加
 
 ### Connectors

@@ -1,6 +1,7 @@
 import { App, LogLevel, SocketModeReceiver } from "@slack/bolt"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 import {
   FunnelSlackEventProcessor,
@@ -10,7 +11,7 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import type {
   ConnectorConnectionStatus,
   ConnectorDiagnosticLog,
-} from "@/gateway/diagnostic-log/diagnostic-log"
+} from "@/engine/diagnostic-log/diagnostic-log"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 
 const middlewareArgsSchema = z.object({
@@ -123,7 +124,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       // A bad/expired token surfaces here, before the socket opens — the most
       // common "no events ever arrive" cause. Record it so it is visible in
       // the connection table, then let the supervisor see the failure.
-      this.recordConnection("auth-failed", messageOf(error))
+      this.recordConnection("auth-failed", errorMessageOf(error))
       throw error
     }
 
@@ -203,7 +204,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     })
 
     app.error(async (error) => {
-      const message = messageOf(error)
+      const message = errorMessageOf(error)
       this.recordConnection("error", message)
       this.logger?.error("Slack error", { error: message })
     })
@@ -213,7 +214,7 @@ export class FunnelSlackListener extends FunnelConnectorListener {
     try {
       await app.start()
     } catch (error) {
-      this.recordConnection("error", messageOf(error))
+      this.recordConnection("error", errorMessageOf(error))
       throw error
     }
 
@@ -229,8 +230,8 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       await this.app.stop()
       this.recordConnection("disconnected", "")
     } catch (error) {
-      this.recordConnection("error", messageOf(error))
-      this.logger?.error("Slack stop error", { error: messageOf(error) })
+      this.recordConnection("error", errorMessageOf(error))
+      this.logger?.error("Slack stop error", { error: errorMessageOf(error) })
     } finally {
       this.app = null
       this.connected = false
@@ -277,8 +278,4 @@ export class FunnelSlackListener extends FunnelConnectorListener {
       detail,
     })
   }
-}
-
-const messageOf = (error: unknown): string => {
-  return error instanceof Error ? error.message : String(error)
 }

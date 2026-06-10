@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 import type {
   DiagnosticConnectionError,
@@ -10,7 +11,7 @@ import {
   toDiagnosticConnectionError,
   toDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event"
-import { ConnectorDiagnosticSqlReader } from "@/gateway/diagnostic-log/diagnostic-sql-reader"
+import { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
 
 /** Narrow channel registry — only `list()` is needed. */
 export type DiagnosticsChannelSource = {
@@ -476,7 +477,7 @@ export class FunnelDiagnostics {
     const token = this.props.gatewayToken.read()
     const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
-    const res = await fetch(`http://127.0.0.1:${gatewayStatus.port}/status`, { headers }).catch(
+    const res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, { headers }).catch(
       () => null,
     )
 
