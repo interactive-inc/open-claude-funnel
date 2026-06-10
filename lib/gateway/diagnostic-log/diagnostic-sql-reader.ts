@@ -91,7 +91,7 @@ const rawViewSql = `CREATE TEMP VIEW raw AS SELECT
   json_extract(event, '$.connector_id') AS connector_id,
   json_extract(event, '$.channel_id')   AS channel_id,
   json_extract(event, '$.payload')      AS payload
-FROM main.leuco_log`
+FROM main.logs`
 
 const processedViewSql = `CREATE TEMP VIEW processed AS SELECT
   seq,
@@ -102,7 +102,7 @@ const processedViewSql = `CREATE TEMP VIEW processed AS SELECT
   json_extract(event, '$.channel_id')   AS channel_id,
   json_extract(event, '$.outcome')      AS outcome,
   json_extract(event, '$.payload')      AS payload
-FROM processeddb.leuco_log`
+FROM processeddb.logs`
 
 const connectionViewSql = `CREATE TEMP VIEW connection AS SELECT
   seq,
@@ -112,4 +112,4 @@ const connectionViewSql = `CREATE TEMP VIEW connection AS SELECT
   json_extract(event, '$.channel_id')   AS channel_id,
   json_extract(event, '$.status')       AS status,
   json_extract(event, '$.detail')       AS detail
-FROM connectiondb.leuco_log`
+FROM connectiondb.logs`
