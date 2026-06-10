@@ -200,7 +200,7 @@ describe.skipIf(!isBun)("FunnelLogSqliteSink", () => {
 
   it("migrate advances PRAGMA user_version to the latest schema", () => {
     const sink = new FunnelLogSqliteSink<Event>({ path: ":memory:" })
-    expect(sink.getSchemaVersion()).toBe(1)
+    expect(sink.getSchemaVersion()).toBe(2)
     sink.close()
   })
 

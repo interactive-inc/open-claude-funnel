@@ -199,11 +199,45 @@ const buildDiagnosis = (
     }
   }
 
+  const slackEventGap = diagnoseSlackEventSubscriptionGap(report)
+
+  if (slackEventGap !== null) {
+    return slackEventGap
+  }
+
   return {
     status: "ok",
     message: "everything looks healthy",
     nextActions: [],
     rootCause: null,
+  }
+}
+
+const diagnoseSlackEventSubscriptionGap = (
+  report: Omit<ChannelDiagnosis, "diagnosis">,
+): ChannelDiagnosis["diagnosis"] | null => {
+  const hasSlackListener = report.listeners.some((listener) => listener.type === "slack")
+
+  if (!hasSlackListener || report.recentEvents.length === 0) return null
+
+  const slackEvents = report.recentEvents
+    .filter((event) => event.type === "slack")
+    .map((event) => event.payloadParsed?.type)
+
+  if (slackEvents.length === 0) return null
+
+  const sawAppMention = slackEvents.includes("app_mention")
+  const sawMessage = slackEvents.includes("message")
+
+  if (!sawAppMention || sawMessage) return null
+
+  return {
+    status: "warn",
+    message: "Slack is only delivering app_mention events; unmentioned thread replies may not arrive",
+    nextActions: [
+      "Add Slack bot events: message.channels, message.groups, message.im, message.mpim; reinstall the app; then restart the gateway",
+    ],
+    rootCause: "Slack Event Subscriptions likely omit message.* events",
   }
 }
 

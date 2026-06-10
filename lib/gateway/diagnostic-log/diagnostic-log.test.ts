@@ -400,7 +400,7 @@ describe.skipIf(!isBun)("SqliteConnectorDiagnosticLog forward-compat", () => {
       detail: "",
     })
     writer
-      .prepare("INSERT INTO leuco_log (ts, type, event) VALUES (?, ?, ?)")
+      .prepare("INSERT INTO logs (ts, type, event) VALUES (?, ?, ?)")
       .run(1, "slack", event)
     writer.close()
 
