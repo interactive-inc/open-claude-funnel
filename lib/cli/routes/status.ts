@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { booleanFlag } from "@/cli/router/boolean-flag"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
@@ -12,7 +13,7 @@ const statusHelp = `funnel status / overall health snapshot
 usage / funnel status [--watch] [--interval <N>]
 
 options:
-  --watch / continuously refresh (Ctrl+C to stop)
+  --watch / continuously refresh (default: off; Ctrl+C to stop)
   --interval <N> / polling interval in seconds (default 3)
 
 output / valid YAML
@@ -128,14 +129,14 @@ export const statusHandler = factory.createHandlers(
   zValidator(
     "query",
     z.object({
-      watch: z.enum(["true", "false", ""]).optional(),
+      watch: booleanFlag,
       interval: z.string().optional(),
     }),
   ),
   async (c) => {
     const query = c.req.valid("query")
     const funnel = c.env.funnel
-    const isWatch = query.watch === "true" || query.watch === ""
+    const isWatch = query.watch === true
     const intervalSec = Math.min(60, Math.max(1, query.interval ? Number(query.interval) : 3))
 
     if (!isWatch) {

@@ -1,4 +1,5 @@
 import { claudeHelp } from "@/cli/routes/claude"
+import { notFoundMessage } from "@/cli/routes/not-found-message"
 import type { FunnelClaude } from "@/engine/claude/claude"
 import type { ChannelSpec, LocalConfig } from "@/services/local-config/local-config-schema"
 import type { FunnelLocalConfig } from "@/services/local-config/local-config"
@@ -239,9 +240,16 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
       return { stdout: null, stderr: null, exitCode }
     }
 
+    const localNames = localForProfile?.profiles?.map((p) => p.name) ?? []
+
     return {
       stdout: null,
-      stderr: `error: profile "${parsed.profile}" not found`,
+      stderr: `error: ${notFoundMessage({
+        kind: "profile",
+        name: parsed.profile,
+        available: [...profiles.list().map((p) => p.name), ...localNames],
+        nextAction: "fnl profiles add <name> --path=<repo> --channel=<channel>",
+      })}`,
       exitCode: 1,
     }
   }

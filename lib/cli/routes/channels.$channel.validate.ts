@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { notFoundMessage } from "@/cli/routes/not-found-message"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/engine/yaml/yaml-render"
 import { HTTPException } from "hono/http-exception"
@@ -108,7 +109,14 @@ export const channelsValidateHandler = factory.createHandlers(
     const channel = funnel.channels.get(param.channel)
 
     if (!channel) {
-      throw new HTTPException(404, { message: `channel "${param.channel}" not found` })
+      throw new HTTPException(404, {
+        message: notFoundMessage({
+          kind: "channel",
+          name: param.channel,
+          available: funnel.channels.list().map((ch) => ch.name),
+          nextAction: "fnl channels add <name>",
+        }),
+      })
     }
 
     if (channel.connectors.length === 0) {

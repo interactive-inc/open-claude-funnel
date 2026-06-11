@@ -1,10 +1,10 @@
 import { factory } from "@/cli/factory"
 
-const help = `funnel channels rename — rename a channel
+export const channelsRenameHelp = `funnel channels rename — rename a channel
 
 usage:
-  funnel channels rename <old> <new>
-  funnel channels <old> rename <new>
+  funnel channels rename <old-channel-name> <new-channel-name>
+  funnel channels <old-channel-name> rename <new-channel-name>
 
 Renames the channel in the configuration file. Connectors, schedules,
 and delivery mode are preserved. The gateway picks up the new name on
@@ -16,4 +16,4 @@ examples:
 
 see also: funnel channels, funnel channels <name>`
 
-export const channelsRenameHelpHandler = factory.createHandlers((c) => c.text(help))
+export const channelsRenameHelpHandler = factory.createHandlers((c) => c.text(channelsRenameHelp))

@@ -77,22 +77,28 @@ describe("CLI routes: channels", () => {
     expect(env.funnel.channels.get("workers")?.delivery).toBe("exclusive")
   })
 
-  test("POST /channels/add/:channel rejects an unknown delivery mode", async () => {
+  test("POST /channels/add/:channel rejects an unknown delivery mode with a readable message", async () => {
     const env = buildEnv()
 
     const res = await request(env, "POST", "/channels/add/ops?delivery=broadcast")
 
     expect(res.status).toBe(400)
+    expect(res.text).toContain("--delivery")
+    expect(res.text).not.toContain("ZodError")
     expect(env.funnel.channels.get("ops")).toBeNull()
   })
 
   test("POST /channels/remove/:channel returns an error for an unknown channel", async () => {
     const env = buildEnv()
 
+    env.funnel.channels.add({ name: "ops" })
+
     const res = await request(env, "POST", "/channels/remove/missing")
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(404)
     expect(res.text).toContain(`channel "missing" not found`)
+    expect(res.text).toContain("available: ops")
+    expect(res.text).toContain("fnl channels add")
   })
 
   test("POST /channels/remove/:channel refuses when a profile references it", async () => {

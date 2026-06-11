@@ -54,6 +54,63 @@ For targeted imports (smaller bundle / clearer dependency footprint):
   import { FunnelProfiles }      from "@interactive-inc/claude-funnel/profiles"
   import { FunnelLocalConfig }   from "@interactive-inc/claude-funnel/local-config"
 
+── in-process gateway: receive events in your own process ──────────────────
+
+The daemon (funnel.gateway.start()) runs in a separate process, so your code
+cannot observe its events directly. To receive events in-process, host the
+gateway yourself with gatewayServer():
+
+  import { Funnel, channelWsUrl } from "@interactive-inc/claude-funnel"
+
+  const funnel = new Funnel()
+  funnel.channels.add({ name: "inbox" })
+  funnel.channels.addConnector("inbox", {
+    type: "slack", name: "ops",
+    botTokenEnv: "SLACK_BOT_TOKEN", appTokenEnv: "SLACK_APP_TOKEN",
+  })
+
+  const server = funnel.gatewayServer({ port: 9742 })
+  await server.start()                    // boots listeners, binds HTTP + WS
+  server.port                             // resolved port (use port: 0 to auto-assign)
+
+  const unsubscribe = server.onEvent((event) => {
+    console.log(event.content, event.meta, event.offset)
+  })
+
+  await funnel.publisher.publish("inbox", { content: "hello" })
+
+  unsubscribe()
+  await server.stop()                    // stops listeners, closes the socket
+
+To observe a daemon (separate process) instead, connect a WebSocket client:
+
+  const url = channelWsUrl({ base: "ws://127.0.0.1:9743/ws", channel: "inbox" })
+  const ws = new WebSocket(url, channelWsProtocols(token))
+
+── publishing: publisher.publish vs server emit ────────────────────────────
+
+  funnel.publisher.publish(channel, req)  // HTTP hop to the daemon; works from
+                                          // any process; returns { state: "ok" |
+                                          // "offline" | "error" }
+  server.emit(event)                      // direct in-process injection into a
+                                          // gatewayServer() you host yourself;
+                                          // no HTTP, no offline state
+
+Rule of thumb: talking to the shared daemon → publish; hosting the gateway
+in your own process → emit (or publish against your own port).
+
+── error handling: two deliberate styles ───────────────────────────────────
+
+  - Engine CRUD (channels / profiles / localConfig) THROWS. A failure there is
+    a programming or configuration error (duplicate name, unknown channel) —
+    let it surface, or try/catch at your boundary.
+  - Gateway clients (publisher / listeners / gateway / recovery) return result
+    objects like { state: "ok" | "offline" | "error" } or { ok, actions }. A
+    daemon being down is an expected runtime state, not an exception.
+
+If a method talks over HTTP to a daemon that might not be running, expect a
+result object; otherwise expect a throw.
+
 ── building your own CLI ───────────────────────────────────────────────────
 
 The Funnel CLI is a Hono app you can embed:

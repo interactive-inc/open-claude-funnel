@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { notFoundMessage } from "@/cli/routes/not-found-message"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/engine/yaml/yaml-render"
@@ -25,7 +26,14 @@ export const channelsShowHandler = factory.createHandlers(
     const channel = funnel.channels.get(param.channel)
 
     if (!channel) {
-      throw new HTTPException(404, { message: `channel "${param.channel}" not found` })
+      throw new HTTPException(404, {
+        message: notFoundMessage({
+          kind: "channel",
+          name: param.channel,
+          available: funnel.channels.list().map((ch) => ch.name),
+          nextAction: "fnl channels add <name>",
+        }),
+      })
     }
 
     return c.text(

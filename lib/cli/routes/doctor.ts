@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { booleanFlag } from "@/cli/router/boolean-flag"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/engine/yaml/yaml-render"
@@ -27,14 +28,14 @@ export const doctorHandler = factory.createHandlers(
   zValidator(
     "query",
     z.object({
-      fix: z.enum(["true", "false", ""]).optional(),
-      aggressive: z.enum(["true", "false", ""]).optional(),
+      fix: booleanFlag,
+      aggressive: booleanFlag,
     }),
   ),
   async (c) => {
     const query = c.req.valid("query")
-    const wantsFix = query.fix === "true" || query.fix === ""
-    const wantsAggressive = query.aggressive === "true" || query.aggressive === ""
+    const wantsFix = query.fix === true
+    const wantsAggressive = query.aggressive === true
     const mode = wantsFix ? (wantsAggressive ? "aggressive" : "safe") : "off"
 
     const report = await c.env.funnel.doctor.run(mode)

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "vitest"
-import type { Server } from "bun"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 import { Hono } from "hono"
@@ -25,8 +24,8 @@ const startServer = async (token: string) => {
     dbPath: "/tmp/funnel-test/events.db",
   })
 
-  const httpServer = await server.start()
-  return { server, httpServer }
+  await server.start()
+  return { server }
 }
 
 const startServerWithExtras = async (extras: Hono<Env>) => {
@@ -45,8 +44,8 @@ const startServerWithExtras = async (extras: Hono<Env>) => {
     extraRoutes: extras,
   })
 
-  const httpServer = await server.start()
-  return { server, httpServer }
+  await server.start()
+  return { server }
 }
 
 const startServerOn = async (props: {
@@ -71,11 +70,11 @@ const startServerOn = async (props: {
     dbPath: "/tmp/funnel-test/events.db",
   })
 
-  const httpServer = await server.start()
-  return { server, httpServer }
+  await server.start()
+  return { server }
 }
 
-let active: { server: { stop: () => Promise<void> }; httpServer: Server<unknown> } | null = null
+let active: { server: { stop: () => Promise<void>; port: number; hostname: string } } | null = null
 
 afterEach(async () => {
   if (active) {
@@ -87,7 +86,7 @@ afterEach(async () => {
 describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
   test("/status returns 401 without bearer token", async () => {
     active = await startServer("secret-1")
-    const url = `http://localhost:${active.httpServer.port}/status`
+    const url = `http://localhost:${active.server.port}/status`
     const res = await fetch(url)
 
     expect(res.status).toBe(401)
@@ -95,7 +94,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/status returns 200 with the correct bearer token", async () => {
     active = await startServer("secret-2")
-    const url = `http://localhost:${active.httpServer.port}/status`
+    const url = `http://localhost:${active.server.port}/status`
     const res = await fetch(url, {
       headers: { authorization: "Bearer secret-2" },
     })
@@ -105,7 +104,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/status returns 401 with the wrong bearer token", async () => {
     active = await startServer("secret-3")
-    const url = `http://localhost:${active.httpServer.port}/status`
+    const url = `http://localhost:${active.server.port}/status`
     const res = await fetch(url, {
       headers: { authorization: "Bearer nope" },
     })
@@ -115,7 +114,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/health stays open without a token", async () => {
     active = await startServer("secret-4")
-    const url = `http://localhost:${active.httpServer.port}/health`
+    const url = `http://localhost:${active.server.port}/health`
     const res = await fetch(url)
 
     expect(res.status).toBe(200)
@@ -123,7 +122,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/health reports the daemon funnelDir so a wrong-gateway-on-a-shared-port is detectable", async () => {
     active = await startServer("secret-dir")
-    const url = `http://localhost:${active.httpServer.port}/health`
+    const url = `http://localhost:${active.server.port}/health`
     const res = await fetch(url)
     const body = JSON.parse(await res.text())
 
@@ -135,7 +134,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
     // Before the fix the upgrade succeeded for any channel and then silently
     // delivered nothing — the wrong-gateway-on-a-shared-port symptom.
     active = await startServer("")
-    const url = `http://localhost:${active.httpServer.port}/ws?channel=ghost`
+    const url = `http://localhost:${active.server.port}/ws?channel=ghost`
     const res = await fetch(url, {
       headers: {
         upgrade: "websocket",
@@ -150,7 +149,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/listeners returns 401 without bearer token", async () => {
     active = await startServer("secret-5")
-    const url = `http://localhost:${active.httpServer.port}/listeners`
+    const url = `http://localhost:${active.server.port}/listeners`
     const res = await fetch(url)
 
     expect(res.status).toBe(401)
@@ -158,7 +157,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/ws upgrade is rejected without the sub-protocol or bearer header", async () => {
     active = await startServer("secret-6")
-    const url = `http://localhost:${active.httpServer.port}/ws`
+    const url = `http://localhost:${active.server.port}/ws`
     const res = await fetch(url, {
       headers: {
         upgrade: "websocket",
@@ -173,7 +172,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/ws upgrade succeeds with the funnel.token sub-protocol", async () => {
     active = await startServer("secret-7")
-    const url = `ws://localhost:${active.httpServer.port}/ws`
+    const url = `ws://localhost:${active.server.port}/ws`
 
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url, ["funnel.token.secret-7"])
@@ -196,7 +195,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
   test("/ws upgrade is rejected with the wrong token in sub-protocol", async () => {
     active = await startServer("secret-8")
-    const url = `http://localhost:${active.httpServer.port}/ws`
+    const url = `http://localhost:${active.server.port}/ws`
     const res = await fetch(url, {
       headers: {
         upgrade: "websocket",
@@ -217,7 +216,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer extraRoutes", () => {
     extras.get("/extra/ping", (c) => c.text("pong"))
     active = await startServerWithExtras(extras)
 
-    const url = `http://localhost:${active.httpServer.port}/extra/ping`
+    const url = `http://localhost:${active.server.port}/extra/ping`
     const res = await fetch(url)
 
     expect(res.status).toBe(200)
@@ -229,7 +228,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer extraRoutes", () => {
     extras.get("/extra", (c) => c.text("extra"))
     active = await startServerWithExtras(extras)
 
-    const url = `http://localhost:${active.httpServer.port}/health`
+    const url = `http://localhost:${active.server.port}/health`
     const res = await fetch(url)
 
     expect(res.status).toBe(200)
@@ -243,7 +242,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer extraRoutes", () => {
     })
     active = await startServerWithExtras(extras)
 
-    const url = `http://localhost:${active.httpServer.port}/extra/clients`
+    const url = `http://localhost:${active.server.port}/extra/clients`
     const res = await fetch(url)
 
     expect(res.status).toBe(200)
@@ -303,7 +302,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer bind address", () => {
   test("binds to loopback by default", async () => {
     active = await startServerOn({ token: "secret" })
 
-    expect(active.httpServer.hostname).toBe("127.0.0.1")
+    expect(active.server.hostname).toBe("127.0.0.1")
   })
 
   test("refuses to start on a non-loopback bind without a token", async () => {
@@ -315,19 +314,19 @@ describe.skipIf(!isBun)("FunnelGatewayServer bind address", () => {
   test("starts on a non-loopback bind when allowInsecureHost is set", async () => {
     active = await startServerOn({ token: "", hostname: "0.0.0.0", allowInsecureHost: true })
 
-    expect(active.httpServer.hostname).toBe("0.0.0.0")
+    expect(active.server.hostname).toBe("0.0.0.0")
   })
 
   test("starts on a non-loopback bind with a token", async () => {
     active = await startServerOn({ token: "secret", hostname: "0.0.0.0" })
 
-    expect(active.httpServer.hostname).toBe("0.0.0.0")
+    expect(active.server.hostname).toBe("0.0.0.0")
   })
 
   test("starts on a loopback bind even without a token", async () => {
     active = await startServerOn({ token: "" })
 
-    expect(active.httpServer.hostname).toBe("127.0.0.1")
+    expect(active.server.hostname).toBe("127.0.0.1")
   })
 })
 
@@ -348,13 +347,13 @@ describe.skipIf(!isBun)("FunnelGatewayServer error responses", () => {
       dbPath: "/tmp/funnel-test/events.db",
     })
 
-    const httpServer = await server.start()
-    return { server, httpServer }
+    await server.start()
+    return { server }
   }
 
   test("a service error surfaces its message instead of a generic 500", async () => {
     active = await startWithChannel()
-    const url = `http://localhost:${active.httpServer.port}/channels/ops/connectors/nope/call`
+    const url = `http://localhost:${active.server.port}/channels/ops/connectors/nope/call`
 
     const res = await fetch(url, {
       method: "POST",
@@ -372,7 +371,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer error responses", () => {
 
   test("a body-validation HTTPException keeps its native 400", async () => {
     active = await startWithChannel()
-    const url = `http://localhost:${active.httpServer.port}/channels/ops/connectors/nope/call`
+    const url = `http://localhost:${active.server.port}/channels/ops/connectors/nope/call`
 
     const res = await fetch(url, {
       method: "POST",

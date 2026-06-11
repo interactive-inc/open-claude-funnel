@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { notFoundMessage } from "@/cli/routes/not-found-message"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/engine/yaml/yaml-render"
@@ -24,7 +25,14 @@ export const channelsConnectorsShowHandler = factory.createHandlers(
 
     if (!connector) {
       throw new HTTPException(404, {
-        message: `connector "${param.connector}" not found in channel "${param.channel}"`,
+        message: notFoundMessage({
+          kind: "connector",
+          name: param.connector,
+          available: (funnel.channels.get(param.channel)?.connectors ?? []).map(
+            (conn) => conn.name,
+          ),
+          nextAction: `fnl channels ${param.channel} connectors add <name> --type=slack|gh|discord|schedule ...`,
+        }),
       })
     }
 

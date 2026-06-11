@@ -82,4 +82,19 @@ describe("toRequest", () => {
     const req = toRequest(["claude", "-p", "cto"])
     expect(new URL(req.url).searchParams.get("profile")).toBe("cto")
   })
+
+  test("--key=value splits into key and value", () => {
+    const req = toRequest(["channels", "add", "x", "--delivery=exclusive"])
+    expect(new URL(req.url).searchParams.get("delivery")).toBe("exclusive")
+  })
+
+  test("--key=value keeps later equals signs inside the value", () => {
+    const req = toRequest(["channels", "x", "publish", "--content=a=b"])
+    expect(new URL(req.url).searchParams.get("content")).toBe("a=b")
+  })
+
+  test("--key= with an empty value stays empty (not true)", () => {
+    const req = toRequest(["channels", "add", "x", "--delivery="])
+    expect(new URL(req.url).searchParams.get("delivery")).toBe("")
+  })
 })

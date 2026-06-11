@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { notFoundMessage } from "@/cli/routes/not-found-message"
 import { helpGuard } from "@/cli/router/help-guard"
 import { queryToCliArgs } from "@/cli/router/query-to-cli-args"
 import { zValidator } from "@/cli/router/validator"
@@ -23,7 +24,14 @@ export const profilesLaunchHandler = factory.createHandlers(
     const profile = profiles.get(param.profile)
 
     if (!profile) {
-      throw new HTTPException(404, { message: `profile "${param.profile}" not found` })
+      throw new HTTPException(404, {
+        message: notFoundMessage({
+          kind: "profile",
+          name: param.profile,
+          available: profiles.list().map((p) => p.name),
+          nextAction: "fnl profiles add <name> --path=<repo> --channel=<channel>",
+        }),
+      })
     }
 
     const exitCode = await claude.launch({

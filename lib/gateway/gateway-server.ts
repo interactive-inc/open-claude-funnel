@@ -99,8 +99,8 @@ const defaultOnError: OnFunnelError = () => {}
  */
 export class FunnelGatewayServer {
   private readonly channels: FunnelChannels
-  private readonly port: number
-  private readonly hostname: string
+  private readonly configuredPort: number
+  private readonly configuredHostname: string
   private readonly dbPath: string
   private readonly process?: FunnelProcessRunner
   private readonly logger: FunnelLogger | undefined
@@ -120,8 +120,8 @@ export class FunnelGatewayServer {
 
   constructor(deps: Deps) {
     this.channels = deps.channels
-    this.port = deps.port ?? resolveFunnelPort()
-    this.hostname = deps.hostname ?? DEFAULT_HOST
+    this.configuredPort = deps.port ?? resolveFunnelPort()
+    this.configuredHostname = deps.hostname ?? DEFAULT_HOST
     this.dbPath = deps.dbPath ?? defaultDbPath()
     this.process = deps.process
     this.logger = deps.logger
@@ -166,16 +166,29 @@ export class FunnelGatewayServer {
     })
   }
 
-  async start(): Promise<Server<WsData>> {
-    if (this.server) return this.server
+  /**
+   * The resolved listen port: the live Bun server's port once started (so
+   * `port: 0` auto-assignment is visible), the configured value before that.
+   */
+  get port(): number {
+    return this.server?.port ?? this.configuredPort
+  }
 
-    if (!this.token && !LOOPBACK_HOSTS.has(this.hostname) && !this.allowInsecureHost) {
+  /** The bind address: the live Bun server's hostname once started, the configured value before that. */
+  get hostname(): string {
+    return this.server?.hostname ?? this.configuredHostname
+  }
+
+  async start(): Promise<void> {
+    if (this.server) return
+
+    if (!this.token && !LOOPBACK_HOSTS.has(this.configuredHostname) && !this.allowInsecureHost) {
       // Fail fast: a non-loopback bind with no token would expose every
       // privileged endpoint to the network. Refuse rather than warn — a missed
       // log line has shipped open gateways before. Set a `token`, bind loopback,
       // or pass `allowInsecureHost: true` if you've fronted it with your own auth.
       throw new Error(
-        `refusing to start gateway: hostname "${this.hostname}" is reachable off-box but no token is set. ` +
+        `refusing to start gateway: hostname "${this.configuredHostname}" is reachable off-box but no token is set. ` +
           `Set a token, bind to loopback (127.0.0.1), or pass allowInsecureHost: true.`,
       )
     }
@@ -192,8 +205,8 @@ export class FunnelGatewayServer {
 
     this.startedAt = this.nowMs()
     this.server = Bun.serve<WsData>({
-      port: this.port,
-      hostname: this.hostname,
+      port: this.configuredPort,
+      hostname: this.configuredHostname,
       development: false,
       fetch: (request, server) => this.handleFetch(request, server, app),
       websocket: {
@@ -207,8 +220,6 @@ export class FunnelGatewayServer {
 
     this.logServerStarted()
     await this.bootListeners()
-
-    return this.server
   }
 
   async stop(): Promise<void> {
@@ -463,6 +474,10 @@ export class FunnelGatewayServer {
    * when they resolve. Used by both the connector-listener path (via the
    * supervisor's `notify` callback) and the public `/channels/:channel/publish`
    * route. Returns the assigned event offset.
+   *
+   * Public SDK surface for hosts running this gateway in-process — the no-HTTP
+   * sibling of `funnel.publisher.publish()`, which targets a daemon instead
+   * (see fnl docs programmable-api).
    */
   emit(input: {
     channel: string

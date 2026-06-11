@@ -37,7 +37,7 @@ export type ChannelConnectorView = ConnectorConfig & {
 // (resolved from the environment at listener start). Each token slot is an
 // EitherToken union, so literal+env on the same slot is a compile error while
 // "neither" stays valid (the sync layer / TTY prompt fills it in later).
-type AddConnectorInput =
+export type AddConnectorInput =
   | ({ type: "slack"; name: string; minify?: boolean } & EitherToken<"botToken", "botTokenEnv"> &
       EitherToken<"appToken", "appTokenEnv">)
   | { type: "gh"; name: string; pollInterval?: number }

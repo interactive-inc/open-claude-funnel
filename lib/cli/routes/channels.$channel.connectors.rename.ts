@@ -1,8 +1,8 @@
 import { factory } from "@/cli/factory"
 
-const help = `funnel channels <channel> connectors rename <old> <new> — rename a connector
+const help = `funnel channels <channel> connectors rename <old-connector-name> <new-connector-name> — rename a connector
 
-usage: funnel channels <channel> connectors rename <old> <new>
+usage: funnel channels <channel> connectors rename <old-connector-name> <new-connector-name>
 
 Renames the connector in the configuration file. Tokens, type, and
 schedules are preserved. The gateway picks up the new name on the

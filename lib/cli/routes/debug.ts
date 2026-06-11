@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { booleanFlag } from "@/cli/router/boolean-flag"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/engine/yaml/yaml-render"
@@ -106,14 +107,14 @@ export const debugHandler = factory.createHandlers(
     "query",
     z.object({
       channel: z.string().optional(),
-      all: z.enum(["true", "false", ""]).optional(),
+      all: booleanFlag,
       limit: z.string().optional(),
     }),
   ),
   async (c) => {
     const query = c.req.valid("query")
     const funnel = c.env.funnel
-    const isAll = query.all === "true" || query.all === ""
+    const isAll = query.all === true
 
     if (isAll) {
       const report = await funnel.diagnostics.diagnoseAll()

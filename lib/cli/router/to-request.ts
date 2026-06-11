@@ -48,14 +48,24 @@ export const toRequest = (args: string[]) => {
     const arg = args[i]!
 
     if (arg.startsWith("--")) {
-      const key = arg.slice(2)
+      const body = arg.slice(2)
+      const equalsAt = body.indexOf("=")
+
+      // --key=value form. Without this split the whole "key=value" string
+      // became the param name and the value was silently dropped.
+      if (equalsAt >= 0) {
+        params.set(body.slice(0, equalsAt), body.slice(equalsAt + 1))
+        i++
+        continue
+      }
+
       const next = args[i + 1]
 
       if (isValue(next)) {
-        params.set(key, next)
+        params.set(body, next)
         i += 2
       } else {
-        params.set(key, "true")
+        params.set(body, "true")
         i++
       }
 

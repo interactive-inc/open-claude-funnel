@@ -1,9 +1,6 @@
 import { factory } from "@/cli/factory"
+import { channelsRenameHelp } from "@/cli/routes/channels.rename"
 
-const help = `funnel channels rename — rename a channel
-
-usage:
-  funnel channels rename <old> <new>
-  funnel channels <old> rename <new>`
-
-export const channelsChannelRenameHelpHandler = factory.createHandlers((c) => c.text(help))
+export const channelsChannelRenameHelpHandler = factory.createHandlers((c) =>
+  c.text(channelsRenameHelp),
+)

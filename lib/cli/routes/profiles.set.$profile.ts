@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { notFoundMessage } from "@/cli/routes/not-found-message"
 import { parseProfileRecipe } from "@/cli/routes/parse-profile-recipe"
 import { zValidator } from "@/cli/router/validator"
 
@@ -27,7 +28,14 @@ export const profilesSetHandler = factory.createHandlers(
     const channel = query.channel !== undefined ? funnel.channels.get(query.channel) : null
 
     if (query.channel !== undefined && !channel) {
-      throw new HTTPException(400, { message: `channel "${query.channel}" not found` })
+      throw new HTTPException(400, {
+        message: notFoundMessage({
+          kind: "channel",
+          name: query.channel,
+          available: funnel.channels.list().map((ch) => ch.name),
+          nextAction: "fnl channels add <name>",
+        }),
+      })
     }
 
     const recipe = parseProfileRecipe(query)

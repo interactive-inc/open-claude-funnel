@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { factory } from "@/cli/factory"
+import { booleanFlag } from "@/cli/router/boolean-flag"
 import { zValidator } from "@/cli/router/validator"
 import { scheduleCatchupPolicySchema } from "@/engine/connectors/schedule-connector-schema"
 
@@ -11,8 +12,7 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
       cron: z.string(),
       prompt: z.string(),
       // NOT z.coerce.boolean(): that runs Boolean("false") === true, so
-      // --enabled=false would store `true`. Parse the literal string instead.
-      enabled: z.enum(["true", "false"]).optional(),
+      enabled: booleanFlag,
       "catchup-policy": scheduleCatchupPolicySchema.optional(),
     }),
   ),
@@ -25,7 +25,7 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
       id: param.id,
       cron: query.cron,
       prompt: query.prompt,
-      ...(query.enabled !== undefined ? { enabled: query.enabled === "true" } : {}),
+      ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
       ...(query["catchup-policy"] !== undefined ? { catchupPolicy: query["catchup-policy"] } : {}),
     })
 
