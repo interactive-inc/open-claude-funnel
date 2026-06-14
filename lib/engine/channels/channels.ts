@@ -1,13 +1,7 @@
 import type { CallInput } from "@/engine/connectors/connector-adapter"
-import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
-import type { EitherToken } from "@/engine/connectors/either-token"
-import type { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
+import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
+import type { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
-import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
-import type { ScheduleEntry } from "@/engine/connectors/schedule-connector-schema"
-import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
-import { connectorTokens } from "@/engine/channels/connector-tokens"
-import { requireConnectorOfType } from "@/engine/channels/require-connector"
 import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
@@ -22,59 +16,23 @@ import type {
 
 type Deps = {
   store: FunnelSettingsReader
-  factory: FunnelConnectorFactory
+  registry: FunnelConnectorRegistry
   profileChecker?: ProfileChannelChecker
   clock?: FunnelClock
   idGenerator?: FunnelIdGenerator
 }
 
-export type ChannelConnectorView = ConnectorConfig & {
+export type ChannelConnectorView = BaseConnectorConfig & {
   channelId: string
   channelName: string
 }
 
-// Slack/Discord carry either a literal token or a `*TokenEnv` reference name
-// (resolved from the environment at listener start). Each token slot is an
-// EitherToken union, so literal+env on the same slot is a compile error while
-// "neither" stays valid (the sync layer / TTY prompt fills it in later).
-export type AddConnectorInput =
-  | ({ type: "slack"; name: string; minify?: boolean } & EitherToken<"botToken", "botTokenEnv"> &
-      EitherToken<"appToken", "appTokenEnv">)
-  | { type: "gh"; name: string; pollInterval?: number }
-  | ({ type: "discord"; name: string } & EitherToken<"botToken", "botTokenEnv">)
-  | { type: "schedule"; name: string; entries?: ScheduleEntry[] }
-
 /**
- * Resolves one token slot (e.g. botToken/botTokenEnv) for an update. The
- * literal and the env-ref form are mutually exclusive: if `fields` supplies
- * either, that form wins and the other key is omitted entirely; if it supplies
- * neither, the connector's current slot is carried over unchanged. Returns a
- * partial object spread into the rebuilt connector, so an omitted key is truly
- * absent rather than set to undefined.
+ * Add-connector input. Core does not enumerate connector types, so the shape is
+ * the common pair plus arbitrary type-specific fields — the connector's
+ * descriptor (via the registry) builds and validates the concrete config.
  */
-const slotFields = (
-  literalKey: string,
-  envKey: string,
-  fields: Record<string, string | undefined>,
-  current: Record<string, unknown>,
-): Record<string, string> => {
-  const literal = fields[literalKey]
-
-  if (literal !== undefined) return { [literalKey]: literal }
-
-  const envVar = fields[envKey]
-
-  if (envVar !== undefined) return { [envKey]: envVar }
-
-  const result: Record<string, string> = {}
-  const currentLiteral = current[literalKey]
-  const currentEnv = current[envKey]
-
-  if (typeof currentLiteral === "string") result[literalKey] = currentLiteral
-  if (typeof currentEnv === "string") result[envKey] = currentEnv
-
-  return result
-}
+export type AddConnectorInput = { type: string; name: string } & Record<string, unknown>
 
 const defaultClock = new NodeFunnelClock()
 const defaultIdGenerator = new NodeFunnelIdGenerator()
@@ -86,17 +44,21 @@ const defaultIdGenerator = new NodeFunnelIdGenerator()
  * global connector namespace exists. Token uniqueness is enforced across all
  * channels at add/update time so the same Slack/Discord credentials cannot
  * be registered twice.
+ *
+ * Connector type knowledge lives entirely in the injected registry (descriptors):
+ * this class builds, updates, and runs operations on connectors generically and
+ * never imports a concrete connector type.
  */
 export class FunnelChannels {
   private readonly store: FunnelSettingsReader
-  private readonly factory: FunnelConnectorFactory
+  private readonly registry: FunnelConnectorRegistry
   private readonly profileChecker: ProfileChannelChecker | null
   private readonly clock: FunnelClock
   private readonly idGenerator: FunnelIdGenerator
 
   constructor(deps: Deps) {
     this.store = deps.store
-    this.factory = deps.factory
+    this.registry = deps.registry
     this.profileChecker = deps.profileChecker ?? null
     this.clock = deps.clock ?? defaultClock
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
@@ -173,11 +135,11 @@ export class FunnelChannels {
     this.store.write(settings)
   }
 
-  listConnectors(channelName: string): ConnectorConfig[] {
+  listConnectors(channelName: string): BaseConnectorConfig[] {
     return this.requireChannel(this.store.read(), channelName).connectors
   }
 
-  getConnector(channelName: string, connectorName: string): ConnectorConfig | null {
+  getConnector(channelName: string, connectorName: string): BaseConnectorConfig | null {
     const channel = this.get(channelName)
 
     if (!channel) return null
@@ -197,7 +159,7 @@ export class FunnelChannels {
     return out
   }
 
-  addConnector(channelName: string, input: AddConnectorInput): ConnectorConfig {
+  addConnector(channelName: string, input: AddConnectorInput): BaseConnectorConfig {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
 
@@ -205,7 +167,10 @@ export class FunnelChannels {
       throw new Error(`connector "${input.name}" already exists in channel "${channelName}"`)
     }
 
-    const candidate = this.fromInput(input)
+    const candidate = this.registry.buildConfig(input, {
+      id: this.idGenerator.generate(),
+      now: this.clock.iso(),
+    })
 
     this.assertNoTokenCollision(settings, candidate)
 
@@ -213,57 +178,6 @@ export class FunnelChannels {
     this.store.write(settings)
 
     return candidate
-  }
-
-  private fromInput(input: AddConnectorInput): ConnectorConfig {
-    const id = this.idGenerator.generate()
-    const now = this.clock.iso()
-    const createdAt = now
-    const updatedAt = now
-
-    switch (input.type) {
-      case "slack":
-        return {
-          id,
-          type: "slack",
-          name: input.name,
-          ...(input.botToken !== undefined ? { botToken: input.botToken } : {}),
-          ...(input.appToken !== undefined ? { appToken: input.appToken } : {}),
-          ...(input.botTokenEnv !== undefined ? { botTokenEnv: input.botTokenEnv } : {}),
-          ...(input.appTokenEnv !== undefined ? { appTokenEnv: input.appTokenEnv } : {}),
-          minify: input.minify ?? true,
-          createdAt,
-          updatedAt,
-        }
-      case "gh":
-        return {
-          id,
-          type: "gh",
-          name: input.name,
-          ...(input.pollInterval !== undefined ? { pollInterval: input.pollInterval } : {}),
-          createdAt,
-          updatedAt,
-        }
-      case "discord":
-        return {
-          id,
-          type: "discord",
-          name: input.name,
-          ...(input.botToken !== undefined ? { botToken: input.botToken } : {}),
-          ...(input.botTokenEnv !== undefined ? { botTokenEnv: input.botTokenEnv } : {}),
-          createdAt,
-          updatedAt,
-        }
-      case "schedule":
-        return {
-          id,
-          type: "schedule",
-          name: input.name,
-          entries: input.entries ?? [],
-          createdAt,
-          updatedAt,
-        }
-    }
   }
 
   removeConnector(channelName: string, connectorName: string): void {
@@ -297,118 +211,84 @@ export class FunnelChannels {
     this.store.write(settings)
   }
 
+  /**
+   * Update a connector's mutable fields generically. The connector's descriptor
+   * rebuilds the config from `fields` (e.g. Slack/Discord token slots are rebuilt
+   * so a slot can move between a literal and an env reference cleanly).
+   */
+  updateConnector(channelName: string, connectorName: string, fields: Record<string, unknown>): void {
+    const settings = this.store.read()
+    const channel = this.requireChannel(settings, channelName)
+    const connector = channel.connectors.find((c) => c.name === connectorName)
+
+    if (!connector) {
+      throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
+    }
+
+    const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
+
+    this.assertNoTokenCollision(settings, updated)
+    this.replaceConnector(channel, connector.name, updated)
+    this.store.write(settings)
+  }
+
+  /** Back-compat wrapper for `updateConnector` on a slack connector. */
   updateSlackConnector(
     channelName: string,
     connectorName: string,
     fields: { botToken?: string; appToken?: string; botTokenEnv?: string; appTokenEnv?: string },
   ): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = requireConnectorOfType(channel, connectorName, "slack")
-
-    // Literal and reference are mutually exclusive per slot, so the slot is
-    // rebuilt from scratch (not Object.assign'd onto the old connector) — that
-    // way switching a slot from literal to ref drops the stale literal key
-    // instead of leaving both behind.
-    const updated: SlackConnectorConfig = {
-      id: connector.id,
-      name: connector.name,
-      type: "slack",
-      minify: connector.minify,
-      createdAt: connector.createdAt,
-      updatedAt: this.clock.iso(),
-      ...slotFields("botToken", "botTokenEnv", fields, connector),
-      ...slotFields("appToken", "appTokenEnv", fields, connector),
-    }
-
-    this.assertNoTokenCollision(settings, updated)
-
-    this.replaceConnector(channel, connector.name, updated)
-    this.store.write(settings)
+    this.updateConnector(channelName, connectorName, fields)
   }
 
+  /** Back-compat wrapper for `updateConnector` on a gh connector. */
   updateGhConnector(
     channelName: string,
     connectorName: string,
     fields: { pollInterval?: number },
   ): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = requireConnectorOfType(channel, connectorName, "gh")
-
-    if (fields.pollInterval !== undefined) connector.pollInterval = fields.pollInterval
-    connector.updatedAt = this.clock.iso()
-
-    this.store.write(settings)
+    this.updateConnector(channelName, connectorName, fields)
   }
 
+  /** Back-compat wrapper for `updateConnector` on a discord connector. */
   updateDiscordConnector(
     channelName: string,
     connectorName: string,
     fields: { botToken?: string; botTokenEnv?: string },
   ): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = requireConnectorOfType(channel, connectorName, "discord")
-
-    const updated: DiscordConnectorConfig = {
-      id: connector.id,
-      name: connector.name,
-      type: "discord",
-      createdAt: connector.createdAt,
-      updatedAt: this.clock.iso(),
-      ...slotFields("botToken", "botTokenEnv", fields, connector),
-    }
-
-    this.assertNoTokenCollision(settings, updated)
-
-    this.replaceConnector(channel, connector.name, updated)
-    this.store.write(settings)
+    this.updateConnector(channelName, connectorName, fields)
   }
 
-  listScheduleEntries(channelName: string, connectorName: string): ScheduleEntry[] {
-    const channel = this.requireChannel(this.store.read(), channelName)
-    const connector = requireConnectorOfType(channel, connectorName, "schedule")
-
-    return connector.entries
-  }
-
-  addScheduleEntry(
+  /**
+   * Run a connector-type-specific operation (e.g. schedule `addEntry` /
+   * `removeEntry` / `listEntries`). The descriptor returns the next config and a
+   * result; the config is persisted only when the operation actually mutated it.
+   */
+  connectorOp(
     channelName: string,
     connectorName: string,
-    entry: Pick<ScheduleEntry, "cron" | "prompt"> &
-      Partial<Pick<ScheduleEntry, "id" | "enabled" | "catchupPolicy">>,
-  ): ScheduleEntry {
+    operation: string,
+    args: unknown,
+  ): unknown {
     const settings = this.store.read()
     const channel = this.requireChannel(settings, channelName)
-    const connector = requireConnectorOfType(channel, connectorName, "schedule")
+    const connector = channel.connectors.find((c) => c.name === connectorName)
 
-    const persisted: ScheduleEntry = {
-      id: entry.id ?? this.idGenerator.generate(),
-      cron: entry.cron,
-      prompt: entry.prompt,
-      enabled: entry.enabled ?? true,
-      catchupPolicy: entry.catchupPolicy ?? "latest",
+    if (!connector) {
+      throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
     }
 
-    connector.entries.push(persisted)
-    connector.updatedAt = this.clock.iso()
-    this.store.write(settings)
+    const outcome = this.registry.runOperation(connector, operation, args, {
+      generateId: () => this.idGenerator.generate(),
+      now: this.clock.iso(),
+    })
 
-    return persisted
-  }
+    if (outcome.config !== connector) {
+      this.replaceConnector(channel, connector.name, outcome.config)
+      this.store.write(settings)
+    }
 
-  removeScheduleEntry(channelName: string, connectorName: string, id: string): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = requireConnectorOfType(channel, connectorName, "schedule")
-    const index = connector.entries.findIndex((e) => e.id === id)
-
-    if (index < 0) throw new Error(`schedule entry "${id}" not found`)
-
-    connector.entries.splice(index, 1)
-    connector.updatedAt = this.clock.iso()
-    this.store.write(settings)
+    return outcome.result
   }
 
   async call(channelName: string, connectorName: string, input: CallInput): Promise<unknown> {
@@ -418,7 +298,7 @@ export class FunnelChannels {
       throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
     }
 
-    const adapter = this.factory.createAdapter(connector)
+    const adapter = this.registry.createAdapter(connector)
 
     if (!adapter) {
       throw new Error(`connector type "${connector.type}" does not support outbound calls`)
@@ -430,7 +310,7 @@ export class FunnelChannels {
   createListener(
     channelName: string,
     connectorName: string,
-  ): { config: ConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null {
+  ): { config: BaseConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null {
     const channel = this.get(channelName)
 
     if (!channel) return null
@@ -442,18 +322,18 @@ export class FunnelChannels {
     return {
       config: connector,
       channelId: channel.id,
-      listener: this.factory.createListener(channel.id, connector),
+      listener: this.registry.createListener(channel.id, connector),
     }
   }
 
   createAllListeners(): {
-    config: ConnectorConfig
+    config: BaseConnectorConfig
     channelId: string
     channelName: string
     listener: FunnelConnectorListener
   }[] {
     const out: {
-      config: ConnectorConfig
+      config: BaseConnectorConfig
       channelId: string
       channelName: string
       listener: FunnelConnectorListener
@@ -465,7 +345,7 @@ export class FunnelChannels {
           config: connector,
           channelId: channel.id,
           channelName: channel.name,
-          listener: this.factory.createListener(channel.id, connector),
+          listener: this.registry.createListener(channel.id, connector),
         })
       }
     }
@@ -487,7 +367,7 @@ export class FunnelChannels {
   private replaceConnector(
     channel: ChannelConfig,
     connectorName: string,
-    next: ConnectorConfig,
+    next: BaseConnectorConfig,
   ): void {
     const index = channel.connectors.findIndex((c) => c.name === connectorName)
 
@@ -498,8 +378,8 @@ export class FunnelChannels {
     channel.connectors[index] = next
   }
 
-  private assertNoTokenCollision(settings: Settings, candidate: ConnectorConfig): void {
-    const tokens = connectorTokens(candidate)
+  private assertNoTokenCollision(settings: Settings, candidate: BaseConnectorConfig): void {
+    const tokens = this.registry.secretTokens(candidate)
 
     if (tokens.length === 0) return
 
@@ -507,7 +387,7 @@ export class FunnelChannels {
       for (const other of channel.connectors) {
         if (other.id === candidate.id) continue
 
-        for (const token of connectorTokens(other)) {
+        for (const token of this.registry.secretTokens(other)) {
           if (tokens.includes(token)) {
             throw new Error(
               `token already in use by connector "${other.name}" in channel "${channel.name}"`,

@@ -1,4 +1,4 @@
-import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
+import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
@@ -9,7 +9,7 @@ type ConnectorRegistry = {
   createListener(
     channelName: string,
     connectorName: string,
-  ): { config: ConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null
+  ): { config: BaseConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null
 }
 
 type SupervisorNotify = (
@@ -20,7 +20,7 @@ type SupervisorNotify = (
 ) => Promise<void>
 
 type RunningEntry = {
-  config: ConnectorConfig
+  config: BaseConnectorConfig
   channelName: string
   channelId: string
   listener: FunnelConnectorListener
@@ -63,7 +63,7 @@ type ListenerEntryStatus = {
   channelName: string
   channelId: string
   name: string
-  type: ConnectorConfig["type"]
+  type: string
   alive: boolean
   events: number
   errors: number
@@ -385,7 +385,7 @@ export class FunnelListenerSupervisor {
   private async recoverDead(
     channelName: string,
     connectorName: string,
-    type: ConnectorConfig["type"],
+    type: string,
   ): Promise<void> {
     const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
     const failureCount = this.failureCounts.get(key) ?? 0

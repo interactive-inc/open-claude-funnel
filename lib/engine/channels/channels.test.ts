@@ -1,6 +1,13 @@
 import { describe, expect, test } from "vitest"
-import { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
+import { z } from "zod"
 import { FunnelChannels } from "@/engine/channels/channels"
+import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
+import { discordConnector } from "@/engine/connectors/discord-connector"
+import { ghConnector } from "@/engine/connectors/gh-connector"
+import { scheduleConnector } from "@/engine/connectors/schedule-connector"
+import { scheduleEntrySchema } from "@/engine/connectors/schedule-connector-schema"
+import { slackConnector } from "@/engine/connectors/slack-connector"
+import { slackConnectorSchema } from "@/engine/connectors/slack-connector-schema"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
@@ -10,24 +17,29 @@ import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 
 const profileChecker = { hasChannelRef: () => false }
 
-const buildChannels = (): FunnelChannels => {
-  const store = new MockFunnelSettingsReader()
-  const fs = new MemoryFunnelFileSystem()
-  const factory = new FunnelConnectorFactory({
+const buildRegistry = (fs: MemoryFunnelFileSystem): FunnelConnectorRegistry =>
+  new FunnelConnectorRegistry({
+    descriptors: [slackConnector(), ghConnector(), discordConnector(), scheduleConnector()],
     fs,
     process: new MemoryFunnelProcessRunner(),
     logger: new NoopFunnelLogger(),
     dir: "/funnel",
   })
 
+const buildChannels = (): FunnelChannels => {
+  const fs = new MemoryFunnelFileSystem()
+
   return new FunnelChannels({
-    store,
-    factory,
+    store: new MockFunnelSettingsReader(),
+    registry: buildRegistry(fs),
     profileChecker,
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
   })
 }
+
+const listEntries = (channels: FunnelChannels, connectorName: string) =>
+  z.array(scheduleEntrySchema).parse(channels.connectorOp("ops", connectorName, "listEntries", undefined))
 
 describe("FunnelChannels", () => {
   test("add assigns a stable id and persists the channel", () => {
@@ -112,18 +124,40 @@ describe("FunnelChannels", () => {
     ).toEqual(["b", "c"])
   })
 
-  test("schedule entry CRUD lives on the connector", () => {
+  test("schedule entry CRUD runs through connectorOp on the connector", () => {
     const channels = buildChannels()
     channels.add({ name: "ops" })
     channels.addConnector("ops", { type: "schedule", name: "cron" })
 
-    const entry = channels.addScheduleEntry("ops", "cron", { cron: "* * * * *", prompt: "go" })
+    const entry = scheduleEntrySchema.parse(
+      channels.connectorOp("ops", "cron", "addEntry", { cron: "* * * * *", prompt: "go" }),
+    )
 
-    expect(channels.listScheduleEntries("ops", "cron")).toHaveLength(1)
+    expect(listEntries(channels, "cron")).toHaveLength(1)
 
-    channels.removeScheduleEntry("ops", "cron", entry.id)
+    channels.connectorOp("ops", "cron", "removeEntry", { id: entry.id })
 
-    expect(channels.listScheduleEntries("ops", "cron")).toHaveLength(0)
+    expect(listEntries(channels, "cron")).toHaveLength(0)
+  })
+
+  test("updateConnector rebuilds a slack token slot, dropping the stale literal on switch to env ref", () => {
+    const channels = buildChannels()
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", {
+      type: "slack",
+      name: "main",
+      botToken: "xoxb-1",
+      appToken: "xapp-1",
+    })
+
+    channels.updateSlackConnector("ops", "main", { botTokenEnv: "SLACK_BOT" })
+
+    const updated = slackConnectorSchema.parse(channels.getConnector("ops", "main"))
+
+    expect(updated.botTokenEnv).toBe("SLACK_BOT")
+    expect(updated.botToken).toBeUndefined()
+    // the untouched app slot is carried over unchanged
+    expect(updated.appToken).toBe("xapp-1")
   })
 
   test("rename rejects collisions and updates the channel name", () => {
@@ -137,18 +171,11 @@ describe("FunnelChannels", () => {
   })
 
   test("remove blocks when a profile references the channel", () => {
-    const store = new MockFunnelSettingsReader()
     const fs = new MemoryFunnelFileSystem()
-    const factory = new FunnelConnectorFactory({
-      fs,
-      process: new MemoryFunnelProcessRunner(),
-      logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-    })
     const referencingChecker = { hasChannelRef: (id: string) => id === "id-1" }
     const channels = new FunnelChannels({
-      store,
-      factory,
+      store: new MockFunnelSettingsReader(),
+      registry: buildRegistry(fs),
       profileChecker: referencingChecker,
       clock: new MemoryFunnelClock(),
       idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),

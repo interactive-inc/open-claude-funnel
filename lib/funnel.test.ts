@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { Funnel } from "@/funnel"
+import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
@@ -17,6 +18,7 @@ const buildFunnel = (): Funnel =>
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
     tokenPrompter: new MemoryFunnelTokenPrompter(),
+    connectors: builtinConnectors(),
   })
 
 describe("Funnel facade", () => {

@@ -2,16 +2,21 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { settingsSchema } from "@/engine/settings/settings-schema"
 
-const TOOL_CONNECTOR_TYPES = new Set(["slack", "gh", "discord"])
-
 export type ChannelConnectorsView = {
   channelName: string
   connectors: { name: string; type: string }[]
 }
 
+/**
+ * Reads the connectors of one channel from settings.json, keeping only the
+ * tool-exposed types. The exposed set is supplied by the caller (the MCP server
+ * builds it from the connector descriptors it imports) — core does not enumerate
+ * connector types here.
+ */
 export const readChannelConnectors = (
   dir: string,
   channelId: string,
+  toolConnectorTypes: Set<string>,
 ): ChannelConnectorsView | null => {
   const settingsPath = join(dir, "settings.json")
 
@@ -27,7 +32,7 @@ export const readChannelConnectors = (
   if (!channel) return null
 
   const connectors = channel.connectors
-    .filter((c) => TOOL_CONNECTOR_TYPES.has(c.type))
+    .filter((c) => toolConnectorTypes.has(c.type))
     .map((c) => ({ name: c.name, type: c.type }))
 
   return { channelName: channel.name, connectors }

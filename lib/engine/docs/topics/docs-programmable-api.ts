@@ -11,8 +11,12 @@ Hono app over these services.
 ── facade ──────────────────────────────────────────────────────────────────
 
   import { Funnel } from "@interactive-inc/claude-funnel"
+  import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
 
-  const funnel = new Funnel()             // uses ~/.funnel
+  // Connectors are fully DI: pass only the types you use. The core import never
+  // bundles a connector SDK (@slack/bolt, discord.js) — importing the sub-entry
+  // does. With no connectors, the funnel handles zero connector types.
+  const funnel = new Funnel({ connectors: [slackConnector()] })  // uses ~/.funnel
   const sandbox = Funnel.inMemory()        // touches no disk / process / clock
 
   funnel.paths                            // { dir, tmpDir, settings }
@@ -53,6 +57,14 @@ For targeted imports (smaller bundle / clearer dependency footprint):
   import { FunnelGatewayServer } from "@interactive-inc/claude-funnel/gateway"
   import { FunnelProfiles }      from "@interactive-inc/claude-funnel/profiles"
   import { FunnelLocalConfig }   from "@interactive-inc/claude-funnel/local-config"
+  import { slackConnector }      from "@interactive-inc/claude-funnel/connectors/slack"
+  import { ghConnector }         from "@interactive-inc/claude-funnel/connectors/gh"
+  import { discordConnector }    from "@interactive-inc/claude-funnel/connectors/discord"
+  import { scheduleConnector }   from "@interactive-inc/claude-funnel/connectors/schedule"
+
+  // Connector launch hooks are closed over by the descriptor factory:
+  //   slackConnector({ onAppCreated, preprocessEvent })
+  //   scheduleConnector({ onFired })
 
 ── in-process gateway: receive events in your own process ──────────────────
 
@@ -61,8 +73,9 @@ cannot observe its events directly. To receive events in-process, host the
 gateway yourself with gatewayServer():
 
   import { Funnel, channelWsUrl } from "@interactive-inc/claude-funnel"
+  import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
 
-  const funnel = new Funnel()
+  const funnel = new Funnel({ connectors: [slackConnector()] })
   funnel.channels.add({ name: "inbox" })
   funnel.channels.addConnector("inbox", {
     type: "slack", name: "ops",
@@ -117,8 +130,11 @@ The Funnel CLI is a Hono app you can embed:
 
   import { cliRoutes, toRequest } from "@interactive-inc/claude-funnel"
   import { Funnel } from "@interactive-inc/claude-funnel"
+  import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
+  import { ghConnector } from "@interactive-inc/claude-funnel/connectors/gh"
 
-  const funnel = new Funnel()
+  // List every connector type your CLI's "channels ... connectors" commands accept.
+  const funnel = new Funnel({ connectors: [slackConnector(), ghConnector()] })
   const { method, url } = toRequest(process.argv.slice(2))
   const res = await cliRoutes.request(url, { method }, { funnel })
 

@@ -11,9 +11,9 @@ const defaultFs = new NodeFunnelFileSystem()
 
 /**
  * Per-connector lastFiredAt persistence for the schedule listener. The path is
- * passed in by FunnelConnectorFactory so this store does not know about the
- * funnel directory layout (`channels/<id>/connectors/<id>/state.json` lives
- * outside this class).
+ * passed in by the schedule connector descriptor (via the registry's
+ * connectorDir) so this store does not know about the funnel directory layout
+ * (`channels/<id>/connectors/<id>/state.json` lives outside this class).
  */
 export class ScheduleStateStore {
   private readonly path: string

@@ -2,6 +2,7 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
+import { scheduleEntrySchema } from "@/engine/connectors/schedule-connector-schema"
 
 const groupHelp = `funnel channels <ch> connectors <conn> schedules — manage schedule entries
 
@@ -18,7 +19,9 @@ export const channelsConnectorsSchedulesGroupHandler = factory.createHandlers(
   (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel
-    const entries = funnel.channels.listScheduleEntries(param.channel, param.connector)
+    const entries = z
+      .array(scheduleEntrySchema)
+      .parse(funnel.channels.connectorOp(param.channel, param.connector, "listEntries", undefined))
 
     if (entries.length === 0) return c.text("no schedule entries")
 

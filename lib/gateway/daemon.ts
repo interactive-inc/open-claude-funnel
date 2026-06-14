@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import { resolveFunnelDir, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
@@ -79,7 +80,12 @@ process.on("exit", () => {
   }
 })
 
-const funnel = new Funnel({ logger, diagnosticLog, dir: funnelDir })
+const funnel = new Funnel({
+  logger,
+  diagnosticLog,
+  dir: funnelDir,
+  connectors: builtinConnectors(),
+})
 const gatewayToken = funnel.gatewayToken.ensure()
 const extraRoutes = buildServiceRoutes({
   diagnostics: funnel.diagnostics,

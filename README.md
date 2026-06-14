@@ -332,10 +332,13 @@ Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.j
 
 CLI を介さず、ライブラリとして組み込める。CLI が使うのと同じ `Funnel` facade をパッケージのルートから export している。`new Funnel()` は constructor で全依存を即座に組み立てて freeze する（完全イミュータブル）。
 
+コネクタは完全 DI。使う型の descriptor を `connectors` に渡したぶんだけが扱われ、渡さなければコネクタゼロ。core の import（`import { Funnel }`）にはコネクタの SDK（@slack/bolt, discord.js）が一切載らず、サブエントリ（`@interactive-inc/claude-funnel/connectors/<type>`）から descriptor を import したときだけバンドルに入る。
+
 ```ts
 import { Funnel } from "@interactive-inc/claude-funnel"
+import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
 
-const funnel = new Funnel() // ~/.funnel + /tmp/funnel がデフォルト
+const funnel = new Funnel({ connectors: [slackConnector()] }) // ~/.funnel + /tmp/funnel がデフォルト
 
 const channel = funnel.channels.add({ name: "inbox" })
 funnel.channels.addConnector("inbox", {
@@ -345,6 +348,8 @@ funnel.channels.addConnector("inbox", {
   appToken: "xapp-...",
 })
 ```
+
+Slack / Schedule の起動フックは descriptor factory の引数で渡す（`slackConnector({ onAppCreated, preprocessEvent })` / `scheduleConnector({ onFired })`）。
 
 `channels` / `profiles` / `gateway` / `listeners` / `claude` / `localConfig` / `localConfigSync` など全ファセットが同じインスタンスの readonly プロパティとして辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
 
@@ -411,8 +416,9 @@ import { FunnelProfiles } from "@interactive-inc/claude-funnel/profiles"
 // funnel.json reader / writer / syncer
 import { FunnelLocalConfig } from "@interactive-inc/claude-funnel/local-config"
 
-// コネクタスキーマ（Slack / Discord / GitHub / Schedule）
-import { slackConnectorSchema } from "@interactive-inc/claude-funnel/connectors/slack"
+// コネクタの descriptor とスキーマ（Slack / Discord / GitHub / Schedule）
+// descriptor（slackConnector 等）を new Funnel({ connectors: [...] }) に渡す
+import { slackConnector, slackConnectorSchema } from "@interactive-inc/claude-funnel/connectors/slack"
 ```
 
 ### テスト用のサンドボックス

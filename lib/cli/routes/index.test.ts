@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { routes } from "@/cli/routes"
 import { Funnel } from "@/funnel"
+import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
@@ -26,6 +27,7 @@ const buildEnv = (): RouteEnv => {
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
     tokenPrompter: new MemoryFunnelTokenPrompter(),
+    connectors: builtinConnectors(),
   })
 
   return {

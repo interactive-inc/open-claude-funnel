@@ -9,7 +9,7 @@ export const channelsConnectorsSchedulesRemoveHandler = factory.createHandlers(
     const param = c.req.valid("param")
     const funnel = c.env.funnel
 
-    funnel.channels.removeScheduleEntry(param.channel, param.connector, param.id)
+    funnel.channels.connectorOp(param.channel, param.connector, "removeEntry", { id: param.id })
 
     await funnel.listeners.restart(param.channel, param.connector)
 

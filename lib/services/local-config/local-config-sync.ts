@@ -2,8 +2,15 @@ import { appTokenSlot, botTokenSlot } from "@/engine/connectors/either-token"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { ChannelSpec, ConnectorSpec } from "@/services/local-config/local-config-schema"
 import { FunnelTokenPrompter } from "@/engine/token-prompter/token-prompter"
-import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
-import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
+import {
+  discordConnectorSchema,
+  type DiscordConnectorConfig,
+} from "@/engine/connectors/discord-connector-schema"
+import { ghConnectorSchema } from "@/engine/connectors/gh-connector-schema"
+import {
+  slackConnectorSchema,
+  type SlackConnectorConfig,
+} from "@/engine/connectors/slack-connector-schema"
 
 type Deps = {
   channels: FunnelChannels
@@ -195,13 +202,15 @@ export class FunnelLocalConfigSync {
     }
 
     if (existing && existing.type === "gh") {
-      if (spec.pollInterval !== undefined && existing.pollInterval !== spec.pollInterval) {
+      const gh = ghConnectorSchema.parse(existing)
+
+      if (spec.pollInterval !== undefined && gh.pollInterval !== spec.pollInterval) {
         this.channels.updateGhConnector(channelName, spec.name, { pollInterval: spec.pollInterval })
 
-        return { id: existing.id, name: spec.name, changed: true }
+        return { id: gh.id, name: spec.name, changed: true }
       }
 
-      return { id: existing.id, name: spec.name, changed: false }
+      return { id: gh.id, name: spec.name, changed: false }
     }
 
     const added = this.channels.addConnector(channelName, {
@@ -248,7 +257,7 @@ export class FunnelLocalConfigSync {
       )
     }
 
-    return existing
+    return slackConnectorSchema.parse(existing)
   }
 
   private findExistingDiscord(
@@ -265,7 +274,7 @@ export class FunnelLocalConfigSync {
       )
     }
 
-    return existing
+    return discordConnectorSchema.parse(existing)
   }
 
   private removeExtras(channelName: string, touched: Set<string>): string[] {

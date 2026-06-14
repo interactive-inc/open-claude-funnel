@@ -1,4 +1,5 @@
 export * from "@/engine/connectors/discord-adapter"
+export * from "@/engine/connectors/discord-connector"
 export * from "@/engine/connectors/discord-connector-schema"
 export * from "@/engine/connectors/discord-event-processor"
 export * from "@/engine/connectors/discord-listener"

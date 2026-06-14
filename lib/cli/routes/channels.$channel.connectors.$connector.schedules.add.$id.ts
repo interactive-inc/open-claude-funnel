@@ -2,7 +2,10 @@ import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { booleanFlag } from "@/cli/router/boolean-flag"
 import { zValidator } from "@/cli/router/validator"
-import { scheduleCatchupPolicySchema } from "@/engine/connectors/schedule-connector-schema"
+import {
+  scheduleCatchupPolicySchema,
+  scheduleEntrySchema,
+} from "@/engine/connectors/schedule-connector-schema"
 
 export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string(), id: z.string() })),
@@ -21,13 +24,17 @@ export const channelsConnectorsSchedulesAddHandler = factory.createHandlers(
     const query = c.req.valid("query")
     const funnel = c.env.funnel
 
-    const entry = funnel.channels.addScheduleEntry(param.channel, param.connector, {
-      id: param.id,
-      cron: query.cron,
-      prompt: query.prompt,
-      ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
-      ...(query["catchup-policy"] !== undefined ? { catchupPolicy: query["catchup-policy"] } : {}),
-    })
+    const entry = scheduleEntrySchema.parse(
+      funnel.channels.connectorOp(param.channel, param.connector, "addEntry", {
+        id: param.id,
+        cron: query.cron,
+        prompt: query.prompt,
+        ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
+        ...(query["catchup-policy"] !== undefined
+          ? { catchupPolicy: query["catchup-policy"] }
+          : {}),
+      }),
+    )
 
     await funnel.listeners.restart(param.channel, param.connector)
 

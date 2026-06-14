@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest"
-import { FunnelConnectorFactory } from "@/engine/connectors/connector-factory"
+import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
+import { discordConnector } from "@/engine/connectors/discord-connector"
+import { ghConnector } from "@/engine/connectors/gh-connector"
+import { scheduleConnector } from "@/engine/connectors/schedule-connector"
+import { slackConnector } from "@/engine/connectors/slack-connector"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
@@ -13,7 +17,8 @@ import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-
 const buildSync = (opts: { answers?: Record<string, string> } = {}) => {
   const fs = new MemoryFunnelFileSystem({})
   const store = new MockFunnelSettingsReader()
-  const factory = new FunnelConnectorFactory({
+  const registry = new FunnelConnectorRegistry({
+    descriptors: [slackConnector(), ghConnector(), discordConnector(), scheduleConnector()],
     fs,
     process: new MemoryFunnelProcessRunner(),
     logger: new NoopFunnelLogger(),
@@ -21,7 +26,7 @@ const buildSync = (opts: { answers?: Record<string, string> } = {}) => {
   })
   const channels = new FunnelChannels({
     store,
-    factory,
+    registry,
     profileChecker: { hasChannelRef: () => false },
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "ch" }),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ConnectorConfig } from "@/engine/connectors/connector-config-schema"
+import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
@@ -21,11 +21,10 @@ class FakeListener extends FunnelConnectorListener {
   }
 }
 
-const config: ConnectorConfig = {
+const config: BaseConnectorConfig = {
   id: "co-1",
   type: "schedule",
   name: "cron",
-  entries: [],
 }
 
 const view: ChannelConnectorView = { ...config, channelId: "ch-1", channelName: "ops" }
@@ -146,7 +145,7 @@ describe("FunnelListenerSupervisor", () => {
 
   test("startAll starts listeners concurrently — a failing one does not block others", async () => {
     const goodListener = new FakeListener()
-    const badConfig: ConnectorConfig = { id: "co-2", type: "slack", name: "bad-slack" } as ConnectorConfig
+    const badConfig: BaseConnectorConfig = { id: "co-2", type: "slack", name: "bad-slack" }
     const badView: ChannelConnectorView = { ...badConfig, channelId: "ch-1", channelName: "ops" }
 
     class FailingListener extends FunnelConnectorListener {

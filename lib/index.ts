@@ -59,16 +59,17 @@ export * from "@/engine/http/memory-http-client"
 
 export * from "@/engine/error/on-funnel-error"
 
-// Connectors
+// Connectors — type-agnostic core surface only. Concrete connectors (Slack,
+// Discord, GitHub, Schedule) — their descriptors, schemas, listeners, adapters —
+// live behind the per-type sub-entries
+// (`@interactive-inc/claude-funnel/connectors/<type>`), so `import { Funnel }`
+// never pulls a connector SDK (@slack/bolt, discord.js, …) into the bundle.
+// Pass descriptors at construction: `new Funnel({ connectors: [slackConnector()] })`.
 export * from "@/engine/connectors/connector-adapter"
-export * from "@/engine/connectors/connector-factory"
-export * from "@/engine/connectors/connector-config-schema"
 export * from "@/engine/connectors/connector-listener"
-export * from "@/engine/connectors/discord-connector-schema"
-export * from "@/engine/connectors/gh-connector-schema"
-export * from "@/engine/connectors/schedule-connector-schema"
-export * from "@/engine/connectors/slack-connector-schema"
-export * from "@/engine/connectors/slack-event-processor"
+export * from "@/engine/connectors/base-connector-config"
+export * from "@/engine/connectors/connector-descriptor"
+export * from "@/engine/connectors/connector-registry"
 
 // Gateway
 export type { GatewayApp } from "@/gateway/routes"

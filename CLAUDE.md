@@ -145,7 +145,7 @@ graph TD
   end
 
   subgraph engine["エンジン層"]
-    CF[ConnectorFactory]
+    CF[ConnectorRegistry]
     CH[Channels]
     PR2[Profiles]
     LC[LocalConfig + Sync + Writer]
@@ -248,7 +248,7 @@ graph TD
 
 ### lib/engine/connectors
 
-Slack / GitHub / Discord / Schedule の Connector 実装。engine の他モジュールと同列で、型ごとに Listener（必須）と Adapter（callable な場合のみ）と Schema を per-file で並置し、`FunnelConnectorFactory` の `switch` で discriminated union を dispatch する。schedule のみ adapter なし。Slack / Schedule listener は `slackListenerOptions` / `scheduleListenerOptions` で host integration hook（Bolt `app.action` 追加、event preprocess、one-shot 削除等）を受ける。サブエントリ `@interactive-inc/claude-funnel/connectors/<type>` から個別 import 可能（外向きパスは不変、実体は `lib/engine/connectors/<type>.ts`）。
+Slack / GitHub / Discord / Schedule の Connector 実装。engine の他モジュールと同列で、型ごとに Listener（必須）と Adapter（callable な場合のみ）と Schema を per-file で並置する。型は完全に DI で、core（funnel / channels / settings / mcp）は具体 connector を一切 static import しない。各型は自己記述する `ConnectorDescriptor`（`<type>-connector.ts`、例 `slack-connector.ts` の `slackConnector()`）を export し、`FunnelConnectorRegistry`（`connector-registry.ts`）が `type` で Map dispatch する。descriptor は `BaseConnectorConfig` を境界に取り内部で自前 schema parse する（switch も `as` も使わない）。host integration hook（Bolt `app.action`、event preprocess、schedule one-shot 削除等）は descriptor factory の引数で閉じる（`slackConnector({ onAppCreated })` / `scheduleConnector({ onFired })`）。`new Funnel({ connectors: [...] })` に渡した型だけが扱われ、渡さなければ connector ゼロ（default registry は無い）。descriptor を import することがその型の重い SDK（@slack/bolt, discord.js）を bundle に引き込む唯一の経路なので、programmable な `import { Funnel }` には connector SDK が一切載らない。`fnl` CLI / daemon / MCP server という full-bundle entry だけが `builtin-connectors.ts` の `builtinConnectors()` で 4 型全部を登録する（public barrel には出さない）。サブエントリ `@interactive-inc/claude-funnel/connectors/<type>` から個別 import 可能（外向きパスは不変、実体は `lib/engine/connectors/<type>.ts`）。
 
 ### lib/gateway
 
@@ -324,18 +324,19 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 
 ### ドキュメントの所在
 
-ユーザー向けドキュメントは `lib/engine/docs/topics/docs-<topic>.ts` に置く（`fnl docs <topic>` で引ける）。README.md や外部 doc サイトは持たない。新しいトピックを追加する手順。
+CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<topic>.ts` に置く（`fnl docs <topic>` で引ける）。外部 doc サイトは持たない。README.md はリポジトリのランディング（概要・CLI 例・プログラマブル API 例）で、API を変える変更では README も合わせて更新する。新しいトピックを追加する手順。
 
 - `lib/engine/docs/topics/docs-<name>.ts` を書く（`export const docs<Name> = ...`）
 - `lib/engine/docs/funnel-docs.ts` の `DOCS` と `SUMMARIES` に追加
 
 ### Connectors
 
-- Connector は channel に nested で持つ。CRUD は `FunnelChannels` 経由。トップレベルの集約クラスは持たない（型ごとの分散による型安全 dispatch）
-- 各型に Listener と Adapter と Schema と EventProcessor を per-file で並置。Factory の `switch` で discriminated union を分岐し、`as` キャストは使わない
+- Connector は channel に nested で持つ。CRUD は `FunnelChannels` 経由。トップレベルの集約クラスは持たない
+- 型は完全 DI。各型は `ConnectorDescriptor`（`<type>-connector.ts`）を export し、`FunnelConnectorRegistry` が `type` で Map dispatch する（switch 禁止）。descriptor は `BaseConnectorConfig` を境界に取り内部で自前 schema parse するので `as` は不要。core は具体 connector を static import しない
+- channels の connector CRUD は generic。`addConnector` は registry の `buildConfig`、更新は `updateConnector`（旧 `updateSlackConnector` 等は thin wrapper として残す）、型固有操作（schedule entries 等）は descriptor の `operations` を `connectorOp(channel, connector, op, args)` で叩く。token 抽出は descriptor の `secretTokens`
 - Channel ↔ Profile の双方向依存は `ProfileChannelChecker` / `ProfileChannelRefUpdater` の型で切り、`FunnelChannels` が DI で受け取る
-- 新しい Connector 型を足すときは per-type ファイルと factory の `switch` に追加し、MCP に出すなら `channel-server.ts` の `TOOL_CONNECTOR_TYPES` に追記する
-- Slack / Schedule の host integration hook を増やすときは `SlackListenerOptions` / `ScheduleListenerOptions` を拡張し、Factory → Funnel facade まで素通しで通す
+- 新しい Connector 型を足すときは `<type>-connector-schema.ts` / `<type>-listener.ts`（+ adapter）と `<type>-connector.ts`（descriptor）を書き、サブエントリ `<type>.ts` で re-export し、`builtin-connectors.ts` に 1 行足すだけ。core（channels / settings / mcp）は触らない。MCP 露出は descriptor の `toolExposed` で宣言する（`channel-server.ts` が descriptor から tool 型集合を導出する）
+- host integration hook を増やすときは descriptor factory の options 型（`SlackConnectorOptions` 等）を拡張する。Funnel facade / registry には型固有 hook を通さない（descriptor closure に閉じる）
 
 ### Gateway とライフサイクル
 
@@ -355,7 +356,7 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - cron 5 フィールド + プロンプトを保存し、毎分 tick で発火する
 - `lastFiredAt` から逆走してスリープ復帰や daemon 再起動で落ちた分を catch-up 発火する（上限 24 時間）。catch-up は `meta.catchup = "true"` を付ける
 - cron 評価は自前実装（`*` / `N` / `A-B` / `*/N` / `A,B` 対応）
-- `scheduleListenerOptions.onFired` で host 側に通知できる（one-shot エントリ削除等）。throw は logger に捕捉され tick を止めない
+- `scheduleConnector({ onFired })` で host 側に通知できる（one-shot エントリ削除等）。throw は logger に捕捉され tick を止めない
 
 ### MCP Channel
 

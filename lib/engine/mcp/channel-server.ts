@@ -14,6 +14,8 @@ import {
 } from "@/engine/mcp/channel-server-tools"
 import { FunnelChannelSubscriber } from "@/engine/mcp/channel-subscriber"
 import { FUNNEL_MCP_NAME } from "@/engine/mcp/mcp"
+import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
+import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { readChannelConnectors } from "@/engine/mcp/read-channel-connectors"
 import { readGatewayToken } from "@/engine/mcp/read-gateway-token"
 import { settingsSchema } from "@/engine/settings/settings-schema"
@@ -31,6 +33,19 @@ export type ChannelServerOptions = {
   channelId?: string
   /** Auth token. Defaults to `$FUNNEL_GATEWAY_TOKEN` then `<dir>/gateway.token`. */
   token?: string
+  /** Connector descriptors whose tools this MCP server exposes. Defaults to the
+   *  four built-in connectors; the tool-exposed subset is derived from them. */
+  connectors?: ConnectorDescriptor[]
+}
+
+const toolConnectorTypesOf = (descriptors: ConnectorDescriptor[]): Set<string> => {
+  const out = new Set<string>()
+
+  for (const descriptor of descriptors) {
+    if (descriptor.toolExposed) out.add(descriptor.type)
+  }
+
+  return out
 }
 
 type ChannelSummary = { id: string; name: string }
@@ -69,7 +84,8 @@ export const startChannelServer = async (options: ChannelServerOptions = {}): Pr
     options.gatewayUrl ?? process.env.FUNNEL_GATEWAY_URL ?? gatewayLoopbackUrl(resolveFunnelPort())
   const gatewayWsUrl = `${gatewayBaseUrl.replace(/^http/, "ws")}/ws`
   const channelId = options.channelId ?? process.env.FUNNEL_CHANNEL_ID
-  const channel = channelId ? readChannelConnectors(dir, channelId) : null
+  const toolConnectorTypes = toolConnectorTypesOf(options.connectors ?? builtinConnectors())
+  const channel = channelId ? readChannelConnectors(dir, channelId, toolConnectorTypes) : null
   const token = options.token ?? readGatewayToken(dir)
   const allChannels = readAllChannels(dir)
   const currentChannelName = channel?.channelName ?? null

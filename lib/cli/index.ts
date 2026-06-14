@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import pkg from "@/../package.json" with { type: "json" }
 import { dispatchClaude } from "@/cli/dispatch-claude"
 import { resolveRepoDir } from "@/cli/resolve-repo-dir"
+import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
 import { startChannelServer } from "@/engine/mcp/channel-server"
 import { toRequest } from "@/cli/router/to-request"
 import { routes } from "@/cli/routes"
@@ -41,7 +42,10 @@ const repoDir = resolveRepoDir(
 
 if (repoDir) process.env.FUNNEL_DIR = repoDir
 
-const funnel = new Funnel({ logger: new NodeFunnelLogger() })
+const funnel = new Funnel({
+  logger: new NodeFunnelLogger(),
+  connectors: builtinConnectors(),
+})
 const { claude, profiles, localConfig, localConfigSync } = funnel
 
 const env = { funnel, claude, profiles, localConfig, localConfigSync }

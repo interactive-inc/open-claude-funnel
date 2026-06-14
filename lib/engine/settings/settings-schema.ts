@@ -1,5 +1,13 @@
 import { z } from "zod"
-import { connectorConfigSchema } from "@/engine/connectors/connector-config-schema"
+import { baseConnectorConfigSchema } from "@/engine/connectors/base-connector-config"
+
+/**
+ * Connectors are stored loosely here: settings validates only the common base
+ * fields and preserves every type-specific key verbatim (`.passthrough()`).
+ * Core does not enumerate connector types, so strict per-type validation happens
+ * at the registry/descriptor layer (CRUD time), not on every settings read.
+ */
+const storedConnectorSchema = baseConnectorConfigSchema.passthrough()
 
 /**
  * Routing mode when multiple WS clients are subscribed to the same channel.
@@ -20,7 +28,7 @@ export const channelConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   delivery: channelDeliveryModeSchema.default("fanout"),
-  connectors: z.array(connectorConfigSchema).default([]),
+  connectors: z.array(storedConnectorSchema).default([]),
 })
 
 export type ChannelConfig = z.infer<typeof channelConfigSchema>

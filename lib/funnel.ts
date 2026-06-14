@@ -3,11 +3,8 @@ import type { Hono } from "hono"
 import { hc } from "hono/client"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import type { GatewayApp } from "@/gateway/routes"
-import {
-  FunnelConnectorFactory,
-  type ScheduleListenerOptions,
-  type SlackListenerOptions,
-} from "@/engine/connectors/connector-factory"
+import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
+import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
 import { FileProcessGuard } from "@/engine/claude/file-process-guard"
@@ -72,16 +69,15 @@ type Props = {
   /** Temp / runtime directory (gateway logs and PID adjacent files). Defaults to `<os.tmpdir()>/funnel`. */
   tmpDir?: string
   /**
-   * Host integration hooks for Slack listeners — `onAppCreated` for attaching
-   * Bolt `app.action` handlers, `preprocessEvent` for transforming/dropping
-   * raw Slack events before the built-in processor sees them.
+   * Connector types this funnel handles, passed as descriptors. Core imports no
+   * connector, so a type's (heavy) listener/adapter code is bundled only when its
+   * descriptor is imported and listed here. Import from the per-type sub-entries:
+   * `import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"`.
+   * Type-specific launch hooks (Slack `onAppCreated`/`preprocessEvent`, Schedule
+   * `onFired`) are passed to the descriptor factory, e.g. `slackConnector({ onAppCreated })`.
+   * Defaults to `[]` — no connectors handled.
    */
-  slackListenerOptions?: SlackListenerOptions
-  /**
-   * Host integration hooks for Schedule listeners — `onFired` is invoked after
-   * each successful fire, useful for dropping one-shot entries.
-   */
-  scheduleListenerOptions?: ScheduleListenerOptions
+  connectors?: ConnectorDescriptor[]
   /**
    * Diagnostic log of inbound connector traffic (raw events before filtering
    * and the processor's verdict after). Threaded into listeners that record
@@ -133,7 +129,9 @@ export type GatewayServerOptions = GatewayEventStore & {
  *
  * @example
  * ```ts
- * const funnel = new Funnel({})
+ * import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
+ *
+ * const funnel = new Funnel({ connectors: [slackConnector()] })
  * const channel = funnel.channels.add({ name: "inbox" })
  * funnel.channels.addConnector("inbox", { type: "slack", name: "ops", botToken, appToken })
  * await funnel.gatewayServer({ port: 9742 }).start()
@@ -184,14 +182,13 @@ export class Funnel {
         idGenerator,
       })
 
-    const factory = new FunnelConnectorFactory({
+    const registry = new FunnelConnectorRegistry({
+      descriptors: props.connectors ?? [],
       fs,
       process,
       logger: this.logger,
       diagnosticLog: props.diagnosticLog,
       dir,
-      slackListenerOptions: props.slackListenerOptions,
-      scheduleListenerOptions: props.scheduleListenerOptions,
     })
 
     this.profiles = new FunnelProfiles({ store, idGenerator, fs })
@@ -200,7 +197,7 @@ export class Funnel {
     // refuse to orphan a profile that still points at the channel.
     this.channels = new FunnelChannels({
       store,
-      factory,
+      registry,
       clock,
       idGenerator,
       profileChecker: this.profiles,
