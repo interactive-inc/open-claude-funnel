@@ -63,7 +63,10 @@ const buildStatusReport = async (funnel: Funnel, profiles: FunnelProfiles) => {
   let gatewayData: GatewayStatus | null = null
 
   if (gatewayStatus.running) {
-    const res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`).catch(() => null)
+    const token = funnel.gatewayToken.read()
+    const res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    }).catch(() => null)
 
     if (res && res.ok) {
       const body: unknown = await res.json()

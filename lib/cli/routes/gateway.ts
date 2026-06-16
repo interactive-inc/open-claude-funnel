@@ -71,15 +71,18 @@ export const renderGatewayStatus = async (c: Context<Env>) => {
     return c.text(renderYaml({ running: false }), 503)
   }
 
-  const res = await fetch(`${gatewayLoopbackUrl(status.port)}/status`).catch(() => null)
+  const token = funnel.gatewayToken.read()
+  const res = await fetch(`${gatewayLoopbackUrl(status.port)}/status`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  }).catch(() => null)
 
-  if (!res) {
+  if (!res || !res.ok) {
     return c.text(
       renderYaml({
         running: true,
         pid: status.pid,
         port: status.port,
-        error: "health check failed",
+        error: res ? `status check failed (${res.status})` : "status check failed",
       }),
     )
   }
