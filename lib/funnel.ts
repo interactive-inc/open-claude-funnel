@@ -240,6 +240,7 @@ export class Funnel {
       guard: new FileProcessGuard({ fs, process, dir }),
       process,
       logger: this.logger,
+      dir,
     })
 
     this.diagnostics = new FunnelDiagnostics({

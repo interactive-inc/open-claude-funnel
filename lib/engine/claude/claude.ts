@@ -64,6 +64,7 @@ type Deps = {
   process?: FunnelProcessRunner
   idGenerator?: FunnelIdGenerator
   logger?: FunnelLogger
+  dir?: string
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
@@ -84,6 +85,7 @@ export class FunnelClaude {
   private readonly process: FunnelProcessRunner
   private readonly idGenerator: FunnelIdGenerator
   private readonly logger: FunnelLogger | undefined
+  private readonly dir: string | undefined
 
   constructor(deps: Deps) {
     this.channels = deps.channels
@@ -94,6 +96,7 @@ export class FunnelClaude {
     this.process = deps.process ?? defaultProcess
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     this.logger = deps.logger
+    this.dir = deps.dir
     Object.freeze(this)
   }
 
@@ -250,12 +253,11 @@ export class FunnelClaude {
     }
 
     env.FUNNEL_CHANNEL_ID = channelId
-    // Pin the MCP child to the same gateway port this launch resolved, so a
-    // CLI-default port never diverges from a programmatically-hosted gateway
-    // (e.g. nocker's 9742 vs a CLI funnel's 9743). resolveFunnelPort reads
-    // FUNNEL_PORT, and process.env already won above, so this just makes the
-    // resolved port explicit for the child and its MCP server.
     env.FUNNEL_PORT = String(resolveFunnelPort())
+
+    if (this.dir !== undefined) {
+      env.FUNNEL_DIR = this.dir
+    }
 
     return env
   }
