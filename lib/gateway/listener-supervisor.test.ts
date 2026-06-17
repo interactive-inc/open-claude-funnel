@@ -251,6 +251,57 @@ describe("FunnelListenerSupervisor", () => {
     await supervisor.stopAll()
   })
 
+  test("recoverDead re-queues the listener when start() fails so it is not orphaned", async () => {
+    // Regression for #18: when recoverDead's restart attempt failed, the
+    // listener was dropped from `running` by stop() but never added to
+    // `pendingRetry`, so the health-check loop never touched it again.
+    class RestartFailsOnceListener extends FunnelConnectorListener {
+      alive = false
+      startCalls = 0
+      /** start #1 ok, #2 (recoverDead retry) throws, #3 (pendingRetry retry) ok. */
+      async start(): Promise<void> {
+        this.startCalls += 1
+        if (this.startCalls === 2) throw new Error("transient connect failure")
+        this.alive = true
+      }
+      async stop(): Promise<void> {
+        this.alive = false
+      }
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listener = new RestartFailsOnceListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      sleep: async () => {},
+      healthCheckIntervalMs: 1,
+    })
+
+    await supervisor.start("ops", "cron")
+    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(listener.startCalls).toBe(1)
+
+    // Simulate the upstream connection dropping (e.g. Slack WS disconnect).
+    // One tick walks `running` (recoverDead's start #2 throws) and then
+    // `pendingRetry` (start #3 succeeds). Before the fix start #2's failure
+    // would leave the listener in neither map and isRunning would stay false.
+    listener.alive = false
+
+    await supervisor.runHealthCheckForTest()
+
+    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(listener.startCalls).toBe(3)
+
+    await supervisor.stopAll()
+  })
+
   test("recoverDead really restarts the listener even when stop() throws", async () => {
     class FlakyStopListener extends FunnelConnectorListener {
       alive = false

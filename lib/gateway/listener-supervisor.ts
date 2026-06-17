@@ -411,6 +411,11 @@ export class FunnelListenerSupervisor {
       })
     } else {
       this.failureCounts.set(key, failureCount + 1)
+      // Without this the listener is in neither `running` (stop() above
+      // dropped it) nor `pendingRetry`, so the health check skips it forever
+      // and the connector stays dead until the gateway is restarted by hand.
+      // The pendingRetry loop in the same tick will already pick it up.
+      this.pendingRetry.set(key, { channelName, connectorName })
     }
   }
 }
