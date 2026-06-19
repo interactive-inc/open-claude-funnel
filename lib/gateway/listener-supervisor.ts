@@ -192,6 +192,12 @@ export class FunnelListenerSupervisor {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
 
+      try {
+        await created.listener.stop()
+      } catch {
+        // best-effort cleanup; the listener may be partially initialized
+      }
+
       this.logger?.error(`${created.config.type} listener failed to start`, {
         channel: channelName,
         connector: connectorName,
