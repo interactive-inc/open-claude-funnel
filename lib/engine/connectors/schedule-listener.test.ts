@@ -142,6 +142,45 @@ describe("FunnelScheduleListener", () => {
     expect(sent).toHaveLength(2)
   })
 
+  test("tick failure does not stop the next timer from scheduling", async () => {
+    const config = buildConfig([buildEntry({ cron: "* * * * *" })])
+    const fs = new MemoryFunnelFileSystem()
+    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    let tickCount = 0
+    const listener = new FunnelScheduleListener({
+      config,
+      lastFiredStore,
+      logger: new NoopFunnelLogger(),
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+    })
+
+    const throwOnce: Parameters<typeof listener.start>[0] = async () => {
+      tickCount++
+      if (tickCount === 1) throw new Error("notify boom")
+    }
+
+    await listener.start(throwOnce)
+
+    expect(listener.isAlive()).toBe(true)
+
+    await listener.stop()
+  })
+
+  test("isAlive returns true while ticks are scheduled", async () => {
+    const config = buildConfig([buildEntry({ cron: "* * * * *" })])
+    const { listener } = buildListener(config, new Date("2026-01-01T00:00:00.000Z"))
+
+    expect(listener.isAlive()).toBe(false)
+
+    await listener.start(async () => {})
+
+    expect(listener.isAlive()).toBe(true)
+
+    await listener.stop()
+
+    expect(listener.isAlive()).toBe(false)
+  })
+
   test("persists lastFiredAt across constructor reloads (catch-up: latest)", async () => {
     const fs = new MemoryFunnelFileSystem()
     const path = "/funnel/state.json"
