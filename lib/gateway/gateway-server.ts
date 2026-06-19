@@ -211,7 +211,7 @@ export class FunnelGatewayServer {
       fetch: (request, server) => this.handleFetch(request, server, app),
       websocket: {
         open: (ws) => this.handleWsOpen(ws),
-        close: (ws) => this.handleWsClose(ws),
+        close: (ws, code, reason) => this.handleWsClose(ws, code, reason),
         message() {
           // required by Bun's websocket interface; no client → gateway messages today
         },
@@ -330,7 +330,7 @@ export class FunnelGatewayServer {
     })
   }
 
-  private handleWsClose(ws: ServerWebSocket<WsData>): void {
+  private handleWsClose(ws: ServerWebSocket<WsData>, code: number, reason: string): void {
     this.broadcaster.removeClient(ws)
 
     this.logger?.info("channel disconnected", {
@@ -339,6 +339,8 @@ export class FunnelGatewayServer {
       channel: ws.data.channelName ?? "",
       channelId: ws.data.channel,
       total: String(this.broadcaster.getClientCount()),
+      closeCode: String(code),
+      closeReason: reason || "(none)",
     })
   }
 
