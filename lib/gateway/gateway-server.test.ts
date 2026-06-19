@@ -8,6 +8,19 @@ import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import type { Env } from "@/gateway/factory"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
+import type { ReplayableEvent } from "@/gateway/broadcaster"
+import { FunnelEventLog, type FunnelEventRecord } from "@/gateway/event-log/event-log"
+
+class TrackableEventLog extends FunnelEventLog {
+  closeCalled = false
+  private readonly inner = new MemoryFunnelEventLog()
+
+  record(record: FunnelEventRecord): void { this.inner.record(record) }
+  loadSince(since: number): ReplayableEvent[] { return this.inner.loadSince(since) }
+  findMaxOffset(): number { return this.inner.findMaxOffset() }
+  clear(): void { this.inner.clear() }
+  close(): void { this.closeCalled = true }
+}
 
 const startServer = async (token: string) => {
   const fs = new MemoryFunnelFileSystem()
@@ -272,6 +285,23 @@ describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
     expect(observed).toEqual(["hello", "world"])
     expect(eventLog.loadSince(0).map((event) => event.content)).toEqual(["hello", "world"])
     expect(server.getEventLog()).toBe(eventLog)
+  })
+
+  test("stop() does not close an externally-injected event log", async () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    const eventLog = new TrackableEventLog()
+    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+
+    await server.start()
+    await server.stop()
+
+    expect(eventLog.closeCalled).toBe(false)
   })
 
   test("emit stamps channelId whether the channel is named by name or by id", () => {
