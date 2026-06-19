@@ -43,6 +43,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly onFired: ScheduleOnFired | null
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
+  private tickScheduled = false
 
   constructor(deps: Deps) {
     super()
@@ -57,6 +58,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
   async start(notify: NotifyFn): Promise<void> {
     this.stopped = false
+    this.tickScheduled = true
 
     this.recordConnection("started", "")
 
@@ -67,19 +69,38 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       const msUntilNextMinute = 60_000 - (date.getSeconds() * 1000 + date.getMilliseconds())
       this.timer = setTimeout(async () => {
         if (this.stopped) return
-        await this.tick(notify)
+
+        try {
+          await this.tick(notify)
+        } catch (error) {
+          this.logger?.error("schedule tick failed", {
+            connector: this.config.name,
+            error: errorMessageOf(error),
+          })
+        }
+
         scheduleNext()
       }, msUntilNextMinute)
 
       this.timer.unref()
+      this.tickScheduled = true
     }
 
-    await this.tick(notify)
+    try {
+      await this.tick(notify)
+    } catch (error) {
+      this.logger?.error("schedule tick failed", {
+        connector: this.config.name,
+        error: errorMessageOf(error),
+      })
+    }
+
     scheduleNext()
   }
 
   async stop(): Promise<void> {
     this.stopped = true
+    this.tickScheduled = false
 
     if (this.timer) {
       clearTimeout(this.timer)
@@ -90,7 +111,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   override isAlive(): boolean {
-    return !this.stopped && this.timer !== null
+    return !this.stopped && this.tickScheduled
   }
 
   async tick(notify: NotifyFn): Promise<void> {
