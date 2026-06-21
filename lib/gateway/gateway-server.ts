@@ -115,6 +115,7 @@ export class FunnelGatewayServer {
   private readonly supervisor: FunnelListenerSupervisor
   private readonly nowMs: () => number
   private readonly extraRoutes: Hono<Env> | null
+  private readonly ownsEventLog: boolean
   private startedAt: number | null = null
   private server: Server<WsData> | null = null
 
@@ -136,6 +137,7 @@ export class FunnelGatewayServer {
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
     if (deps.eventLog) {
       this.eventLog = deps.eventLog
+      this.ownsEventLog = false
     } else {
       const dbDir = dirname(this.dbPath)
 
@@ -146,6 +148,7 @@ export class FunnelGatewayServer {
         now: this.nowMs,
         logger: this.logger,
       })
+      this.ownsEventLog = true
     }
 
     this.broadcaster = new FunnelBroadcaster({
@@ -229,6 +232,8 @@ export class FunnelGatewayServer {
       this.server.stop()
       this.server = null
     }
+
+    if (this.ownsEventLog) this.eventLog.close()
   }
 
   getStatus(): { clients: number; channels: { channel: string; connectors: string[] }[] } {

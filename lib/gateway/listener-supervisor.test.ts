@@ -208,6 +208,68 @@ describe("FunnelListenerSupervisor", () => {
     expect(result.reason).toMatch(/timed out/)
   })
 
+  test("listener.stop() is called when start() times out to prevent resource leaks", async () => {
+    let stopped = false
+
+    class HangingListener extends FunnelConnectorListener {
+      async start(): Promise<void> {
+        await new Promise(() => {})
+      }
+      async stop(): Promise<void> {
+        stopped = true
+      }
+      override isAlive(): boolean {
+        return false
+      }
+    }
+
+    const listener = new HangingListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      startTimeoutMs: 50,
+      sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
+    })
+
+    await supervisor.start("ops", "cron")
+
+    expect(stopped).toBe(true)
+  })
+
+  test("listener.stop() is called when start() throws to prevent resource leaks", async () => {
+    let stopped = false
+
+    class FailAndLeakListener extends FunnelConnectorListener {
+      async start(): Promise<void> {
+        throw new Error("start failed")
+      }
+      async stop(): Promise<void> {
+        stopped = true
+      }
+      override isAlive(): boolean {
+        return false
+      }
+    }
+
+    const listener = new FailAndLeakListener()
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+    })
+
+    await supervisor.start("ops", "cron")
+
+    expect(stopped).toBe(true)
+  })
+
   test("failed listeners are retried by health check via pendingRetry", async () => {
     let startAttempts = 0
 
