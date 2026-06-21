@@ -1,38 +1,29 @@
 import { FunnelSlackAdapter } from "@/engine/connectors/slack-adapter"
 import { slackConnectorSchema } from "@/engine/connectors/slack-connector-schema"
-import type {
-  SlackOnAppCreated,
-  SlackPreprocessEvent,
-} from "@/engine/connectors/slack-listener"
-import { FunnelSlackListener } from "@/engine/connectors/slack-listener"
+import { FunnelFlumeSlackListener } from "@/engine/connectors/slack-flume-listener"
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
 
-export type SlackConnectorOptions = {
-  /** Invoked after the Bolt App is constructed, before start — attach app.action handlers etc. */
-  onAppCreated?: SlackOnAppCreated
-  /** Transform or drop a raw Slack event before the built-in processor sees it. */
-  preprocessEvent?: SlackPreprocessEvent
-}
-
 /**
  * Slack connector descriptor. Pass `slackConnector()` to
- * `new Funnel({ connectors: [...] })` to enable the type. Host launch hooks are
- * closed over here, so they need no Funnel-level option plumbing.
+ * `new Funnel({ connectors: [...] })` to enable the type.
+ *
+ * The listener is backed by `@interactive-inc/flume`'s `FlumeSlackSource`
+ * (raw Socket Mode WebSocket). Only the events API envelope is delivered —
+ * there is no equivalent for the Bolt-style `app.action` / `app.command`
+ * dispatch or middleware preprocessing.
  */
-export const slackConnector = (options: SlackConnectorOptions = {}): ConnectorDescriptor => ({
+export const slackConnector = (): ConnectorDescriptor => ({
   type: "slack",
   toolExposed: true,
   createListener(config, deps) {
     const parsed = slackConnectorSchema.parse(config)
 
-    return new FunnelSlackListener({
+    return new FunnelFlumeSlackListener({
       config: parsed,
       channelId: deps.channelId,
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
-      onAppCreated: options.onAppCreated,
-      preprocessEvent: options.preprocessEvent,
     })
   },
   createAdapter(config) {

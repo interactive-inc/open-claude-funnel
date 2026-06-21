@@ -2,11 +2,9 @@ import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/conn
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { matchCron } from "@/engine/connectors/match-cron"
 import { ScheduleStateStore } from "@/engine/connectors/schedule-state-store"
+import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
 import { FunnelLogger } from "@/engine/logger/logger"
-import type {
-  ConnectorConnectionStatus,
-  ConnectorDiagnosticLog,
-} from "@/engine/diagnostic-log/diagnostic-log"
+import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type {
   ScheduleConnectorConfig,
   ScheduleEntry,
@@ -36,9 +34,8 @@ const MAX_CATCHUP_MINUTES = 60 * 24
 export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly config: ScheduleConnectorConfig
   private readonly lastFiredStore: ScheduleStateStore
-  private readonly channelId: string | null
   private readonly logger: FunnelLogger | undefined
-  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
+  private readonly diagnostics: FunnelConnectorDiagnosticsRecorder
   private readonly now: () => Date
   private readonly onFired: ScheduleOnFired | null
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -48,9 +45,13 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     super()
     this.config = deps.config
     this.lastFiredStore = deps.lastFiredStore
-    this.channelId = deps.channelId ?? null
     this.logger = deps.logger
-    this.diagnosticLog = deps.diagnosticLog
+    this.diagnostics = new FunnelConnectorDiagnosticsRecorder({
+      type: "schedule",
+      connectorId: deps.config.id,
+      channelId: deps.channelId ?? null,
+      log: deps.diagnosticLog,
+    })
     this.now = deps.now ?? (() => new Date())
     this.onFired = deps.onFired ?? null
   }
@@ -58,7 +59,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   async start(notify: NotifyFn): Promise<void> {
     this.stopped = false
 
-    this.recordConnection("started", "")
+    this.diagnostics.recordConnection("started", "")
 
     const scheduleNext = () => {
       if (this.stopped) return
@@ -86,7 +87,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       this.timer = null
     }
 
-    this.recordConnection("stopped", "")
+    this.diagnostics.recordConnection("stopped", "")
   }
 
   override isAlive(): boolean {
@@ -175,16 +176,25 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     // the exact firing time so catch-up fires of one entry stay distinct.
     const eventId = `${entry.id}@${firedAt.toISOString()}`
 
-    this.recordRaw(eventId, entry, firedAt, catchup)
+    this.diagnostics.recordRaw(
+      eventId,
+      JSON.stringify({
+        schedule_id: entry.id,
+        cron: entry.cron,
+        prompt: entry.prompt,
+        fired_at: firedAt.toISOString(),
+        catchup,
+      }),
+    )
 
     try {
       await notify(entry.prompt, meta)
     } catch (error) {
-      this.recordProcessed(eventId, entry, "emitted:delivery-failed")
+      this.diagnostics.recordProcessed(eventId, "emitted:delivery-failed", entry.prompt)
       throw error
     }
 
-    this.recordProcessed(eventId, entry, "emitted")
+    this.diagnostics.recordProcessed(eventId, "emitted", entry.prompt)
 
     if (this.onFired) {
       try {
@@ -211,7 +221,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       try {
         if (matchCron(cron, candidate)) return candidate
       } catch (error) {
-        this.logInvalidCron({ id: entryId, cron } as ScheduleEntry, error)
+        this.logInvalidCron({ id: entryId, cron }, error)
         return null
       }
     }
@@ -234,7 +244,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       try {
         if (matchCron(cron, candidate)) matches.push(candidate)
       } catch (error) {
-        this.logInvalidCron({ id: entryId, cron } as ScheduleEntry, error)
+        this.logInvalidCron({ id: entryId, cron }, error)
         return []
       }
     }
@@ -245,7 +255,10 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private logInvalidCron(entry: Pick<ScheduleEntry, "id" | "cron">, error: unknown): void {
     const message = errorMessageOf(error)
 
-    this.recordConnection("error", `invalid cron "${entry.cron}" (entry ${entry.id}): ${message}`)
+    this.diagnostics.recordConnection(
+      "error",
+      `invalid cron "${entry.cron}" (entry ${entry.id}): ${message}`,
+    )
     this.logger?.error("invalid cron expression in schedule", {
       connector: this.config.name,
       id: entry.id,
@@ -258,42 +271,5 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     const copy = new Date(date.getTime())
     copy.setSeconds(0, 0)
     return copy
-  }
-
-  private recordRaw(eventId: string, entry: ScheduleEntry, firedAt: Date, catchup: boolean): void {
-    this.diagnosticLog?.recordRaw({
-      eventId,
-      type: "schedule",
-      connectorId: this.config.id,
-      channelId: this.channelId,
-      payload: JSON.stringify({
-        schedule_id: entry.id,
-        cron: entry.cron,
-        prompt: entry.prompt,
-        fired_at: firedAt.toISOString(),
-        catchup,
-      }),
-    })
-  }
-
-  private recordProcessed(eventId: string, entry: ScheduleEntry, outcome: string): void {
-    this.diagnosticLog?.recordProcessed({
-      eventId,
-      type: "schedule",
-      connectorId: this.config.id,
-      channelId: this.channelId,
-      outcome,
-      payload: entry.prompt,
-    })
-  }
-
-  private recordConnection(status: ConnectorConnectionStatus, detail: string): void {
-    this.diagnosticLog?.recordConnection({
-      type: "schedule",
-      connectorId: this.config.id,
-      channelId: this.channelId,
-      status,
-      detail,
-    })
   }
 }

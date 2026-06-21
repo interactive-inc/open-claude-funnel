@@ -1,5 +1,5 @@
-import { describe, expect, vi, test } from "vitest"
-import { FunnelSlackAdapter, type SlackWebClientLike } from "@/engine/connectors/slack-adapter"
+import { describe, expect, vi, test, beforeEach } from "vitest"
+import { FunnelSlackAdapter } from "@/engine/connectors/slack-adapter"
 
 const config = {
   type: "slack" as const,
@@ -10,12 +10,23 @@ const config = {
   minify: true,
 }
 
-describe("FunnelSlackAdapter", () => {
-  test("calls client.apiCall(path, body)", async () => {
-    const apiCall = vi.fn(async () => ({ ok: true }))
-    const client: SlackWebClientLike = { apiCall }
+const mockResponse = (body: unknown, status = 200): Response => {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  })
+}
 
-    const adapter = new FunnelSlackAdapter({ config, client })
+describe("FunnelSlackAdapter", () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch
+  })
+
+  test("posts to https://slack.com/api/<path> with bearer token and form body", async () => {
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: true }))
+
+    const adapter = new FunnelSlackAdapter({ config })
 
     const result = await adapter.call({
       method: "post",
@@ -24,31 +35,41 @@ describe("FunnelSlackAdapter", () => {
     })
 
     expect(result).toEqual({ ok: true })
-    expect(apiCall).toHaveBeenCalledWith("chat.postMessage", { channel: "D1", text: "hi" })
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://slack.com/api/chat.postMessage",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer xoxb-test",
+          "Content-Type": "application/x-www-form-urlencoded",
+        }),
+      }),
+    )
+    const callBody = fetchMock.mock.calls[0]![1]!.body as string
+
+    expect(callBody).toContain("channel=D1")
+    expect(callBody).toContain("text=hi")
   })
 
-  test("passes {} when body is not an object", async () => {
-    const apiCall = vi.fn(async () => ({ ok: true }))
-    const client: SlackWebClientLike = { apiCall }
+  test("passes empty body when input body is not an object", async () => {
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: true }))
 
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const adapter = new FunnelSlackAdapter({ config })
 
     await adapter.call({ method: "post", path: "auth.test" })
 
-    expect(apiCall).toHaveBeenCalledWith("auth.test", {})
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://slack.com/api/auth.test",
+      expect.objectContaining({ method: "POST" }),
+    )
   })
 
-  test("unwraps Slack platform errors and returns response.data", async () => {
-    const slackError = Object.assign(new Error("An API error occurred: channel_not_found"), {
-      code: "slack_webapi_platform_error",
-      data: { ok: false, error: "channel_not_found" },
-    })
-    const apiCall = vi.fn(async () => {
-      throw slackError
-    })
-    const client: SlackWebClientLike = { apiCall }
+  test("returns Slack platform error body verbatim when ok=false", async () => {
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: false, error: "channel_not_found" }))
 
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const adapter = new FunnelSlackAdapter({ config })
 
     const result = await adapter.call({
       method: "post",
@@ -59,90 +80,93 @@ describe("FunnelSlackAdapter", () => {
     expect(result).toEqual({ ok: false, error: "channel_not_found" })
   })
 
-  test("unwraps Slack rate-limit errors the same way", async () => {
-    const slackError = Object.assign(new Error("A rate limit was exceeded"), {
-      code: "slack_webapi_rate_limited_error",
-      data: { ok: false, error: "ratelimited", retryAfter: 30 },
-    })
-    const apiCall = vi.fn(async () => {
-      throw slackError
-    })
-    const client: SlackWebClientLike = { apiCall }
+  test("returns Slack rate-limit payload the same way", async () => {
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: false, error: "ratelimited", retryAfter: 30 }))
 
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const adapter = new FunnelSlackAdapter({ config })
 
     const result = await adapter.call({ method: "post", path: "chat.postMessage" })
 
     expect(result).toEqual({ ok: false, error: "ratelimited", retryAfter: 30 })
   })
 
-  test("rethrows non-Slack errors so infrastructure failures still surface as 500", async () => {
-    const apiCall = vi.fn(async () => {
-      throw new Error("ECONNREFUSED")
-    })
-    const client: SlackWebClientLike = { apiCall }
+  test("returns synthetic ok=false when response is not JSON", async () => {
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(new Response("not json", { status: 200 }))
 
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const adapter = new FunnelSlackAdapter({ config })
 
-    await expect(adapter.call({ method: "post", path: "auth.test" })).rejects.toThrow(
-      /ECONNREFUSED/,
-    )
+    const result = await adapter.call({ method: "post", path: "auth.test" })
+
+    expect(result).toEqual(expect.objectContaining({ ok: false }))
   })
 })
 
 describe("FunnelSlackAdapter domain methods", () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn() as unknown as typeof fetch
+  })
+
   test("postMessage sends chat.postMessage with thread_ts", async () => {
-    const apiCall = vi.fn(async () => ({ ok: true }))
-    const client: SlackWebClientLike = { apiCall }
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: true }))
+
+    const adapter = new FunnelSlackAdapter({ config })
 
     await adapter.postMessage({ channel: "C1", text: "hello", threadTs: "1.0" })
 
-    expect(apiCall).toHaveBeenCalledWith("chat.postMessage", {
-      channel: "C1",
-      text: "hello",
-      thread_ts: "1.0",
-    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://slack.com/api/chat.postMessage",
+      expect.objectContaining({ method: "POST" }),
+    )
+    const body = fetchMock.mock.calls[0]![1]!.body as string
+
+    expect(body).toContain("channel=C1")
+    expect(body).toContain("text=hello")
+    expect(body).toContain("thread_ts=1.0")
   })
 
   test("postMessage omits thread_ts when not provided", async () => {
-    const apiCall = vi.fn(async () => ({ ok: true }))
-    const client: SlackWebClientLike = { apiCall }
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: true }))
+
+    const adapter = new FunnelSlackAdapter({ config })
 
     await adapter.postMessage({ channel: "C1", text: "hello" })
 
-    expect(apiCall).toHaveBeenCalledWith("chat.postMessage", {
-      channel: "C1",
-      text: "hello",
-    })
+    const body = fetchMock.mock.calls[0]![1]!.body as string
+
+    expect(body).toContain("channel=C1")
+    expect(body).toContain("text=hello")
+    expect(body).not.toContain("thread_ts")
   })
 
   test("addReaction sends reactions.add", async () => {
-    const apiCall = vi.fn(async () => ({ ok: true }))
-    const client: SlackWebClientLike = { apiCall }
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: true }))
+
+    const adapter = new FunnelSlackAdapter({ config })
 
     await adapter.addReaction({ channel: "C1", timestamp: "1.0", name: "eyes" })
 
-    expect(apiCall).toHaveBeenCalledWith("reactions.add", {
-      channel: "C1",
-      timestamp: "1.0",
-      name: "eyes",
-    })
+    const body = fetchMock.mock.calls[0]![1]!.body as string
+
+    expect(body).toContain("channel=C1")
+    expect(body).toContain("timestamp=1.0")
+    expect(body).toContain("name=eyes")
   })
 
   test("removeReaction sends reactions.remove", async () => {
-    const apiCall = vi.fn(async () => ({ ok: true }))
-    const client: SlackWebClientLike = { apiCall }
-    const adapter = new FunnelSlackAdapter({ config, client })
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>
+    fetchMock.mockResolvedValue(mockResponse({ ok: true }))
+
+    const adapter = new FunnelSlackAdapter({ config })
 
     await adapter.removeReaction({ channel: "C1", timestamp: "1.0", name: "eyes" })
 
-    expect(apiCall).toHaveBeenCalledWith("reactions.remove", {
-      channel: "C1",
-      timestamp: "1.0",
-      name: "eyes",
-    })
+    const body = fetchMock.mock.calls[0]![1]!.body as string
+
+    expect(body).toContain("name=eyes")
   })
 })

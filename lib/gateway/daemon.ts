@@ -122,8 +122,8 @@ try {
   process.exit(1)
 }
 
-// Graceful shutdown: stop listeners so @slack/bolt closes the Socket Mode
-// websocket and Slack drops the connection immediately. A bare process.exit
+// Graceful shutdown: stop listeners so the Slack Socket Mode websocket
+// closes and Slack drops the connection immediately. A bare process.exit
 // (the old handler) tore the TCP socket down with no disconnect frame, leaving
 // a server-side ghost connection on Slack until its ping-timeout — those ghosts
 // stole inbound events across restarts. Cap the wait so a hung close still exits.

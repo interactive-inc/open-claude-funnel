@@ -118,10 +118,8 @@
   },
   "dependencies": {
     "@hono/zod-validator": "0.8.0",
+    "@interactive-inc/flume": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@slack/bolt": "^4.7.2",
-    "@slack/web-api": "^7.16.0",
-    "discord.js": "^14.26.4",
     "hono": "^4.12.19",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

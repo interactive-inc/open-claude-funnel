@@ -5,11 +5,12 @@ import { scheduleConnector } from "@/engine/connectors/schedule-connector"
 import { slackConnector } from "@/engine/connectors/slack-connector"
 
 /**
- * The four built-in connector descriptors. Importing this pulls every connector
- * SDK (@slack/bolt, discord.js, …) into the bundle, so it is used ONLY by
- * full-bundle entry points (the `fnl` CLI, the gateway daemon, the MCP server) —
- * never by the library's public barrel. Programmatic hosts pass the descriptors
- * they actually need to `new Funnel({ connectors: [...] })` instead.
+ * The four built-in connector descriptors. Importing this pulls every
+ * connector's protocol code (Slack Socket Mode, Discord Gateway, GitHub
+ * polling) into the bundle, so it is used ONLY by full-bundle entry points
+ * (the `fnl` CLI, the gateway daemon, the MCP server) — never by the
+ * library's public barrel. Programmatic hosts pass the descriptors they
+ * actually need to `new Funnel({ connectors: [...] })` instead.
  */
 export const builtinConnectors = (): ConnectorDescriptor[] => [
   slackConnector(),

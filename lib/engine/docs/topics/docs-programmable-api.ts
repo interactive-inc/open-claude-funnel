@@ -13,9 +13,10 @@ Hono app over these services.
   import { Funnel } from "@interactive-inc/claude-funnel"
   import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
 
-  // Connectors are fully DI: pass only the types you use. The core import never
-  // bundles a connector SDK (@slack/bolt, discord.js) — importing the sub-entry
-  // does. With no connectors, the funnel handles zero connector types.
+  // Connectors are fully DI: pass only the types you use. The core import
+  // never bundles a connector's protocol code (Socket Mode / Gateway / poller)
+  // — importing the sub-entry does. With no connectors, the funnel handles
+  // zero connector types.
   const funnel = new Funnel({ connectors: [slackConnector()] })  // uses ~/.funnel
   const sandbox = Funnel.inMemory()        // touches no disk / process / clock
 

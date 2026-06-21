@@ -63,8 +63,9 @@ export * from "@/engine/error/on-funnel-error"
 // Discord, GitHub, Schedule) — their descriptors, schemas, listeners, adapters —
 // live behind the per-type sub-entries
 // (`@interactive-inc/claude-funnel/connectors/<type>`), so `import { Funnel }`
-// never pulls a connector SDK (@slack/bolt, discord.js, …) into the bundle.
-// Pass descriptors at construction: `new Funnel({ connectors: [slackConnector()] })`.
+// never pulls a connector's protocol code (Socket Mode / Gateway / poller) into
+// the bundle. Pass descriptors at construction:
+// `new Funnel({ connectors: [slackConnector()] })`.
 export * from "@/engine/connectors/connector-adapter"
 export * from "@/engine/connectors/connector-listener"
 export * from "@/engine/connectors/base-connector-config"
