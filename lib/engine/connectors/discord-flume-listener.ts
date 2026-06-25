@@ -1,12 +1,12 @@
 import { FlumeDiscordSource, FlumeDiscordGatewayIntents } from "@interactive-inc/flume/discord"
-import type { FlumeDiscordEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
-import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
+import type { FlumeDiscordEvent, FlumeRuntimeDeps } from "@interactive-inc/flume"
+import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-processor"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
-import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
-import { FunnelLogger } from "@/engine/logger/logger"
+import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
+import type { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
 
@@ -37,28 +37,23 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
  * READY payload on the first dispatch and build the processor then. Events
  * seen before READY are impossible by protocol, so no event is lost.
  */
-export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
+export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
   private readonly config: DiscordConnectorConfig
   private readonly env: NodeJS.ProcessEnv
-  private readonly logger: FunnelLogger | undefined
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
-  private readonly diagnostics: FunnelConnectorDiagnosticsRecorder
-  private source: FlumeDiscordSource | null = null
   private processor: FunnelDiscordEventProcessor | null = null
-  private connected = false
 
   constructor(deps: Deps) {
-    super()
-    this.config = deps.config
-    this.env = deps.env ?? process.env
-    this.logger = deps.logger
-    this.flumeDeps = deps.flumeDeps ?? {}
-    this.diagnostics = new FunnelConnectorDiagnosticsRecorder({
+    super({
       type: "discord",
       connectorId: deps.config.id,
       channelId: deps.channelId ?? null,
-      log: deps.diagnosticLog,
+      logger: deps.logger,
+      diagnosticLog: deps.diagnosticLog,
     })
+    this.config = deps.config
+    this.env = deps.env ?? process.env
+    this.flumeDeps = deps.flumeDeps ?? {}
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -95,56 +90,14 @@ export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
       deps: resolveFlumeDeps(this.flumeDeps),
     })
 
-    this.source = source
-
-    const startError = await source.start((event) => {
+    await this.runStart(source, (event) => {
       if (event.source !== "discord") return
       this.handleEvent(event, notify)
     })
-
-    if (startError instanceof Error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(startError))
-      throw startError
-    }
   }
 
-  async stop(): Promise<void> {
-    if (!this.source) return
-
-    try {
-      await this.source.stop()
-      this.diagnostics.recordConnection("disconnected", "")
-    } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      this.logger?.error("discord stop error", { error: errorMessageOf(error) })
-    } finally {
-      this.source = null
-      this.processor = null
-      this.connected = false
-      this.diagnostics.recordConnection("stopped", "")
-    }
-  }
-
-  override isAlive(): boolean {
-    return this.source !== null && this.connected
-  }
-
-  private handleStatus(status: FlumeStatus, detail?: string): void {
-    if (status === "connected") {
-      this.connected = true
-      this.diagnostics.recordConnection("connected", detail ?? "")
-      return
-    }
-
-    if (status === "disconnected") {
-      this.connected = false
-      this.diagnostics.recordConnection("disconnected", detail ?? "")
-      return
-    }
-
-    if (status === "reconnecting") {
-      this.connected = false
-    }
+  protected override onStop(): void {
+    this.processor = null
   }
 
   private handleEvent(event: FlumeDiscordEvent, notify: NotifyFn): void {

@@ -1,10 +1,10 @@
 import { FlumeGitHubSource } from "@interactive-inc/flume/github"
-import type { FlumeGitHubEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
-import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
+import type { FlumeGitHubEvent, FlumeRuntimeDeps } from "@interactive-inc/flume"
+import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
-import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
-import { FunnelLogger } from "@/engine/logger/logger"
+import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
+import type { FunnelLogger } from "@/engine/logger/logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
@@ -36,29 +36,24 @@ const defaultProcess = new NodeFunnelProcessRunner()
  * The adapter still uses `gh api` for outbound calls, so when the fallback
  * is in use the auth model is unchanged end-to-end.
  */
-export class FunnelFlumeGhListener extends FunnelConnectorListener {
+export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
   private readonly config: GhConnectorConfig
   private readonly env: NodeJS.ProcessEnv
   private readonly process: FunnelProcessRunner
-  private readonly logger: FunnelLogger | undefined
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
-  private readonly diagnostics: FunnelConnectorDiagnosticsRecorder
-  private source: FlumeGitHubSource | null = null
-  private connected = false
 
   constructor(deps: Deps) {
-    super()
-    this.config = deps.config
-    this.env = deps.env ?? process.env
-    this.process = deps.process ?? defaultProcess
-    this.logger = deps.logger
-    this.flumeDeps = deps.flumeDeps ?? {}
-    this.diagnostics = new FunnelConnectorDiagnosticsRecorder({
+    super({
       type: "gh",
       connectorId: deps.config.id,
       channelId: deps.channelId ?? null,
-      log: deps.diagnosticLog,
+      logger: deps.logger,
+      diagnosticLog: deps.diagnosticLog,
     })
+    this.config = deps.config
+    this.env = deps.env ?? process.env
+    this.process = deps.process ?? defaultProcess
+    this.flumeDeps = deps.flumeDeps ?? {}
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -82,37 +77,10 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
       deps: resolveFlumeDeps(this.flumeDeps),
     })
 
-    this.source = source
-
-    const startError = await source.start((event) => {
+    await this.runStart(source, (event) => {
       if (event.source !== "github") return
       this.handleEvent(event, notify)
     })
-
-    if (startError instanceof Error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(startError))
-      throw startError
-    }
-  }
-
-  async stop(): Promise<void> {
-    if (!this.source) return
-
-    try {
-      await this.source.stop()
-      this.diagnostics.recordConnection("disconnected", "")
-    } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      this.logger?.error("gh stop error", { error: errorMessageOf(error) })
-    } finally {
-      this.source = null
-      this.connected = false
-      this.diagnostics.recordConnection("stopped", "")
-    }
-  }
-
-  override isAlive(): boolean {
-    return this.source !== null && this.connected
   }
 
   private async resolveToken(): Promise<string> {
@@ -138,24 +106,6 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
     }
 
     return result.stdout.trim()
-  }
-
-  private handleStatus(status: FlumeStatus, detail?: string): void {
-    if (status === "connected") {
-      this.connected = true
-      this.diagnostics.recordConnection("connected", detail ?? "")
-      return
-    }
-
-    if (status === "disconnected") {
-      this.connected = false
-      this.diagnostics.recordConnection("disconnected", detail ?? "")
-      return
-    }
-
-    if (status === "reconnecting") {
-      this.connected = false
-    }
   }
 
   private handleEvent(event: FlumeGitHubEvent, notify: NotifyFn): void {
