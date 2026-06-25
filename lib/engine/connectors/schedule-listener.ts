@@ -74,10 +74,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
         try {
           await this.tick(notify)
         } catch (error) {
-          this.logger?.error("schedule tick failed", {
-            connector: this.config.name,
-            error: errorMessageOf(error),
-          })
+          this.recordTickError(error)
         }
 
         scheduleNext()
@@ -90,11 +87,12 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     try {
       await this.tick(notify)
     } catch (error) {
-      this.logger?.error("schedule tick failed", {
-        connector: this.config.name,
-        error: errorMessageOf(error),
-      })
+      this.recordTickError(error)
     }
+
+    // Connection lifecycle parity with the flume-backed listeners: the timer
+    // is armed, so the connector is "connected" for diagnostic purposes.
+    this.diagnostics.recordConnection("connected", "")
 
     scheduleNext()
   }
@@ -108,7 +106,17 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       this.timer = null
     }
 
+    this.diagnostics.recordConnection("disconnected", "")
     this.diagnostics.recordConnection("stopped", "")
+  }
+
+  private recordTickError(error: unknown): void {
+    const message = errorMessageOf(error)
+    this.diagnostics.recordConnection("error", `tick: ${message}`)
+    this.logger?.error("schedule tick failed", {
+      connector: this.config.name,
+      error: message,
+    })
   }
 
   override isAlive(): boolean {

@@ -8,7 +8,7 @@ import {
   type SlackRawEvent,
 } from "@/engine/connectors/slack-event-processor"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
-import { flumeLogHandler, flumeRuntimeDeps } from "@/engine/connectors/flume-deps"
+import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
@@ -70,19 +70,29 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
   async start(notify: NotifyFn): Promise<void> {
     this.diagnostics.recordConnection("started", "")
 
-    const appToken = resolveConnectorToken({
-      literal: this.config.appToken,
-      envVar: this.config.appTokenEnv,
-      env: this.env,
-      label: `${this.config.name}.appToken`,
-    })
+    let appToken: string
+    let botToken: string
 
-    this.botToken = resolveConnectorToken({
-      literal: this.config.botToken,
-      envVar: this.config.botTokenEnv,
-      env: this.env,
-      label: `${this.config.name}.botToken`,
-    })
+    try {
+      appToken = resolveConnectorToken({
+        literal: this.config.appToken,
+        envVar: this.config.appTokenEnv,
+        env: this.env,
+        label: `${this.config.name}.appToken`,
+      })
+
+      botToken = resolveConnectorToken({
+        literal: this.config.botToken,
+        envVar: this.config.botTokenEnv,
+        env: this.env,
+        label: `${this.config.name}.botToken`,
+      })
+    } catch (error) {
+      this.diagnostics.recordConnection("auth-failed", errorMessageOf(error))
+      throw error
+    }
+
+    this.botToken = botToken
 
     // Self-detection: call auth.test with the bot token to learn the bot's own
     // user/bot id, which the processor uses to drop self-authored events. A
@@ -107,7 +117,7 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
       reconnect: true,
       onLog: flumeLogHandler(this.logger),
       onStatus: (status, detail) => this.handleStatus(status, detail),
-      deps: { ...flumeRuntimeDeps(), ...this.flumeDeps },
+      deps: resolveFlumeDeps(this.flumeDeps),
     })
 
     this.source = source
@@ -198,7 +208,15 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
     // The events_api envelope nests the actual event under `payload.event`, so
     // we unwrap once more to reach the raw Slack event the processor expects.
     const rawEvent = event.data.event
-    if (!isSlackRawEvent(rawEvent)) return
+
+    if (!isSlackRawEvent(rawEvent)) {
+      // Record the envelope so an unexpected payload shape leaves a trail —
+      // otherwise a Slack-side envelope change produces zero diagnostic signal.
+      const skipId = crypto.randomUUID()
+      this.diagnostics.recordRaw(skipId, JSON.stringify(event.data))
+      this.diagnostics.recordProcessed(skipId, "skip:non-object-event", "")
+      return
+    }
 
     const eventId = crypto.randomUUID()
     const rawJson = JSON.stringify(rawEvent)
@@ -226,20 +244,28 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
       await notify(content, meta)
     } catch (error) {
       this.diagnostics.recordProcessed(eventId, "emitted:delivery-failed", content || rawJson)
-      throw error
+      this.logger?.error("slack notify error", { error: errorMessageOf(error) })
+      return
     }
 
     this.diagnostics.recordProcessed(eventId, "emitted", content)
 
     if (shouldReact) {
-      await this.postReaction(meta).catch(() => {
-        // Reaction failures are non-fatal; the event was already delivered.
+      await this.postReaction(meta).catch((error) => {
+        // Reactions are non-fatal but record both transport and logical
+        // failures so the operator can spot a wedged token / wrong scope.
+        this.diagnostics.recordProcessed(
+          eventId,
+          "emitted:reaction-failed",
+          errorMessageOf(error),
+        )
+        this.logger?.warn("slack reaction failed", { error: errorMessageOf(error) })
       })
     }
   }
 
   private async postReaction(meta: Record<string, string>): Promise<void> {
-    await fetch("https://slack.com/api/reactions.add", {
+    const res = await fetch("https://slack.com/api/reactions.add", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.botToken}`,
@@ -251,6 +277,15 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
         name: "eyes",
       }).toString(),
     })
+
+    // Slack returns 200 with { ok: false, error: "..." } for logical errors
+    // (already_reacted, channel_not_found, invalid_auth, ...). Promote those
+    // to thrown errors so the diagnostic outcome above sees them.
+    const text = await res.text()
+    const parsed = parseSlackResponse(text)
+    if (!parsed.ok) {
+      throw new Error(`slack reactions.add: ${parsed.error ?? `status=${res.status}`}`)
+    }
   }
 }
 
@@ -263,4 +298,17 @@ const safeJsonParse = (text: string): unknown => {
   } catch {
     return null
   }
+}
+
+const slackResponseSchema = z.object({
+  ok: z.boolean(),
+  error: z.string().optional(),
+})
+
+const parseSlackResponse = (text: string): { ok: boolean; error?: string } => {
+  const parsed = slackResponseSchema.safeParse(safeJsonParse(text))
+
+  if (!parsed.success) return { ok: false, error: `non-JSON response: ${text.slice(0, 200)}` }
+
+  return parsed.data
 }

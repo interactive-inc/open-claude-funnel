@@ -67,6 +67,10 @@ export class FunnelDoctor {
       if (!result.ok) fixFailed = true
     }
 
+    // Skip restarting listeners that are merely flapping (high errors but
+    // still alive) — the supervisor's backoff is already throttling them and
+    // a manual restart would reset the backoff window. Only restart actually
+    // dead listeners.
     const hasDeadListeners = before.channels.some((ch) => ch.listeners.some((l) => !l.alive))
 
     if (hasDeadListeners) {
@@ -76,10 +80,14 @@ export class FunnelDoctor {
     }
 
     if (mode === "aggressive") {
-      const stillBroken =
-        applied.length === 0 || before.channels.some((ch) => ch.diagnosis.status === "error")
+      // Re-diagnose between safe and aggressive so the gateway restart only
+      // fires when the safe pass did not actually fix things. The previous
+      // logic gated on `before`, which restarted the gateway even after safe
+      // fixes had succeeded.
+      const mid = await this.props.diagnostics.diagnoseAll()
+      const stillError = mid.channels.some((ch) => ch.diagnosis.status === "error")
 
-      if (stillBroken) {
+      if (stillError) {
         const result = await this.props.recovery.restartGateway()
         applied.push(...result.actions)
         if (!result.ok) fixFailed = true

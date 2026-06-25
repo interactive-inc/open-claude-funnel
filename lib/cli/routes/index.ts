@@ -38,6 +38,9 @@ import {
   debugDroppedHandler,
   debugErrorsHandler,
   debugReplayHandler,
+  debugRawHandler,
+  debugConnectionHandler,
+  debugLogsHandler,
 } from "@/cli/routes/debug"
 import { docsIndexHandler, docsTopicHandler } from "@/cli/routes/docs"
 import { doctorHandler } from "@/cli/routes/doctor"
@@ -158,6 +161,9 @@ export const routes = factory
   .get("/debug/dropped", ...debugDroppedHandler)
   .get("/debug/errors", ...debugErrorsHandler)
   .get("/debug/replay", ...debugReplayHandler)
+  .get("/debug/raw", ...debugRawHandler)
+  .get("/debug/connection", ...debugConnectionHandler)
+  .get("/debug/logs", ...debugLogsHandler)
   .get("/docs", ...docsIndexHandler)
   .get("/docs/:topic", ...docsTopicHandler)
   .get("/doctor", ...doctorHandler)

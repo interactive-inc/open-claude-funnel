@@ -1,10 +1,10 @@
-import { FlumeDiscordSource } from "@interactive-inc/flume/discord"
+import { FlumeDiscordSource, FlumeDiscordGatewayIntents } from "@interactive-inc/flume/discord"
 import type { FlumeDiscordEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-processor"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
-import { flumeLogHandler, flumeRuntimeDeps } from "@/engine/connectors/flume-deps"
+import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
@@ -64,19 +64,35 @@ export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
   async start(notify: NotifyFn): Promise<void> {
     this.diagnostics.recordConnection("started", "")
 
-    const token = resolveConnectorToken({
-      literal: this.config.botToken,
-      envVar: this.config.botTokenEnv,
-      env: this.env,
-      label: `${this.config.name}.botToken`,
-    })
+    let token: string
+
+    try {
+      token = resolveConnectorToken({
+        literal: this.config.botToken,
+        envVar: this.config.botTokenEnv,
+        env: this.env,
+        label: `${this.config.name}.botToken`,
+      })
+    } catch (error) {
+      this.diagnostics.recordConnection("auth-failed", errorMessageOf(error))
+      throw error
+    }
 
     const source = new FlumeDiscordSource({
       token,
+      // Funnel's processor reads message content and mentions, so the
+      // privileged `MessageContent` intent must be requested explicitly —
+      // Flume's default omits it. Guilds + GuildMessages cover server
+      // channels; DirectMessages covers DM threads with the bot.
+      intents:
+        FlumeDiscordGatewayIntents.Guilds |
+        FlumeDiscordGatewayIntents.GuildMessages |
+        FlumeDiscordGatewayIntents.MessageContent |
+        FlumeDiscordGatewayIntents.DirectMessages,
       reconnect: true,
       onLog: flumeLogHandler(this.logger),
       onStatus: (status, detail) => this.handleStatus(status, detail),
-      deps: { ...flumeRuntimeDeps(), ...this.flumeDeps },
+      deps: resolveFlumeDeps(this.flumeDeps),
     })
 
     this.source = source
@@ -141,14 +157,25 @@ export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
       return
     }
 
-    if (!this.processor) return
+    if (!this.processor) {
+      // Record once per pre-READY event so an unexpected pre-handshake delivery
+      // is not silently lost; the eventId is unique so this can never collide
+      // with a later READY-bound row.
+      const skipId = crypto.randomUUID()
+      this.diagnostics.recordRaw(skipId, JSON.stringify(event.data))
+      this.diagnostics.recordProcessed(skipId, "skip:pre-ready", "")
+      return
+    }
 
     const data = event.data
+    // channel_id / guild_id / user_id come from flume's extractor (event.meta);
+    // authorIsBot and mentions[].id are not surfaced there so we still read them
+    // from the raw dispatch.
     const author = isRecord(data.author) ? data.author : null
     const authorIsBot = author !== null && author.bot === true
-    const authorId = author !== null ? readString(author, "id") ?? "" : ""
-    const channelId = readString(data, "channel_id") ?? ""
-    const guildId = readString(data, "guild_id") ?? null
+    const authorId = event.meta.user_id ?? ""
+    const channelId = event.meta.channel_id ?? ""
+    const guildId = event.meta.guild_id ?? null
     const mentions = Array.isArray(data.mentions)
       ? data.mentions
           .map((m) => (isRecord(m) ? readString(m, "id") ?? "" : ""))
@@ -182,7 +209,22 @@ export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
     const fromTop = readString(data, "user_id")
     const ownUserId = fromUser ?? fromTop ?? ""
 
-    if (!ownUserId) return
+    if (!ownUserId) {
+      // A READY without a usable user id leaves self-skip disabled forever,
+      // and every subsequent event would have to be silently dropped. Surface
+      // it loudly so an operator sees the listener is wedged.
+      const skipId = crypto.randomUUID()
+      this.diagnostics.recordRaw(skipId, JSON.stringify(data))
+      this.diagnostics.recordProcessed(skipId, "skip:ready-missing-user-id", "")
+      this.diagnostics.recordConnection(
+        "error",
+        "discord READY payload had neither user.id nor user_id; processor not initialized",
+      )
+      this.logger?.error("discord READY missing user id", {
+        connector: this.config.name,
+      })
+      return
+    }
 
     this.processor = new FunnelDiscordEventProcessor({ ownUserId })
   }

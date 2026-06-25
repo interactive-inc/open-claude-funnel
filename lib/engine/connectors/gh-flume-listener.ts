@@ -2,7 +2,7 @@ import { FlumeGitHubSource } from "@interactive-inc/flume/github"
 import type { FlumeGitHubEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
-import { flumeLogHandler, flumeRuntimeDeps } from "@/engine/connectors/flume-deps"
+import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
@@ -64,7 +64,14 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
   async start(notify: NotifyFn): Promise<void> {
     this.diagnostics.recordConnection("started", "")
 
-    const token = await this.resolveToken()
+    let token: string
+
+    try {
+      token = await this.resolveToken()
+    } catch (error) {
+      this.diagnostics.recordConnection("auth-failed", errorMessageOf(error))
+      throw error
+    }
 
     const source = new FlumeGitHubSource({
       token,
@@ -72,7 +79,7 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
       reconnect: false,
       onLog: flumeLogHandler(this.logger),
       onStatus: (status, detail) => this.handleStatus(status, detail),
-      deps: { ...flumeRuntimeDeps(), ...this.flumeDeps },
+      deps: resolveFlumeDeps(this.flumeDeps),
     })
 
     this.source = source
@@ -157,7 +164,16 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
 
     this.diagnostics.recordRaw(eventId, rawJson)
 
-    const meta: Record<string, string> = { event_type: "gh", ...event.meta }
+    // Flume's extractGitHubMeta sets event_type="notification"; the funnel
+    // contract is event_type=<connector type>, so the literal wins. We also
+    // re-surface subject_url and updated_at from the raw notification because
+    // the MCP usage hint extracts issue/PR numbers from subject.url.
+    const meta: Record<string, string> = {
+      ...event.meta,
+      event_type: "gh",
+      subject_url: event.data.subject.url ?? "",
+      updated_at: event.data.updated_at,
+    }
 
     void this.deliver(notify, eventId, rawJson, meta)
   }

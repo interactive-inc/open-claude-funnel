@@ -6,7 +6,10 @@ export const BUILTIN_TOOL_NAMES = [
   "fnl_debug",
   "fnl_recent_events",
   "fnl_dropped_events",
+  "fnl_raw_events",
   "fnl_connection_errors",
+  "fnl_connection_timeline",
+  "fnl_logs",
   "fnl_replay_event",
   "fnl_docs",
 ] as const
@@ -117,6 +120,7 @@ export const buildBuiltinTools = (allChannels: ChannelSummary[]): Tool[] => {
         type: "object" as const,
         properties: {
           channel: channelArgSchema,
+          connector: { type: "string", description: "Connector name to filter (optional)" },
           limit: { type: "number", description: "Max rows (default 20)" },
         },
       },
@@ -129,6 +133,7 @@ export const buildBuiltinTools = (allChannels: ChannelSummary[]): Tool[] => {
         type: "object" as const,
         properties: {
           channel: channelArgSchema,
+          connector: { type: "string", description: "Connector name to filter (optional)" },
           limit: { type: "number", description: "Max rows (default 20)" },
         },
       },
@@ -141,7 +146,49 @@ export const buildBuiltinTools = (allChannels: ChannelSummary[]): Tool[] => {
         type: "object" as const,
         properties: {
           channel: channelArgSchema,
+          connector: { type: "string", description: "Connector name to filter (optional)" },
           limit: { type: "number", description: "Max rows (default 20)" },
+        },
+      },
+    },
+    {
+      name: "fnl_connection_timeline",
+      description:
+        "Full connection lifecycle (started / connected / disconnected / stopped + auth-failed / error). Use when fnl_connection_errors only shows the failure but you need to see how the listener got there — was it ever connected, is it flapping, how many reconnects.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          channel: channelArgSchema,
+          connector: { type: "string", description: "Connector name to filter (optional)" },
+          limit: { type: "number", description: "Max rows (default 20)" },
+        },
+      },
+    },
+    {
+      name: "fnl_raw_events",
+      description:
+        "Return raw inbound rows the connector recorded BEFORE any processing. Use when fnl_dropped_events and fnl_recent_events both come up empty — this is the table that captures every event the listener ever saw, including ones it dropped pre-processor (envelope shape change, pre-READY, malformed).",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          channel: channelArgSchema,
+          connector: { type: "string", description: "Connector name to filter (optional)" },
+          limit: { type: "number", description: "Max rows (default 20)" },
+        },
+      },
+    },
+    {
+      name: "fnl_logs",
+      description:
+        "Return the tail of the gateway daemon log file (funnel.log) where structured FunnelLogger output and forwarded flume logs land. Use when fnl_connection_timeline shows a status change but you need the upstream reason (slack/auth.test failed, github http 401, discord gateway close 4014) — those messages only appear in the log file.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          grep: {
+            type: "string",
+            description: "Case-insensitive substring filter (e.g. 'slack', 'auth')",
+          },
+          limit: { type: "number", description: "Max lines to return (default 200)" },
         },
       },
     },

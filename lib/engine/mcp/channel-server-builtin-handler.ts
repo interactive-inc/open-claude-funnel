@@ -33,7 +33,9 @@ export const handleBuiltinTool = async (deps: Deps): Promise<ToolResult> => {
 
   const args = deps.args
   const channelArg = typeof args?.channel === "string" ? args.channel : null
+  const connectorArg = typeof args?.connector === "string" ? args.connector : null
   const limitArg = typeof args?.limit === "number" ? args.limit : undefined
+  const grepArg = typeof args?.grep === "string" ? args.grep : null
   const seqArg = typeof args?.seq === "number" ? args.seq : undefined
   const modeArg =
     args?.mode === "safe" || args?.mode === "aggressive" || args?.mode === "off" ? args.mode : "off"
@@ -80,15 +82,42 @@ export const handleBuiltinTool = async (deps: Deps): Promise<ToolResult> => {
   }
 
   if (deps.name === "fnl_recent_events") {
-    return getJson(`${base}/diagnostics/events?${eventListQuery(channelArg, limitArg)}`, headers)
+    return getJson(
+      `${base}/diagnostics/events?${eventListQuery(channelArg, connectorArg, limitArg)}`,
+      headers,
+    )
   }
 
   if (deps.name === "fnl_dropped_events") {
-    return getJson(`${base}/diagnostics/dropped?${eventListQuery(channelArg, limitArg)}`, headers)
+    return getJson(
+      `${base}/diagnostics/dropped?${eventListQuery(channelArg, connectorArg, limitArg)}`,
+      headers,
+    )
+  }
+
+  if (deps.name === "fnl_raw_events") {
+    return getJson(
+      `${base}/diagnostics/raw?${eventListQuery(channelArg, connectorArg, limitArg)}`,
+      headers,
+    )
   }
 
   if (deps.name === "fnl_connection_errors") {
-    return getJson(`${base}/diagnostics/errors?${eventListQuery(channelArg, limitArg)}`, headers)
+    return getJson(
+      `${base}/diagnostics/errors?${eventListQuery(channelArg, connectorArg, limitArg)}`,
+      headers,
+    )
+  }
+
+  if (deps.name === "fnl_connection_timeline") {
+    return getJson(
+      `${base}/diagnostics/connection?${eventListQuery(channelArg, connectorArg, limitArg)}`,
+      headers,
+    )
+  }
+
+  if (deps.name === "fnl_logs") {
+    return getJson(`${base}/diagnostics/logs?${logsQuery(grepArg, limitArg)}`, headers)
   }
 
   if (deps.name === "fnl_replay_event") {
@@ -115,10 +144,24 @@ export const handleBuiltinTool = async (deps: Deps): Promise<ToolResult> => {
   return errorResult(`unknown built-in tool: ${deps.name}`, null)
 }
 
-const eventListQuery = (channel: string | null, limit: number | undefined): string => {
+const eventListQuery = (
+  channel: string | null,
+  connector: string | null,
+  limit: number | undefined,
+): string => {
   const params = new URLSearchParams()
 
   if (channel) params.set("channel", channel)
+  if (connector) params.set("connector", connector)
+  if (limit !== undefined) params.set("limit", String(limit))
+
+  return params.toString()
+}
+
+const logsQuery = (grep: string | null, limit: number | undefined): string => {
+  const params = new URLSearchParams()
+
+  if (grep) params.set("grep", grep)
   if (limit !== undefined) params.set("limit", String(limit))
 
   return params.toString()

@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 import type {
@@ -79,7 +80,16 @@ export type ChannelDiagnosis = {
     pid: number | null
     port: number | null
     uptimeMs: number | null
+    /**
+     * Why the gateway /status probe failed to return a body. `null` when the
+     * gateway is not running (running=false makes the absence self-explanatory)
+     * or when the probe succeeded. A non-null value signals the daemon is up
+     * but the probe failed (auth refused, fetch error, non-OK response).
+     */
+    statusError: string | null
   }
+  /** Connectors declared in settings for this channel. */
+  configuredConnectors: number
   listeners: Array<{
     name: string
     type: string
@@ -132,11 +142,14 @@ const connectorOf = (channel: ChannelConfig, connectorId: string | null): string
   return channel.connectors?.find((connector) => connector.id === connectorId)?.name
 }
 
+const FLAPPING_ERROR_THRESHOLD = 3
+
 const buildDiagnosis = (
   report: Omit<ChannelDiagnosis, "diagnosis">,
 ): ChannelDiagnosis["diagnosis"] => {
   const latestError = report.connectionErrors[report.connectionErrors.length - 1] ?? null
   const rootCause = latestError?.detail ?? null
+  const channel = report.channel
 
   if (!report.gateway.running) {
     return {
@@ -147,15 +160,55 @@ const buildDiagnosis = (
     }
   }
 
-  const channel = report.channel
-  const hasConnectors = report.listeners.length > 0
+  // Daemon is up but the status probe failed — auth token mismatch or stale
+  // process. The listener tables are empty under us, so flag this before
+  // anything that depends on listener state to avoid misleading "no
+  // connectors" or "all dead" diagnoses.
+  if (report.gateway.statusError !== null) {
+    return {
+      status: "error",
+      message: `gateway running but status probe failed: ${report.gateway.statusError}`,
+      nextActions: ["fnl gateway restart"],
+      rootCause: report.gateway.statusError,
+    }
+  }
 
-  if (!hasConnectors) {
+  // Settings declare connectors but the supervisor has no listener for them
+  // — a hot-reload race or a startup ordering bug. Distinct from "no
+  // connectors configured" so the doctor knows to reconcile instead of asking
+  // the operator to add one.
+  if (report.configuredConnectors > report.listeners.length) {
+    return {
+      status: "error",
+      message: `${report.configuredConnectors} connector(s) configured but ${report.listeners.length} registered with supervisor`,
+      nextActions: ["fnl gateway restart"],
+      rootCause: "supervisor missing listeners declared in settings.json",
+    }
+  }
+
+  if (report.configuredConnectors === 0) {
     return {
       status: "warn",
       message: "no connectors configured on this channel",
       nextActions: [`fnl channels ${channel} connectors add <name> --type=slack ...`],
       rootCause: null,
+    }
+  }
+
+  // Token rejected / Slack auth.test failed / GH token expired — all surface
+  // here as 'auth-failed' rows. Surface them ahead of the generic "dead
+  // listener" branch so the fix path can name the connector and credential.
+  const authFailed = report.connectionErrors.filter((e) => e.status === "auth-failed")
+  if (authFailed.length > 0) {
+    const detail = authFailed[authFailed.length - 1]?.detail ?? null
+    return {
+      status: "error",
+      message: "connector credentials rejected (auth-failed)",
+      nextActions: [
+        `fnl channels ${channel} connectors set <connector> --bot-token=<new>`,
+        "fnl gateway restart",
+      ],
+      rootCause: detail ?? "token rejected by upstream auth.test",
     }
   }
 
@@ -176,6 +229,19 @@ const buildDiagnosis = (
       status: "warn",
       message: "some listeners are dead",
       nextActions: ["fnl doctor --fix"],
+      rootCause,
+    }
+  }
+
+  // Listener is alive but accumulating errors — supervisor is restart-looping
+  // with backoff. Calling restart again would interrupt the backoff and make
+  // it worse, so the doctor's safe mode skips it (see funnel-doctor.ts).
+  const flapping = report.listeners.filter((l) => l.errors >= FLAPPING_ERROR_THRESHOLD)
+  if (flapping.length > 0) {
+    return {
+      status: "warn",
+      message: `listener(s) flapping (≥${FLAPPING_ERROR_THRESHOLD} errors): ${flapping.map((l) => l.name).join(", ")}`,
+      nextActions: ["fnl gateway logs"],
       rootCause,
     }
   }
@@ -262,19 +328,19 @@ export class FunnelDiagnostics {
 
     if (!target) return null
 
-    const gatewayBody = await this.fetchGatewayStatus()
+    const gatewayProbe = await this.fetchGatewayStatus()
     const store = this.resolveStore()
 
-    return this.buildChannelDiagnosis(target, gatewayBody, store, 5)
+    return this.buildChannelDiagnosis(target, gatewayProbe, store, 5)
   }
 
   async diagnoseAll(): Promise<DiagnoseAllReport> {
     const channels = this.props.channels.list()
-    const gatewayBody = await this.fetchGatewayStatus()
+    const gatewayProbe = await this.fetchGatewayStatus()
     const store = this.resolveStore()
 
     const reports = await Promise.all(
-      channels.map((ch) => this.buildChannelDiagnosis(ch, gatewayBody, store, 5)),
+      channels.map((ch) => this.buildChannelDiagnosis(ch, gatewayProbe, store, 5)),
     )
 
     const errorChannels = reports
@@ -298,54 +364,65 @@ export class FunnelDiagnostics {
     }
   }
 
-  async recentEvents(channelName: string | null, limit: number = 20): Promise<DiagnosticEvent[]> {
-    const store = this.resolveStore()
+  async recentEvents(
+    channelName: string | null,
+    options: { connector?: string; limit?: number } = {},
+  ): Promise<DiagnosticEvent[]> {
+    const limit = options.limit ?? 20
+    const ids = this.resolveScope(channelName, options.connector)
 
-    if (!store) return []
+    if (ids === null) return []
 
-    const channelId = this.resolveChannelId(channelName)
-
-    if (channelName && !channelId) return []
-
-    const reader = new ConnectorDiagnosticSqlReader(store)
-    const rows = channelId
-      ? queryRows(
-          reader,
-          "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT ?",
-          [channelId, limit],
-        )
-      : queryRows(
-          reader,
-          "SELECT seq, ts, type, outcome, payload FROM processed ORDER BY seq DESC LIMIT ?",
-          [limit],
-        )
+    const reader = new ConnectorDiagnosticSqlReader(ids.store)
+    const sql = `SELECT seq, ts, type, outcome, payload, event_id FROM processed ${ids.whereClause} ORDER BY seq DESC LIMIT ?`
+    const rows = queryRows(reader, sql, [...ids.params, limit])
 
     if (rows instanceof Error) return []
 
     return rows.reverse().map(toDiagnosticEvent)
   }
 
-  async droppedEvents(channelName: string | null, limit: number = 20): Promise<DiagnosticEvent[]> {
-    const store = this.resolveStore()
+  async droppedEvents(
+    channelName: string | null,
+    options: { connector?: string; limit?: number } = {},
+  ): Promise<DiagnosticEvent[]> {
+    const limit = options.limit ?? 20
+    const ids = this.resolveScope(channelName, options.connector)
 
-    if (!store) return []
+    if (ids === null) return []
 
-    const channelId = this.resolveChannelId(channelName)
+    const where = ids.whereClause
+      ? `${ids.whereClause} AND outcome LIKE 'skip:%'`
+      : "WHERE outcome LIKE 'skip:%'"
 
-    if (channelName && !channelId) return []
+    const reader = new ConnectorDiagnosticSqlReader(ids.store)
+    const sql = `SELECT seq, ts, type, outcome, payload, event_id FROM processed ${where} ORDER BY seq DESC LIMIT ?`
+    const rows = queryRows(reader, sql, [...ids.params, limit])
 
-    const reader = new ConnectorDiagnosticSqlReader(store)
-    const rows = channelId
-      ? queryRows(
-          reader,
-          "SELECT seq, ts, type, outcome, payload, event_id FROM processed WHERE channel_id = ? AND outcome LIKE 'skip:%' ORDER BY seq DESC LIMIT ?",
-          [channelId, limit],
-        )
-      : queryRows(
-          reader,
-          "SELECT seq, ts, type, outcome, payload, event_id FROM processed WHERE outcome LIKE 'skip:%' ORDER BY seq DESC LIMIT ?",
-          [limit],
-        )
+    if (rows instanceof Error) return []
+
+    return rows.reverse().map(toDiagnosticEvent)
+  }
+
+  /**
+   * Raw inbound rows the connector recorded before any processing. The most
+   * useful read when "did the event even reach us?" is the question, since
+   * the processed table never gets a row for an event the listener dropped
+   * pre-processor.
+   */
+  async rawEvents(
+    channelName: string | null,
+    options: { connector?: string; limit?: number } = {},
+  ): Promise<DiagnosticEvent[]> {
+    const limit = options.limit ?? 20
+    const ids = this.resolveScope(channelName, options.connector)
+
+    if (ids === null) return []
+
+    const reader = new ConnectorDiagnosticSqlReader(ids.store)
+    // raw rows have no `outcome`; default it so toDiagnosticEvent stays uniform.
+    const sql = `SELECT seq, ts, type, '' AS outcome, payload, event_id FROM raw ${ids.whereClause} ORDER BY seq DESC LIMIT ?`
+    const rows = queryRows(reader, sql, [...ids.params, limit])
 
     if (rows instanceof Error) return []
 
@@ -354,32 +431,86 @@ export class FunnelDiagnostics {
 
   async connectionErrors(
     channelName: string | null,
-    limit: number = 20,
+    options: { connector?: string; limit?: number } = {},
   ): Promise<DiagnosticConnectionError[]> {
-    const store = this.resolveStore()
+    const limit = options.limit ?? 20
+    const ids = this.resolveScope(channelName, options.connector)
 
-    if (!store) return []
+    if (ids === null) return []
 
-    const channelId = this.resolveChannelId(channelName)
+    const where = ids.whereClause
+      ? `${ids.whereClause} AND status IN ('auth-failed','error')`
+      : "WHERE status IN ('auth-failed','error')"
 
-    if (channelName && !channelId) return []
-
-    const reader = new ConnectorDiagnosticSqlReader(store)
-    const rows = channelId
-      ? queryRows(
-          reader,
-          "SELECT seq, ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT ?",
-          [channelId, limit],
-        )
-      : queryRows(
-          reader,
-          "SELECT seq, ts, type, status, detail FROM connection WHERE status IN ('auth-failed','error') ORDER BY seq DESC LIMIT ?",
-          [limit],
-        )
+    const reader = new ConnectorDiagnosticSqlReader(ids.store)
+    const sql = `SELECT seq, ts, type, status, detail FROM connection ${where} ORDER BY seq DESC LIMIT ?`
+    const rows = queryRows(reader, sql, [...ids.params, limit])
 
     if (rows instanceof Error) return []
 
     return rows.reverse().map(toDiagnosticConnectionError)
+  }
+
+  /**
+   * Full connection lifecycle for one channel/connector — started, connected,
+   * disconnected, stopped, plus the auth-failed / error rows that
+   * `connectionErrors()` already surfaces. Use when you need to see the shape
+   * of a flap (connected → reconnecting → connected → disconnected) instead
+   * of just the failures.
+   */
+  async connectionTimeline(
+    channelName: string | null,
+    options: { connector?: string; limit?: number } = {},
+  ): Promise<DiagnosticConnectionError[]> {
+    const limit = options.limit ?? 20
+    const ids = this.resolveScope(channelName, options.connector)
+
+    if (ids === null) return []
+
+    const reader = new ConnectorDiagnosticSqlReader(ids.store)
+    const sql = `SELECT seq, ts, type, status, detail FROM connection ${ids.whereClause} ORDER BY seq DESC LIMIT ?`
+    const rows = queryRows(reader, sql, [...ids.params, limit])
+
+    if (rows instanceof Error) return []
+
+    return rows.reverse().map(toDiagnosticConnectionError)
+  }
+
+  /**
+   * Tail of `~/.funnel/.../funnel.log`. Use when a flume internal log (e.g.
+   * `slack/auth.test failed`) needs to be read from MCP — the gateway file
+   * sink is the only place that captures structured FunnelLogger output.
+   *
+   * `grep` is a case-insensitive substring filter applied after read so all
+   * matching levels and sources are scanned.
+   */
+  async recentLogs(
+    options: { grep?: string; limit?: number } = {},
+  ): Promise<{ lines: string[]; path: string | null; truncated: boolean }> {
+    const limit = options.limit ?? 200
+    const path = join(this.props.tmpDir, "funnel.log")
+
+    if (!existsSync(path)) return { lines: [], path: null, truncated: false }
+
+    let content: string
+    try {
+      content = readFileSync(path, "utf-8")
+    } catch (error) {
+      return {
+        lines: [`(read failed: ${errorMessageOf(error)})`],
+        path,
+        truncated: false,
+      }
+    }
+
+    const all = content.split("\n").filter((line) => line.length > 0)
+    const needle = options.grep?.toLowerCase()
+    const filtered = needle ? all.filter((line) => line.toLowerCase().includes(needle)) : all
+
+    const truncated = filtered.length > limit
+    const lines = truncated ? filtered.slice(filtered.length - limit) : filtered
+
+    return { lines, path, truncated }
   }
 
   async replay(channelName: string, seq?: number): Promise<ReplayResult> {
@@ -470,32 +601,91 @@ export class FunnelDiagnostics {
     return channels.find((ch) => ch.name === channelName)?.id ?? null
   }
 
-  private async fetchGatewayStatus(): Promise<GatewayStatusResponse | null> {
+  /**
+   * Resolves a (channel, connector) filter into the SQL where-clause + the
+   * positional params, or returns `null` when the requested scope cannot be
+   * resolved (channel not found, connector not found in that channel, no
+   * store on disk yet). Centralises the channel/connector → id mapping so
+   * each read method does not redo the lookup.
+   */
+  private resolveScope(
+    channelName: string | null,
+    connectorName: string | undefined,
+  ): { store: StorePaths; whereClause: string; params: (string | number)[] } | null {
+    const store = this.resolveStore()
+    if (!store) return null
+
+    if (!channelName) {
+      // No channel implies no connector filter either — connector names are
+      // only unique within a channel.
+      return { store, whereClause: "", params: [] }
+    }
+
+    const channels = this.props.channels.list()
+    const channel = channels.find((ch) => ch.name === channelName) ?? null
+    if (!channel) return null
+
+    if (!connectorName) {
+      return {
+        store,
+        whereClause: "WHERE channel_id = ?",
+        params: [channel.id],
+      }
+    }
+
+    const connectorId =
+      channel.connectors?.find((c) => c.name === connectorName)?.id ?? null
+    if (!connectorId) return null
+
+    return {
+      store,
+      whereClause: "WHERE channel_id = ? AND connector_id = ?",
+      params: [channel.id, connectorId],
+    }
+  }
+
+  private async fetchGatewayStatus(): Promise<{
+    body: GatewayStatusResponse | null
+    error: string | null
+  }> {
     const gatewayStatus = this.props.gateway.getStatus()
-    if (!gatewayStatus.running) return null
+    if (!gatewayStatus.running) return { body: null, error: null }
 
     const token = this.props.gatewayToken.read()
     const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
-    const res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, { headers }).catch(
-      () => null,
-    )
+    let res: Response | null = null
+    try {
+      res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, { headers })
+    } catch (error) {
+      return { body: null, error: `fetch failed: ${errorMessageOf(error)}` }
+    }
 
-    if (!res || !res.ok) return null
+    if (!res.ok) return { body: null, error: `gateway /status returned ${res.status}` }
 
-    const body: unknown = await res.json()
+    let body: unknown
+    try {
+      body = await res.json()
+    } catch (error) {
+      return { body: null, error: `gateway /status body parse failed: ${errorMessageOf(error)}` }
+    }
 
-    return isGatewayStatusResponse(body) ? body : null
+    if (!isGatewayStatusResponse(body)) {
+      return { body: null, error: "gateway /status returned an unrecognized shape" }
+    }
+
+    return { body, error: null }
   }
 
   private async buildChannelDiagnosis(
-    target: { id: string; name: string },
-    gatewayBody: GatewayStatusResponse | null,
+    target: ChannelConfig,
+    gatewayProbe: { body: GatewayStatusResponse | null; error: string | null },
     store: StorePaths | null,
     eventLimit: number,
   ): Promise<ChannelDiagnosis> {
     const gatewayStatus = this.props.gateway.getStatus()
     const targetName = target.name
+    const gatewayBody = gatewayProbe.body
 
     const baseReport: Omit<ChannelDiagnosis, "diagnosis"> = {
       channel: targetName,
@@ -505,7 +695,9 @@ export class FunnelDiagnostics {
         pid: gatewayStatus.pid,
         port: gatewayStatus.running ? gatewayStatus.port : null,
         uptimeMs: gatewayBody?.uptimeMs ?? null,
+        statusError: gatewayProbe.error,
       },
+      configuredConnectors: target.connectors?.length ?? 0,
       listeners: [],
       claudeClients: 0,
       recentEvents: [],
@@ -540,19 +732,19 @@ export class FunnelDiagnostics {
         baseReport.recentEvents = evRows.reverse().map(toDiagnosticEvent)
       }
 
-      const hasDeadListeners = baseReport.listeners.some((l) => !l.alive)
-      const hasListenerErrors = baseReport.listeners.some((l) => l.errors > 0)
+      // Load auth-failed / error rows unconditionally: a listener that auth-
+      // fails and the supervisor never restarted still shows as alive=false
+      // here, but a listener that auth-failed during a token rotation while
+      // some events succeed earlier will show alive=true with errors=0 — and
+      // the diagnosis still needs to surface the auth-failed signal.
+      const errRows = queryRows(
+        new ConnectorDiagnosticSqlReader(store),
+        "SELECT ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 3",
+        [target.id],
+      )
 
-      if (hasDeadListeners || hasListenerErrors) {
-        const errRows = queryRows(
-          new ConnectorDiagnosticSqlReader(store),
-          "SELECT ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 3",
-          [target.id],
-        )
-
-        if (!(errRows instanceof Error)) {
-          baseReport.connectionErrors = errRows.reverse().map(toDiagnosticConnectionError)
-        }
+      if (!(errRows instanceof Error)) {
+        baseReport.connectionErrors = errRows.reverse().map(toDiagnosticConnectionError)
       }
     }
 

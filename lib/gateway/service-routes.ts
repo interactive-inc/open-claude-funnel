@@ -47,26 +47,55 @@ export const buildServiceRoutes = (deps: Deps): Hono<Env> => {
 
   app.get("/diagnostics/events", async (c) => {
     const channel = c.req.query("channel") ?? null
+    const connector = c.req.query("connector")
     const limit = Number(c.req.query("limit") ?? "20")
-    const events = await deps.diagnostics.recentEvents(channel, limit)
+    const events = await deps.diagnostics.recentEvents(channel, { connector, limit })
 
     return c.json(events)
   })
 
   app.get("/diagnostics/dropped", async (c) => {
     const channel = c.req.query("channel") ?? null
+    const connector = c.req.query("connector")
     const limit = Number(c.req.query("limit") ?? "20")
-    const events = await deps.diagnostics.droppedEvents(channel, limit)
+    const events = await deps.diagnostics.droppedEvents(channel, { connector, limit })
 
     return c.json(events)
   })
 
   app.get("/diagnostics/errors", async (c) => {
     const channel = c.req.query("channel") ?? null
+    const connector = c.req.query("connector")
     const limit = Number(c.req.query("limit") ?? "20")
-    const errors = await deps.diagnostics.connectionErrors(channel, limit)
+    const errors = await deps.diagnostics.connectionErrors(channel, { connector, limit })
 
     return c.json(errors)
+  })
+
+  app.get("/diagnostics/raw", async (c) => {
+    const channel = c.req.query("channel") ?? null
+    const connector = c.req.query("connector")
+    const limit = Number(c.req.query("limit") ?? "20")
+    const events = await deps.diagnostics.rawEvents(channel, { connector, limit })
+
+    return c.json(events)
+  })
+
+  app.get("/diagnostics/connection", async (c) => {
+    const channel = c.req.query("channel") ?? null
+    const connector = c.req.query("connector")
+    const limit = Number(c.req.query("limit") ?? "20")
+    const rows = await deps.diagnostics.connectionTimeline(channel, { connector, limit })
+
+    return c.json(rows)
+  })
+
+  app.get("/diagnostics/logs", async (c) => {
+    const grep = c.req.query("grep") ?? undefined
+    const limit = Number(c.req.query("limit") ?? "200")
+    const result = await deps.diagnostics.recentLogs({ grep, limit })
+
+    return c.json(result)
   })
 
   app.post("/diagnostics/replay", async (c) => {

@@ -59,10 +59,17 @@ const readAllChannels = (dir: string): ChannelSummary[] => {
     const raw = JSON.parse(readFileSync(settingsPath, "utf-8"))
     const parsed = settingsSchema.safeParse(raw)
 
-    if (!parsed.success) return []
+    if (!parsed.success) {
+      process.stderr.write(
+        `funnel: ${settingsPath} failed schema validation: ${parsed.error.message}\n`,
+      )
+      return []
+    }
 
     return parsed.data.channels.map((c) => ({ id: c.id, name: c.name }))
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`funnel: failed to read ${settingsPath}: ${message}\n`)
     return []
   }
 }

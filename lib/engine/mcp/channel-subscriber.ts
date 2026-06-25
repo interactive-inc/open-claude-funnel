@@ -67,8 +67,12 @@ export class FunnelChannelSubscriber {
       this.state.reconnectDelay = Math.min(this.state.reconnectDelay * 2, MAX_RECONNECT_DELAY)
     })
 
-    ws.addEventListener("error", () => {
-      // close handler will reconnect
+    ws.addEventListener("error", (event) => {
+      // Surface the reason the socket dropped so the operator can see what is
+      // driving the reconnect loop (auth refused, server gone, network blip).
+      // close handler still owns the actual reconnect.
+      const reason = readErrorEventMessage(event)
+      process.stderr.write(`funnel: ws error: ${reason}\n`)
     })
   }
 
@@ -76,9 +80,11 @@ export class FunnelChannelSubscriber {
     try {
       const payload = JSON.parse(String(event.data))
       const eventType = payload.meta?.event_type ?? "unknown"
+      const offset =
+        typeof payload.offset === "number" ? payload.offset : null
 
-      if (typeof payload.offset === "number" && payload.offset > this.state.lastOffset) {
-        this.state.lastOffset = payload.offset
+      if (offset !== null && offset > this.state.lastOffset) {
+        this.state.lastOffset = offset
       }
 
       process.stderr.write(`funnel: received event (${eventType})\n`)
@@ -91,7 +97,19 @@ export class FunnelChannelSubscriber {
         },
       })
     } catch (error) {
-      process.stderr.write(`funnel: error: ${errorMessageOf(error)}\n`)
+      process.stderr.write(
+        `funnel: error handling ws message (offset=${this.state.lastOffset}): ${errorMessageOf(error)}\n`,
+      )
     }
   }
+}
+
+const readErrorEventMessage = (event: Event): string => {
+  if (event instanceof Error) return event.message
+
+  if ("message" in event && typeof event.message === "string") return event.message
+
+  if ("error" in event && event.error instanceof Error) return event.error.message
+
+  return "unknown"
 }
