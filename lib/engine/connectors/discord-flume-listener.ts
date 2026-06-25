@@ -1,5 +1,5 @@
 import { FlumeDiscordSource } from "@interactive-inc/flume/discord"
-import type { FlumeEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
+import type { FlumeDiscordEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-processor"
@@ -81,11 +81,14 @@ export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
 
     this.source = source
 
-    try {
-      await source.start((event) => this.handleEvent(event, notify))
-    } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      throw error
+    const startError = await source.start((event) => {
+      if (event.source !== "discord") return
+      this.handleEvent(event, notify)
+    })
+
+    if (startError instanceof Error) {
+      this.diagnostics.recordConnection("error", errorMessageOf(startError))
+      throw startError
     }
   }
 
@@ -128,9 +131,7 @@ export class FunnelFlumeDiscordListener extends FunnelConnectorListener {
     }
   }
 
-  private handleEvent(event: FlumeEvent, notify: NotifyFn): void {
-    if (!isRecord(event.data)) return
-
+  private handleEvent(event: FlumeDiscordEvent, notify: NotifyFn): void {
     // Capture the bot's own user id from READY and build the processor once.
     // Flume passes the READY dispatch through like any other event; we
     // intercept it here so the processor can self-filter, then return without

@@ -6,7 +6,7 @@
       "name": "open-claude-funnel",
       "dependencies": {
         "@hono/zod-validator": "0.8.0",
-        "@interactive-inc/flume": "^0.3.0",
+        "@interactive-inc/flume": "^0.4.0",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "hono": "^4.12.19",
         "yaml": "^2.9.0",
@@ -31,7 +31,7 @@
 
     "@hono/zod-validator": ["@hono/zod-validator@0.8.0", "", { "peerDependencies": { "hono": ">=4.10.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-5uS4S1/LKtZQYvD4BtpPUFkOv8d1wNxHHrChm26buMiEYc1FrHWvDUaKVBwkiVtvSExHSpLGDvcnpI2Copyj9w=="],
 
-    "@interactive-inc/flume": ["@interactive-inc/flume@0.3.0", "", { "dependencies": { "zod": "^4.4.3" } }, "sha512-/hN4GN+MBdQhLbMZfKtWSYr3OYiT/47vz0gnk9vUOify/qAl9WXONo5p/Bbj837e3fctygbyIb2M3BAGFXnLJA=="],
+    "@interactive-inc/flume": ["@interactive-inc/flume@0.4.0", "", { "dependencies": { "zod": "^4.4.3" } }, "sha512-WPx9ZwMC43NCfALVmo8vB/vq+dGzmxFd3xsBQP1Oc5waqkTWqD9H5S6mxN/S1eJ1vPn0s9E3RIi8pCqgH1syqA=="],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 

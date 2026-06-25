@@ -1,5 +1,5 @@
 import { FlumeGitHubSource } from "@interactive-inc/flume/github"
-import type { FlumeEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
+import type { FlumeGitHubEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { flumeLogHandler, flumeRuntimeDeps } from "@/engine/connectors/flume-deps"
@@ -21,15 +21,6 @@ type Deps = {
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
-
-const readNotificationId = (notification: unknown): string | null => {
-  if (typeof notification !== "object" || notification === null) return null
-  if (!("id" in notification)) return null
-
-  const record: Record<string, unknown> = notification
-
-  return typeof record.id === "string" ? record.id : null
-}
 
 /**
  * GitHub listener backed by `@interactive-inc/flume`'s `FlumeGitHubSource`
@@ -86,11 +77,14 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
 
     this.source = source
 
-    try {
-      await source.start((event) => this.handleEvent(event, notify))
-    } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      throw error
+    const startError = await source.start((event) => {
+      if (event.source !== "github") return
+      this.handleEvent(event, notify)
+    })
+
+    if (startError instanceof Error) {
+      this.diagnostics.recordConnection("error", errorMessageOf(startError))
+      throw startError
     }
   }
 
@@ -157,8 +151,8 @@ export class FunnelFlumeGhListener extends FunnelConnectorListener {
     }
   }
 
-  private handleEvent(event: FlumeEvent, notify: NotifyFn): void {
-    const eventId = readNotificationId(event.data) ?? crypto.randomUUID()
+  private handleEvent(event: FlumeGitHubEvent, notify: NotifyFn): void {
+    const eventId = event.data.id
     const rawJson = JSON.stringify(event.data)
 
     this.diagnostics.recordRaw(eventId, rawJson)

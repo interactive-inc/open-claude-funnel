@@ -1,5 +1,5 @@
-import { FlumeSlackSource, FlumeSlackEnvelopeSchema } from "@interactive-inc/flume/slack"
-import type { FlumeEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
+import { FlumeSlackSource } from "@interactive-inc/flume/slack"
+import type { FlumeSlackEvent, FlumeRuntimeDeps, FlumeStatus } from "@interactive-inc/flume"
 import { z } from "zod"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
@@ -112,11 +112,14 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
 
     this.source = source
 
-    try {
-      await source.start((event) => this.handleEvent(event, notify))
-    } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      throw error
+    const startError = await source.start((event) => {
+      if (event.source !== "slack") return
+      this.handleEvent(event, notify)
+    })
+
+    if (startError instanceof Error) {
+      this.diagnostics.recordConnection("error", errorMessageOf(startError))
+      throw startError
     }
   }
 
@@ -188,16 +191,13 @@ export class FunnelFlumeSlackListener extends FunnelConnectorListener {
     }
   }
 
-  private handleEvent(event: FlumeEvent, notify: NotifyFn): void {
+  private handleEvent(event: FlumeSlackEvent, notify: NotifyFn): void {
     if (!this.processor) return
 
-    // Flume's Slack source emits events_api envelopes with payload.event as the
-    // actual Slack event. The processor expects the raw event record (the
-    // contents of `payload.event`), not the whole envelope.
-    const envelope = FlumeSlackEnvelopeSchema.safeParse(event.data)
-    if (!envelope.success) return
-
-    const rawEvent = envelope.data.payload.event
+    // Flume's Slack source delivers the envelope's `payload` as `event.data`.
+    // The events_api envelope nests the actual event under `payload.event`, so
+    // we unwrap once more to reach the raw Slack event the processor expects.
+    const rawEvent = event.data.event
     if (!isSlackRawEvent(rawEvent)) return
 
     const eventId = crypto.randomUUID()

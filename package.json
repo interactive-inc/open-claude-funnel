@@ -118,7 +118,7 @@
   },
   "dependencies": {
     "@hono/zod-validator": "0.8.0",
-    "@interactive-inc/flume": "^0.3.0",
+    "@interactive-inc/flume": "^0.4.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "hono": "^4.12.19",
     "yaml": "^2.9.0",
