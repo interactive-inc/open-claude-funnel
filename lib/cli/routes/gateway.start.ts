@@ -5,6 +5,7 @@ import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
 const startHelp = `funnel gateway start — start the gateway in background
@@ -35,9 +36,15 @@ const waitForHealth = async (port: number): Promise<boolean> => {
   const deadline = Date.now() + HEALTH_TIMEOUT_MS
 
   while (Date.now() < deadline) {
-    const res = await fetch(`${gatewayLoopbackUrl(port)}/health`).catch(() => null)
+    let ok = false
+    try {
+      const res = await loopbackFetch(`${gatewayLoopbackUrl(port)}/health`)
+      ok = res.ok
+    } catch {
+      ok = false
+    }
 
-    if (res?.ok) return true
+    if (ok) return true
 
     await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_INTERVAL_MS))
   }

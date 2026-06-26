@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 
 type Deps = {
   port: number
@@ -61,7 +62,7 @@ export class FunnelListenersClient {
     if (!this.isDaemonRunning()) return { state: "offline" }
 
     try {
-      const res = await fetch(`${gatewayLoopbackUrl(this.port)}/listeners`, {
+      const res = await loopbackFetch(`${gatewayLoopbackUrl(this.port)}/listeners`, {
         headers: this.authHeaders(),
       })
 
@@ -109,13 +110,23 @@ export class FunnelListenersClient {
 
   private async call(method: "POST" | "DELETE", path: string): Promise<ListenerOpResult> {
     try {
-      const res = await fetch(`${gatewayLoopbackUrl(this.port)}${path}`, {
-        method,
-        headers: this.authHeaders(),
-      })
+      // 30s ceiling for listener start/stop/restart — Slack Socket Mode
+      // handshake can take a few seconds, GH poll bootstrap likewise. Bump if
+      // a real connector grows beyond that.
+      const res = await loopbackFetch(
+        `${gatewayLoopbackUrl(this.port)}${path}`,
+        { method, headers: this.authHeaders() },
+        30_000,
+      )
 
       if (!res.ok) {
-        const parsed = opErrorBodySchema.safeParse(await res.json().catch(() => null))
+        let body: unknown = null
+        try {
+          body = await res.json()
+        } catch {
+          body = null
+        }
+        const parsed = opErrorBodySchema.safeParse(body)
         const reason = parsed.success ? parsed.data.reason : undefined
 
         return { state: "error", reason: reason ?? `HTTP ${res.status}` }

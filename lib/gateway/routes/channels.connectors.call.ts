@@ -33,7 +33,12 @@ export const channelsConnectorsCallHandler = factory.createHandlers(
   zParam(z.object({ channel: z.string().min(1), connector: z.string().min(1) })),
   async (c) => {
     const param = c.req.valid("param")
-    const raw = await c.req.json().catch(() => null)
+    let raw: unknown = null
+    try {
+      raw = await c.req.json()
+    } catch {
+      raw = null
+    }
     const parsed = bodySchema.safeParse(raw)
 
     if (!parsed.success) {

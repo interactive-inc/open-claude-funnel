@@ -3,6 +3,7 @@ import { factory } from "@/cli/factory"
 import type { Env } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 import { renderYaml } from "@/engine/yaml/yaml-render"
 
 const groupHelp = `funnel gateway / manage the funnel daemon
@@ -72,9 +73,14 @@ export const renderGatewayStatus = async (c: Context<Env>) => {
   }
 
   const token = funnel.gatewayToken.read()
-  const res = await fetch(`${gatewayLoopbackUrl(status.port)}/status`, {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
-  }).catch(() => null)
+  let res: Response | null = null
+  try {
+    res = await loopbackFetch(`${gatewayLoopbackUrl(status.port)}/status`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    })
+  } catch {
+    res = null
+  }
 
   if (!res || !res.ok) {
     return c.text(

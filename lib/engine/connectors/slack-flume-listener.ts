@@ -3,6 +3,7 @@ import type { FlumeSlackEvent, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import { z } from "zod"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
+import { FunnelAuthFailedError } from "@/engine/error/funnel-error"
 import {
   FunnelSlackEventProcessor,
   type SlackRawEvent,
@@ -96,8 +97,9 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     const auth = await this.callAuthTest()
 
     if (!auth.ok) {
-      this.diagnostics.recordConnection("auth-failed", auth.error ?? "auth.test returned ok=false")
-      throw new Error(`slack auth.test failed: ${auth.error ?? "unknown"}`)
+      const detail = auth.error ?? "auth.test returned ok=false"
+      this.diagnostics.recordConnection("auth-failed", detail)
+      throw new FunnelAuthFailedError(this.config.name, detail)
     }
 
     this.processor = new FunnelSlackEventProcessor({
@@ -204,7 +206,9 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.diagnostics.recordProcessed(eventId, "emitted", content)
 
     if (shouldReact) {
-      await this.postReaction(meta).catch((error) => {
+      try {
+        await this.postReaction(meta)
+      } catch (error) {
         // Reactions are non-fatal but record both transport and logical
         // failures so the operator can spot a wedged token / wrong scope.
         this.diagnostics.recordProcessed(
@@ -213,7 +217,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
           errorMessageOf(error),
         )
         this.logger?.warn("slack reaction failed", { error: errorMessageOf(error) })
-      })
+      }
     }
   }
 

@@ -118,6 +118,7 @@ export class FunnelGatewayServer {
   private readonly ownsEventLog: boolean
   private startedAt: number | null = null
   private server: Server<WsData> | null = null
+  private disposed = false
 
   constructor(deps: Deps) {
     this.channels = deps.channels
@@ -183,6 +184,13 @@ export class FunnelGatewayServer {
   }
 
   async start(): Promise<void> {
+    if (this.disposed) {
+      // A second start() after stop() would silently no-op once the eventLog
+      // was closed, leaving the caller with a dead facade. Surface it loudly
+      // so the host knows to construct a fresh instance.
+      throw new Error("FunnelGatewayServer is single-use: construct a new instance to start again")
+    }
+
     if (this.server) return
 
     if (!this.token && !LOOPBACK_HOSTS.has(this.configuredHostname) && !this.allowInsecureHost) {
@@ -222,7 +230,17 @@ export class FunnelGatewayServer {
     })
 
     this.logServerStarted()
-    await this.bootListeners()
+
+    // Roll back the Bun.serve binding if listener boot throws; otherwise the
+    // host is left with `this.server` holding the port (EADDRINUSE on retry)
+    // while no listeners are actually running.
+    try {
+      await this.bootListeners()
+    } catch (error) {
+      this.server.stop()
+      this.server = null
+      throw error
+    }
   }
 
   async stop(): Promise<void> {
@@ -234,6 +252,7 @@ export class FunnelGatewayServer {
     }
 
     if (this.ownsEventLog) this.eventLog.close()
+    this.disposed = true
   }
 
   getStatus(): { clients: number; channels: { channel: string; connectors: string[] }[] } {

@@ -70,12 +70,12 @@ type Props = {
   tmpDir?: string
   /**
    * Connector types this funnel handles, passed as descriptors. Core imports no
-   * connector, so a type's (heavy) listener/adapter code is bundled only when its
+   * connector, so a type's listener/adapter code is bundled only when its
    * descriptor is imported and listed here. Import from the per-type sub-entries:
    * `import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"`.
-   * Type-specific launch hooks (Slack `onAppCreated`/`preprocessEvent`, Schedule
-   * `onFired`) are passed to the descriptor factory, e.g. `slackConnector({ onAppCreated })`.
-   * Defaults to `[]` — no connectors handled.
+   * Only `scheduleConnector` currently takes options (`{ onFired }`); the other
+   * types build their listeners from the Flume sources directly. Defaults to
+   * `[]` — no connectors handled.
    */
   connectors?: ConnectorDescriptor[]
   /**

@@ -349,9 +349,9 @@ funnel.channels.addConnector("inbox", {
 })
 ```
 
-Slack / Schedule の起動フックは descriptor factory の引数で渡す（`slackConnector({ onAppCreated, preprocessEvent })` / `scheduleConnector({ onFired })`）。
+Schedule の起動フックは descriptor factory の引数で渡す（`scheduleConnector({ onFired })`）。Slack / Discord / GitHub は Flume の素の WebSocket / fetch をそのまま使うため、host 拡張用フックは持たない（必要なら自前 descriptor を書く）。
 
-`channels` / `profiles` / `gateway` / `listeners` / `claude` / `localConfig` / `localConfigSync` など全ファセットが同じインスタンスの readonly プロパティとして辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動を担う。
+`channels` / `profiles` / `gateway` / `listeners` / `claude` / `localConfig` / `localConfigSync` / `diagnostics` / `doctor` / `recovery` / `docs` / `gatewayToken` / `publisher` / `paths` がすべて同じインスタンスの readonly プロパティとして辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動、`diagnostics` / `doctor` / `recovery` は読み取り診断と自己修復を担う。
 
 ```ts
 await funnel.gateway.start() // デーモンを別プロセスとして spawn

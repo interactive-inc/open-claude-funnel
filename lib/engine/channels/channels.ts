@@ -3,6 +3,11 @@ import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-con
 import type { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
+import {
+  FunnelChannelAlreadyExistsError,
+  FunnelChannelNotFoundError,
+  FunnelConnectorNotFoundError,
+} from "@/engine/error/funnel-error"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
@@ -81,7 +86,7 @@ export class FunnelChannels {
     const settings = this.store.read()
 
     if (settings.channels.some((c) => c.name === input.name)) {
-      throw new Error(`channel "${input.name}" already exists`)
+      throw new FunnelChannelAlreadyExistsError(input.name)
     }
 
     const channel: ChannelConfig = {
@@ -110,7 +115,7 @@ export class FunnelChannels {
     const settings = this.store.read()
     const index = settings.channels.findIndex((c) => c.name === name)
 
-    if (index < 0) throw new Error(`channel "${name}" not found`)
+    if (index < 0) throw new FunnelChannelNotFoundError(name)
 
     const channel = settings.channels[index]
 
@@ -126,9 +131,9 @@ export class FunnelChannels {
     const settings = this.store.read()
     const channel = settings.channels.find((c) => c.name === oldName)
 
-    if (!channel) throw new Error(`channel "${oldName}" not found`)
+    if (!channel) throw new FunnelChannelNotFoundError(oldName)
     if (settings.channels.some((c) => c.name === newName)) {
-      throw new Error(`channel "${newName}" already exists`)
+      throw new FunnelChannelAlreadyExistsError(newName)
     }
 
     channel.name = newName
@@ -186,7 +191,7 @@ export class FunnelChannels {
     const index = channel.connectors.findIndex((c) => c.name === connectorName)
 
     if (index < 0) {
-      throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
+      throw new FunnelConnectorNotFoundError(channelName, connectorName)
     }
 
     channel.connectors.splice(index, 1)
@@ -222,7 +227,7 @@ export class FunnelChannels {
     const connector = channel.connectors.find((c) => c.name === connectorName)
 
     if (!connector) {
-      throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
+      throw new FunnelConnectorNotFoundError(channelName, connectorName)
     }
 
     const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
@@ -275,7 +280,7 @@ export class FunnelChannels {
     const connector = channel.connectors.find((c) => c.name === connectorName)
 
     if (!connector) {
-      throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
+      throw new FunnelConnectorNotFoundError(channelName, connectorName)
     }
 
     const outcome = this.registry.runOperation(connector, operation, args, {
@@ -295,7 +300,7 @@ export class FunnelChannels {
     const connector = this.getConnector(channelName, connectorName)
 
     if (!connector) {
-      throw new Error(`connector "${connectorName}" not found in channel "${channelName}"`)
+      throw new FunnelConnectorNotFoundError(channelName, connectorName)
     }
 
     const adapter = this.registry.createAdapter(connector)
@@ -356,7 +361,7 @@ export class FunnelChannels {
   private requireChannel(settings: Settings, name: string): ChannelConfig {
     const channel = settings.channels.find((c) => c.name === name)
 
-    if (!channel) throw new Error(`channel "${name}" not found`)
+    if (!channel) throw new FunnelChannelNotFoundError(name)
 
     return channel
   }

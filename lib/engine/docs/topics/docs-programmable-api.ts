@@ -63,9 +63,8 @@ For targeted imports (smaller bundle / clearer dependency footprint):
   import { discordConnector }    from "@interactive-inc/claude-funnel/connectors/discord"
   import { scheduleConnector }   from "@interactive-inc/claude-funnel/connectors/schedule"
 
-  // Connector launch hooks are closed over by the descriptor factory:
-  //   slackConnector({ onAppCreated, preprocessEvent })
-  //   scheduleConnector({ onFired })
+  // Schedule fires can be observed by passing onFired to the descriptor:
+  //   scheduleConnector({ onFired: (entry, firedAt) => { ... } })
 
 ── in-process gateway: receive events in your own process ──────────────────
 

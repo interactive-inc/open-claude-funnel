@@ -55,11 +55,11 @@ export type ConnectorOperation = (props: {
  * descriptor accepts/returns `BaseConnectorConfig` at every boundary and parses
  * to its concrete config internally (via `schema`), so the registry can hold a
  * homogeneous `ConnectorDescriptor[]` with no variance gymnastics. Type-specific
- * launch hooks (Slack `onAppCreated`, Schedule `onFired`) are closed over by the
- * descriptor factory, not threaded through here. Each descriptor parses configs
- * to its concrete shape internally (it owns its zod schema), so no schema is
- * exposed here — that also sidesteps the variance trap of a `ZodType<Slack>`
- * field declared as `ZodType<BaseConnectorConfig>`.
+ * launch hooks (e.g. Schedule `onFired`) are closed over by the descriptor
+ * factory, not threaded through here. Each descriptor parses configs to its
+ * concrete shape internally (it owns its zod schema), so no schema is exposed
+ * here — that also sidesteps the variance trap of a `ZodType<Slack>` field
+ * declared as `ZodType<BaseConnectorConfig>`.
  */
 export type ConnectorDescriptor = {
   type: string

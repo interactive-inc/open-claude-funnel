@@ -287,6 +287,27 @@ describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
     expect(server.getEventLog()).toBe(eventLog)
   })
 
+  test("rejects start() after stop() instead of silently no-op'ing on a closed event log", async () => {
+    const fs = new MemoryFunnelFileSystem()
+    const funnel = new Funnel({
+      fs,
+      logger: new NoopFunnelLogger(),
+      dir: "/funnel",
+      tmpDir: "/tmp/funnel-test",
+    })
+    const server = funnel.gatewayServer({
+      port: 0,
+      killCompetingSlack: false,
+      token: "",
+      dbPath: "/tmp/funnel-test/restart.db",
+    })
+
+    await server.start()
+    await server.stop()
+
+    await expect(server.start()).rejects.toThrow(/single-use/)
+  })
+
   test("stop() does not close an externally-injected event log", async () => {
     const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({

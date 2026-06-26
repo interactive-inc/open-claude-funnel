@@ -1,4 +1,5 @@
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 import {
   publishResponseSchema,
   type PublishRequest,
@@ -36,7 +37,7 @@ export class FunnelChannelPublisher {
 
     try {
       const url = `${gatewayLoopbackUrl(this.port)}/channels/${encodeURIComponent(channelName)}/publish`
-      const res = await fetch(url, {
+      const res = await loopbackFetch(url, {
         method: "POST",
         headers: { ...this.authHeaders(), "content-type": "application/json" },
         body: JSON.stringify(request),

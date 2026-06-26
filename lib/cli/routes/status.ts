@@ -4,6 +4,7 @@ import { booleanFlag } from "@/cli/router/boolean-flag"
 import { helpGuard } from "@/cli/router/help-guard"
 import { zValidator } from "@/cli/router/validator"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 import { renderYaml } from "@/engine/yaml/yaml-render"
 import type { Funnel } from "@/funnel"
 import type { FunnelProfiles } from "@/engine/profiles/profiles"
@@ -64,9 +65,14 @@ const buildStatusReport = async (funnel: Funnel, profiles: FunnelProfiles) => {
 
   if (gatewayStatus.running) {
     const token = funnel.gatewayToken.read()
-    const res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, {
-      headers: token ? { authorization: `Bearer ${token}` } : {},
-    }).catch(() => null)
+    let res: Response | null = null
+    try {
+      res = await loopbackFetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      })
+    } catch {
+      res = null
+    }
 
     if (res && res.ok) {
       const body: unknown = await res.json()

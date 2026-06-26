@@ -3,6 +3,11 @@
 // main "." entry — they depend on Claude Code's launch model which is optional.
 // Use the Funnel facade (funnel.claude) for the standard path, or import
 // directly here when you need fine-grained control.
+//
+// FunnelLocalConfig* and token-prompter classes live under the dedicated
+// "./local-config" sub-entry — picking one home per class avoids the bundler
+// shipping each implementation twice and the resulting cross-subentry
+// `instanceof` foot-gun.
 export * from "@/engine/claude/claude"
 export * from "@/engine/claude/channel-resolver"
 export * from "@/engine/claude/gateway-controller"
@@ -13,11 +18,3 @@ export * from "@/engine/claude/file-process-guard"
 export * from "@/engine/mcp/mcp"
 export * from "@/engine/mcp/channel-server"
 export * from "@/engine/profiles/profiles"
-export * from "@/services/local-config/local-config"
-export * from "@/services/local-config/local-config-json-schema"
-export * from "@/services/local-config/local-config-schema"
-export * from "@/services/local-config/local-config-sync"
-export * from "@/services/local-config/local-config-writer"
-export * from "@/engine/token-prompter/token-prompter"
-export * from "@/engine/token-prompter/node-token-prompter"
-export * from "@/engine/token-prompter/memory-token-prompter"

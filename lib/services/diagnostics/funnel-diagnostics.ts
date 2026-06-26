@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 import type {
   DiagnosticConnectionError,
@@ -656,7 +657,7 @@ export class FunnelDiagnostics {
 
     let res: Response | null = null
     try {
-      res = await fetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, { headers })
+      res = await loopbackFetch(`${gatewayLoopbackUrl(gatewayStatus.port)}/status`, { headers })
     } catch (error) {
       return { body: null, error: `fetch failed: ${errorMessageOf(error)}` }
     }

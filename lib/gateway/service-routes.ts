@@ -99,7 +99,7 @@ export const buildServiceRoutes = (deps: Deps): Hono<Env> => {
   })
 
   app.post("/diagnostics/replay", async (c) => {
-    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>)
+    const body = await readJsonBody(c)
     const channel = typeof body.channel === "string" ? body.channel : null
     const seq = typeof body.seq === "number" ? body.seq : undefined
 
@@ -111,7 +111,7 @@ export const buildServiceRoutes = (deps: Deps): Hono<Env> => {
   })
 
   app.post("/doctor", async (c) => {
-    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>)
+    const body = await readJsonBody(c)
     const mode =
       body.mode === "safe" || body.mode === "aggressive" || body.mode === "off" ? body.mode : "off"
     const report = await deps.doctor.run(mode)
@@ -120,4 +120,18 @@ export const buildServiceRoutes = (deps: Deps): Hono<Env> => {
   })
 
   return app
+}
+
+const isStringKeyedObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+
+const readJsonBody = async (c: {
+  req: { json(): Promise<unknown> }
+}): Promise<Record<string, unknown>> => {
+  try {
+    const body = await c.req.json()
+    return isStringKeyedObject(body) ? body : {}
+  } catch {
+    return {}
+  }
 }

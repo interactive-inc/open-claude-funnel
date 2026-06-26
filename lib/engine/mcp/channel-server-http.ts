@@ -1,4 +1,5 @@
 import { renderYaml } from "@/engine/yaml/yaml-render"
+import { loopbackFetch } from "@/engine/http/loopback-fetch"
 
 export type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean }
 
@@ -53,7 +54,12 @@ export const getJson = async (
   headers: Record<string, string>,
   options: { offlineFallback?: unknown } = {},
 ): Promise<ToolResult> => {
-  const res = await fetch(url, { headers }).catch(() => null)
+  let res: Response | null = null
+  try {
+    res = await loopbackFetch(url, { headers })
+  } catch {
+    res = null
+  }
 
   if (!res) {
     if (options.offlineFallback !== undefined) return yamlResult(options.offlineFallback)
@@ -70,11 +76,22 @@ export const postJson = async (
   body: Record<string, unknown>,
   options: { offlineFallback?: unknown } = {},
 ): Promise<ToolResult> => {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { ...headers, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  }).catch(() => null)
+  // Doctor / replay can take a while (gateway restart, listener boot) — give
+  // 30s for write-side MCP tools where the read-side 5s default would race.
+  let res: Response | null = null
+  try {
+    res = await loopbackFetch(
+      url,
+      {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      30_000,
+    )
+  } catch {
+    res = null
+  }
 
   if (!res) {
     if (options.offlineFallback !== undefined) return yamlResult(options.offlineFallback)

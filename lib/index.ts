@@ -1,6 +1,7 @@
 // Public API surface for the @interactive-inc/claude-funnel package.
 //
 // Sub-entries for targeted imports:
+//   "@interactive-inc/claude-funnel/claude"        Claude Code integration (FunnelClaude, FunnelMcp)
 //   "@interactive-inc/claude-funnel/gateway"       in-process gateway building blocks
 //   "@interactive-inc/claude-funnel/profiles"      named launch profiles
 //   "@interactive-inc/claude-funnel/local-config"  funnel.json reader / writer / syncer
@@ -9,9 +10,7 @@
 //   "@interactive-inc/claude-funnel/doctor"        one-shot diagnose + safe fixes
 //   "@interactive-inc/claude-funnel/docs"          embedded documentation
 //   "@interactive-inc/claude-funnel/logger"        generic event log + human diagnostic log
-//
-// Claude Code integration (FunnelClaude, FunnelMcp) is intentionally not
-// exposed as a sub-entry — use the Funnel facade's .claude getter instead.
+//   "@interactive-inc/claude-funnel/connectors/<type>"  per-type connector descriptor (slack | discord | gh | schedule)
 
 // Facade
 export * from "@/funnel"
@@ -57,7 +56,12 @@ export * from "@/engine/http/http-client"
 export * from "@/engine/http/node-http-client"
 export * from "@/engine/http/memory-http-client"
 
+export * from "@/engine/token-prompter/token-prompter"
+export * from "@/engine/token-prompter/node-token-prompter"
+export * from "@/engine/token-prompter/memory-token-prompter"
+
 export * from "@/engine/error/on-funnel-error"
+export * from "@/engine/error/funnel-error"
 
 // Connectors — type-agnostic core surface only. Concrete connectors (Slack,
 // Discord, GitHub, Schedule) — their descriptors, schemas, listeners, adapters —
