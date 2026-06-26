@@ -28,6 +28,13 @@ type RunStartOptions = {
   onEvent: FlumeEventHandler
   onLog?: FlumeLogHandler
   deps?: FlumeRuntimeDeps
+  /**
+   * Optional AbortSignal forwarded to the underlying Flume. When aborted, the
+   * Flume auto-stops every source and resolves to `FlumeStopped`. Use this to
+   * propagate a host-level shutdown (SIGTERM, supervisor stop, parent timeout)
+   * down to the WebSocket layer without racing through `stop()`.
+   */
+  signal?: AbortSignal
 }
 
 /**
@@ -74,6 +81,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       onEvent: options.onEvent,
       onLog: options.onLog,
       deps: options.deps,
+      signal: options.signal,
       onStatus: (event) => this.handleStatus(event),
     })
 

@@ -1,5 +1,6 @@
 import type { ReplayableEvent } from "@/gateway/broadcaster"
 import { FunnelLogger } from "@/engine/logger/logger"
+import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import {
   type FunnelEvent,
   FunnelEventLog,
@@ -16,6 +17,12 @@ type Props = {
   now?: () => number
   /** Surfaces a failed persist (PK collision, disk-full, locked WAL). Silent if absent. */
   logger?: FunnelLogger
+  /**
+   * Host-supplied error sink. Routed alongside the logger when a write
+   * fails, so Sentry / Datadog / a custom alert pipeline sees the durable
+   * replay loss too — not just the local log file. Silent if absent.
+   */
+  onError?: OnFunnelError
   /** Optional row cap. Pruned on every insert. */
   maxRows?: number
   /** Optional age cap in ms. Pruned on every insert. */
@@ -47,11 +54,13 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
   private readonly sink: FunnelLogSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>
   private readonly now: () => number
   private readonly logger: FunnelLogger | undefined
+  private readonly onError: OnFunnelError | undefined
 
   constructor(props: Props) {
     super()
     this.now = props.now ?? (() => Date.now())
     this.logger = props.logger
+    this.onError = props.onError
     this.sink = new FunnelLogSqliteSink<FunnelEvent, ["channel_id", "connector_id"]>({
       path: props.path,
       indexes: ["channel_id", "connector_id"],
@@ -83,12 +92,21 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     const result = this.sink.write({ seq: record.offset, ts: this.now(), event })
 
     // A dropped write (PK collision on a reused offset, disk-full, locked WAL)
-    // silently loses the event from durable replay. Surface it instead of
-    // discarding the Error the sink returns.
+    // silently loses the event from durable replay. Surface it to the local
+    // log AND through the host's error sink so off-box alerting (Sentry /
+    // Datadog) sees the loss too — discarding the Error the sink returns
+    // would mean the operator only sees missing replay rows after the fact.
     if (result instanceof Error) {
       this.logger?.error("event log write failed", {
         offset: record.offset,
         error: result.message,
+      })
+      this.onError?.(result, {
+        component: "sqlite-event-log",
+        op: "record",
+        offset: record.offset,
+        channelId: record.channelId,
+        connectorId: record.connectorId,
       })
     }
   }

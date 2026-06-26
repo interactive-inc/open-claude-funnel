@@ -26,6 +26,8 @@ type Deps = {
   flumeDeps?: Partial<FlumeRuntimeDeps>
   /** HTTP client for `auth.test` and `reactions.add`. Defaults to NodeFunnelHttpClient. */
   http?: FunnelHttpClient
+  /** Shutdown signal forwarded to the underlying Flume. */
+  signal?: AbortSignal
 }
 
 const authTestResponseSchema = z.object({
@@ -52,6 +54,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   private readonly env: NodeJS.ProcessEnv
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
   private readonly http: FunnelHttpClient
+  private readonly signal: AbortSignal | undefined
   private processor: FunnelSlackEventProcessor | null = null
   private botToken = ""
 
@@ -67,6 +70,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.env = deps.env ?? process.env
     this.flumeDeps = deps.flumeDeps ?? {}
     this.http = deps.http ?? new NodeFunnelHttpClient()
+    this.signal = deps.signal
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -127,6 +131,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       source,
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
+      signal: this.signal,
       onEvent: (event) => {
         if (event.source !== "slack") return
         this.handleEvent(event, notify)

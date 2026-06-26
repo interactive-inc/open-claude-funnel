@@ -17,6 +17,8 @@ type Deps = {
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
   flumeDeps?: Partial<FlumeRuntimeDeps>
+  /** Shutdown signal forwarded to the underlying Flume. */
+  signal?: AbortSignal
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -41,6 +43,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
   private readonly config: DiscordConnectorConfig
   private readonly env: NodeJS.ProcessEnv
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
+  private readonly signal: AbortSignal | undefined
   private processor: FunnelDiscordEventProcessor | null = null
 
   constructor(deps: Deps) {
@@ -54,6 +57,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
     this.config = deps.config
     this.env = deps.env ?? process.env
     this.flumeDeps = deps.flumeDeps ?? {}
+    this.signal = deps.signal
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -91,6 +95,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       source,
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
+      signal: this.signal,
       onEvent: (event) => {
         if (event.source !== "discord") return
         this.handleEvent(event, notify)

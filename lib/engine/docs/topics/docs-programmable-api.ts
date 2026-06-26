@@ -66,6 +66,35 @@ For targeted imports (smaller bundle / clearer dependency footprint):
   // Schedule fires can be observed by passing onFired to the descriptor:
   //   scheduleConnector({ onFired: (entry, firedAt) => { ... } })
 
+── flume 0.6 transport notes ───────────────────────────────────────────────
+
+Slack / Discord / GitHub connectors wrap @interactive-inc/flume 0.6. Each
+listener owns a single-source Flume FSM:
+
+   Source ctor                      Flume options (cross-cutting)
+   -----------                      -----------------------------
+   FlumeSlackSource({appToken,      onEvent / onLog / onStatus
+       botToken})                   reconnect / signal / deps
+   FlumeDiscordSource({token,
+       intents})
+   FlumeGitHubSource({token,
+       pollInterval})
+
+new Funnel({ signal: controller.signal }) plumbs the AbortSignal down to
+every Flume so a host SIGTERM handler can stop every listener cleanly:
+
+   const controller = new AbortController()
+   process.on("SIGTERM", () => controller.abort())
+   const funnel = new Funnel({
+     connectors: [slackConnector(), ghConnector()],
+     signal: controller.signal,
+   })
+
+Custom connector types: extend FlumeSource from the flume package and
+write your own ConnectorDescriptor — that's the only escape hatch for
+host-specific protocol logic, since the bundled descriptors don't take
+extension hooks.
+
 ── in-process gateway: receive events in your own process ──────────────────
 
 The daemon (funnel.gateway.start()) runs in a separate process, so your code

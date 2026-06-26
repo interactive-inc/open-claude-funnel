@@ -18,6 +18,8 @@ type Deps = {
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
   flumeDeps?: Partial<FlumeRuntimeDeps>
+  /** Shutdown signal forwarded to the underlying Flume. */
+  signal?: AbortSignal
 }
 
 const defaultProcess = new NodeFunnelProcessRunner()
@@ -41,6 +43,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
   private readonly env: NodeJS.ProcessEnv
   private readonly process: FunnelProcessRunner
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
+  private readonly signal: AbortSignal | undefined
 
   constructor(deps: Deps) {
     super({
@@ -54,6 +57,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
     this.env = deps.env ?? process.env
     this.process = deps.process ?? defaultProcess
     this.flumeDeps = deps.flumeDeps ?? {}
+    this.signal = deps.signal
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -78,6 +82,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       source,
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
+      signal: this.signal,
       onEvent: (event) => {
         if (event.source !== "github") return
         this.handleEvent(event, notify)

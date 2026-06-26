@@ -148,6 +148,7 @@ export class FunnelGatewayServer {
         path: this.dbPath,
         now: this.nowMs,
         logger: this.logger,
+        onError: this.onError,
       })
       this.ownsEventLog = true
     }

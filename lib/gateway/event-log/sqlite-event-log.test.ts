@@ -159,4 +159,26 @@ describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
 
     store.close()
   })
+
+  it("routes write failures through OnFunnelError so host alerting sees the loss", () => {
+    const captured: { error: Error; context?: Record<string, unknown> }[] = []
+    const store = new SqliteFunnelEventLog({
+      path: ":memory:",
+      onError: (error, context) => captured.push({ error, context }),
+    })
+
+    store.record({ content: "first", channelId: "ch1", connectorId: "co1", meta: null, offset: 9 })
+    // Re-use offset 9 to trigger the PK collision path.
+    store.record({ content: "dup", channelId: "ch1", connectorId: "co1", meta: null, offset: 9 })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.error).toBeInstanceOf(Error)
+    expect(captured[0]?.context?.component).toBe("sqlite-event-log")
+    expect(captured[0]?.context?.op).toBe("record")
+    expect(captured[0]?.context?.offset).toBe(9)
+    expect(captured[0]?.context?.channelId).toBe("ch1")
+    expect(captured[0]?.context?.connectorId).toBe("co1")
+
+    store.close()
+  })
 })

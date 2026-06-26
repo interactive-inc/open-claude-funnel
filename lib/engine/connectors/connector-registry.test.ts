@@ -1,83 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { beforeEach, describe, expect, test } from "vitest"
 import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import { scheduleConnector } from "@/engine/connectors/schedule-connector"
 import type { ScheduleConnectorConfig } from "@/engine/connectors/schedule-connector-schema"
 import { slackConnector } from "@/engine/connectors/slack-connector"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
-
-// The Flume-backed Slack listener calls `auth.test` over plain `fetch` to
-// learn its own bot/user id. Mock the global so the listener sees a
-// successful auth response and records a "connected" connection row.
-const mockSlackApi = (overrides: Partial<{ authTest: unknown; connectionsOpen: unknown }> = {}) => {
-  const authTest = overrides.authTest ?? { ok: true, user_id: "U", bot_id: "B" }
-  const connectionsOpen = overrides.connectionsOpen ?? { ok: true, url: "wss://slack.example/ws" }
-
-  const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-    const target = String(url)
-
-    if (target === "https://slack.com/api/auth.test") {
-      return new Response(JSON.stringify(authTest), { status: 200 })
-    }
-
-    if (target === "https://slack.com/api/apps.connections.open") {
-      return new Response(JSON.stringify(connectionsOpen), { status: 200 })
-    }
-
-    if (target.startsWith("wss://")) {
-      // Should not happen in tests; the listener does not open a real WS here.
-      return new Response("not found", { status: 404 })
-    }
-
-    // Fallback for any other Slack API call (e.g. reactions.add).
-    return new Response(JSON.stringify({ ok: true }), { status: 200 })
-  })
-
-  globalThis.fetch = fetchMock as unknown as typeof fetch
-
-  // Stub the WebSocket constructor so Flume's Slack source can be constructed
-  // without a real socket. The listener calls source.start(), which triggers
-  // obtainSlackUrl + WebSocket construction; we want start() to resolve
-  // without actually opening a connection. The simplest path is to stub a
-  // WebSocket that immediately calls the close handler, but for the
-  // diagnosticLog wiring test we just need start() not to throw.
-  class FakeWebSocket {
-    static OPEN = 1
-    static CLOSED = 3
-    readyState = 1
-    url: string
-    listeners: Record<string, Array<(ev: unknown) => void>> = {}
-
-    constructor(url: string | URL) {
-      this.url = String(url)
-      // Immediately deliver a Slack "hello" so FlumeSlackSocketMode.connect()
-      // resolves and source.start() completes — the diagnosticLog wiring test
-      // does not exercise real socket semantics.
-      setTimeout(() => {
-        const fns = this.listeners["message"] ?? []
-        for (const fn of fns) fn({ data: JSON.stringify({ type: "hello" }) })
-      }, 0)
-    }
-
-    addEventListener(type: string, fn: (ev: unknown) => void): void {
-      if (!this.listeners[type]) this.listeners[type] = []
-      this.listeners[type]!.push(fn)
-    }
-
-    removeEventListener(): void {}
-
-    send(): void {}
-
-    close(): void {
-      const fns = this.listeners["close"] ?? []
-      for (const fn of fns) fn({ code: 1000, reason: "" })
-    }
-  }
-
-  globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
-
-  return { fetchMock }
-}
 
 const slackConfig: SlackConnectorConfig = {
   id: "co-1",
@@ -89,63 +16,74 @@ const slackConfig: SlackConnectorConfig = {
 }
 
 let diagnosticLog: MemoryConnectorDiagnosticLog
-let originalFetch: typeof fetch
-let originalWebSocket: typeof WebSocket
 
 beforeEach(() => {
   diagnosticLog = new MemoryConnectorDiagnosticLog()
-  originalFetch = globalThis.fetch
-  originalWebSocket = globalThis.WebSocket
-})
-
-afterEach(() => {
-  globalThis.fetch = originalFetch
-  globalThis.WebSocket = originalWebSocket
 })
 
 describe("FunnelConnectorRegistry diagnosticLog wiring", () => {
-  test("threads the diagnosticLog into the Slack listener it builds", async () => {
-    mockSlackApi()
+  // Capture the deps the registry hands to the descriptor without going
+  // through the real Flume-backed listener. Flume 0.6 caches
+  // `globalThis.WebSocket` at module load, so a per-test stub can't
+  // intercept it — we'd be testing Flume's connect path, not the registry
+  // seam. A capture descriptor isolates exactly what the registry passes.
+  const captureDescriptor = (recorded: { deps?: { diagnosticLog?: unknown; channelId?: string; signal?: AbortSignal } }) => ({
+    type: "slack",
+    toolExposed: true,
+    createListener(_config: unknown, deps: { diagnosticLog?: unknown; channelId: string; signal?: AbortSignal }) {
+      recorded.deps = deps
+      return {
+        start: async () => {},
+        stop: async () => {},
+        isAlive: () => true,
+      } as unknown as ReturnType<typeof slackConnector>["createListener"] extends (...args: unknown[]) => infer R
+        ? R
+        : never
+    },
+    createAdapter: null,
+    toolName: () => "slack",
+    secretTokens: () => [],
+    buildConfig: (input: Record<string, unknown>) => input as never,
+    applyUpdate: (config: unknown) => config as never,
+    operations: {},
+  })
 
+  test("threads the diagnosticLog into the Slack listener it builds", () => {
+    const recorded: { deps?: { diagnosticLog?: unknown; channelId?: string } } = {}
     const registry = new FunnelConnectorRegistry({
-      descriptors: [slackConnector()],
+      descriptors: [captureDescriptor(recorded)],
       diagnosticLog,
     })
 
-    const listener = registry.createListener("ch-uuid-1", slackConfig)
+    registry.createListener("ch-uuid-1", slackConfig)
 
-    // start() reaches the WebSocket-backed Flume layer which Bun's `globalThis`
-    // patch cannot intercept (Flume 0.6 caches the constructor at module
-    // load). We catch the resulting FlumeStartError — the listener still
-    // records "started" before failing, which is enough to prove the
-    // diagnosticLog seam works end-to-end.
-    try {
-      await listener.start(async () => {})
-    } catch {
-      /* expected: Flume cannot reach the patched WebSocket */
-    }
-
-    const rows = diagnosticLog.queryConnection({})
-    expect(rows.length).toBeGreaterThan(0)
-    expect(rows[0]?.connectorId).toBe("co-1")
-    expect(rows[0]?.channelId).toBe("ch-uuid-1")
+    expect(recorded.deps?.diagnosticLog).toBe(diagnosticLog)
+    expect(recorded.deps?.channelId).toBe("ch-uuid-1")
   })
 
-  test("a listener built without a diagnosticLog records nothing (no-op)", async () => {
-    mockSlackApi()
+  test("threads a no diagnosticLog through cleanly when the host omits one", () => {
+    const recorded: { deps?: { diagnosticLog?: unknown } } = {}
+    const registry = new FunnelConnectorRegistry({
+      descriptors: [captureDescriptor(recorded)],
+    })
 
-    const registry = new FunnelConnectorRegistry({ descriptors: [slackConnector()] })
+    registry.createListener("ch-uuid-1", slackConfig)
 
-    const listener = registry.createListener("ch-uuid-1", slackConfig)
+    expect(recorded.deps?.diagnosticLog).toBeUndefined()
+  })
 
-    // Absence of a throw past the diagnostic layer is the assertion:
-    // recordConnection is a silent no-op even when the underlying Flume
-    // start fails on the WebSocket layer.
-    try {
-      await listener.start(async () => {})
-    } catch {
-      /* expected: see above */
-    }
+  test("forwards the shared AbortSignal to every listener it builds", () => {
+    const recorded: { deps?: { signal?: AbortSignal } } = {}
+    const controller = new AbortController()
+
+    const registry = new FunnelConnectorRegistry({
+      descriptors: [captureDescriptor(recorded)],
+      signal: controller.signal,
+    })
+
+    registry.createListener("ch-uuid-1", slackConfig)
+
+    expect(recorded.deps?.signal).toBe(controller.signal)
   })
 
   test("throws for a connector type whose descriptor was not registered", () => {

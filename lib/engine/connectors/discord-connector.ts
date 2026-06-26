@@ -20,6 +20,7 @@ export const discordConnector = (): ConnectorDescriptor => ({
       channelId: deps.channelId,
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
+      signal: deps.signal,
     })
   },
   createAdapter(config, deps) {

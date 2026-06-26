@@ -19,6 +19,7 @@ type FakeHooks = {
 class FakeFlumeSource extends FlumeSource {
   readonly name = "slack"
   capturedCtx: FlumeSourceStartContext | null = null
+  disconnectCalls = 0
 
   constructor(private readonly hooks: FakeHooks = {}) {
     super()
@@ -31,8 +32,34 @@ class FakeFlumeSource extends FlumeSource {
   }
 
   protected override async disconnect(): Promise<void> {
+    this.disconnectCalls += 1
     if (this.hooks.disconnectError) throw this.hooks.disconnectError
     this.capturedCtx = null
+  }
+}
+
+class TestListenerWithSignal extends FunnelFlumeSourceListener {
+  readonly source: FakeFlumeSource
+
+  constructor(
+    diagnosticLog: MemoryConnectorDiagnosticLog,
+    private readonly signal: AbortSignal,
+  ) {
+    super({ type: "slack", connectorId: "co-1", channelId: "ch-1", diagnosticLog })
+    this.source = new FakeFlumeSource()
+  }
+
+  async start(): Promise<void> {
+    await this.runStart({
+      source: this.source,
+      onEvent: () => {},
+      signal: this.signal,
+    })
+  }
+
+  emitStatus(status: FlumeStatus, detail?: string): void {
+    const event: FlumeStatusEvent = { source: "slack", status, ...(detail !== undefined ? { detail } : {}) }
+    this.handleStatus(event)
   }
 }
 
@@ -132,6 +159,23 @@ describe("FunnelFlumeSourceListener", () => {
     // Flume wraps the source error in FlumeStartError with a context message;
     // the original "socket refused" text is preserved in the chain.
     expect(errorRows.some((d) => d.includes("socket refused"))).toBe(true)
+  })
+
+  test("forwards an AbortSignal to the Flume so host shutdown propagates", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const controller = new AbortController()
+    const listener = new TestListenerWithSignal(log, controller.signal)
+
+    await listener.start()
+    expect(listener.source.disconnectCalls).toBe(0)
+
+    // Aborting the signal triggers Flume's internal auto-stop, which calls
+    // source.disconnect on every source. Give Flume a few microtasks to
+    // settle since runStop awaits source.stop() per source.
+    controller.abort()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(listener.source.disconnectCalls).toBeGreaterThan(0)
   })
 
   test("reconnecting status does not write a row but still flips alive off", async () => {

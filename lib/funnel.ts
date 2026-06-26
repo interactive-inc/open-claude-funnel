@@ -113,6 +113,13 @@ type Props = {
    * in tests to assert request shape and stub responses without network.
    */
   http?: FunnelHttpClient
+  /**
+   * Shutdown signal forwarded to every flume-backed listener built by this
+   * funnel's connector registry. Wire a single `AbortController` here from a
+   * host-level SIGTERM handler so every listener's Flume tears down its
+   * WebSocket / fetch loop together when the host shuts down.
+   */
+  signal?: AbortSignal
 }
 
 /**
@@ -205,6 +212,7 @@ export class Funnel {
       clock,
       logger: this.logger,
       diagnosticLog: props.diagnosticLog,
+      signal: props.signal,
       dir,
     })
 

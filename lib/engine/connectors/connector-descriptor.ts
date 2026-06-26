@@ -19,6 +19,14 @@ export type ConnectorListenerDeps = {
   clock: FunnelClock
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
+  /**
+   * Optional shutdown signal forwarded to flume-backed listeners. When the
+   * host aborts the signal, the listener's Flume tears down its WebSocket /
+   * fetch loop without waiting for the supervisor's `stop()`. Hosts that want
+   * a clean SIGTERM story wire `controller.signal` here and call
+   * `controller.abort()` in their shutdown handler.
+   */
+  signal?: AbortSignal
   /** Resolves the per-connector state directory (`<dir>/channels/<id>/connectors/<id>`). */
   connectorDir: (channelId: string, connectorId: string) => string
 }

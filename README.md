@@ -349,7 +349,7 @@ funnel.channels.addConnector("inbox", {
 })
 ```
 
-Schedule の起動フックは descriptor factory の引数で渡す（`scheduleConnector({ onFired })`）。Slack / Discord / GitHub は Flume の素の WebSocket / fetch をそのまま使うため、host 拡張用フックは持たない（必要なら自前 descriptor を書く）。
+Schedule の起動フックは descriptor factory の引数で渡す（`scheduleConnector({ onFired })`）。Slack / Discord / GitHub は `@interactive-inc/flume` 0.6 の `Flume` FSM を通して接続する（source の ctor は protocol 専用 option だけ、`onEvent` / `onLog` / `onStatus` / `reconnect` / `signal` / `deps` は Flume 側に集約）。これらの host 拡張用フックは持たないので、必要なら自前 descriptor を書く。host shutdown を伝播させたい場合は `new Funnel({ signal: controller.signal })` で `AbortSignal` を渡すと、全 connector の Flume へ自動転送される。
 
 `channels` / `profiles` / `gateway` / `listeners` / `claude` / `localConfig` / `localConfigSync` / `diagnostics` / `doctor` / `recovery` / `docs` / `gatewayToken` / `publisher` / `paths` がすべて同じインスタンスの readonly プロパティとして辿れる。`gateway` はデーモンの起動・停止、`listeners` は動作中デーモンとの HTTP 会話、`claude` はエージェント起動、`diagnostics` / `doctor` / `recovery` は読み取り診断と自己修復を担う。
 

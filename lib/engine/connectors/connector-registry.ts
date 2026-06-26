@@ -34,6 +34,13 @@ type Deps = {
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
   dir?: string
+  /**
+   * Shared shutdown signal forwarded to every listener built by this
+   * registry. Hosts wire one signal here (e.g. from a per-Funnel
+   * AbortController in a SIGTERM handler) and every listener tears down
+   * together when it aborts.
+   */
+  signal?: AbortSignal
 }
 
 const defaultFs = new NodeFunnelFileSystem()
@@ -58,6 +65,7 @@ export class FunnelConnectorRegistry {
   private readonly clock: FunnelClock
   private readonly logger: FunnelLogger | undefined
   private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
+  private readonly signal: AbortSignal | undefined
   private readonly dir: string
 
   constructor(deps: Deps) {
@@ -68,6 +76,7 @@ export class FunnelConnectorRegistry {
     this.clock = deps.clock ?? defaultClock
     this.logger = deps.logger
     this.diagnosticLog = deps.diagnosticLog
+    this.signal = deps.signal
     this.dir = deps.dir ?? FUNNEL_DIR
     Object.freeze(this)
   }
@@ -155,6 +164,7 @@ export class FunnelConnectorRegistry {
       clock: this.clock,
       logger: this.logger,
       diagnosticLog: this.diagnosticLog,
+      signal: this.signal,
       connectorDir: (channel, connector) => this.connectorDir(channel, connector),
     }
   }

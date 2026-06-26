@@ -25,6 +25,7 @@ export const slackConnector = (): ConnectorDescriptor => ({
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
       http: deps.http,
+      signal: deps.signal,
     })
   },
   createAdapter(config, deps) {

@@ -23,6 +23,7 @@ export const ghConnector = (): ConnectorDescriptor => ({
       process: deps.process,
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
+      signal: deps.signal,
     })
   },
   createAdapter(config, deps) {
