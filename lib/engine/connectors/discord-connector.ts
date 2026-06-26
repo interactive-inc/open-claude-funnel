@@ -22,8 +22,11 @@ export const discordConnector = (): ConnectorDescriptor => ({
       diagnosticLog: deps.diagnosticLog,
     })
   },
-  createAdapter(config) {
-    return new FunnelDiscordAdapter({ config: discordConnectorSchema.parse(config) })
+  createAdapter(config, deps) {
+    return new FunnelDiscordAdapter({
+      config: discordConnectorSchema.parse(config),
+      http: deps.http,
+    })
   },
   secretTokens(config) {
     const parsed = discordConnectorSchema.parse(config)

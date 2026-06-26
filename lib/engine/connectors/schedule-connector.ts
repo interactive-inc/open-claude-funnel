@@ -6,7 +6,7 @@ import {
   scheduleEntrySchema,
 } from "@/engine/connectors/schedule-connector-schema"
 import { FunnelScheduleListener, type ScheduleOnFired } from "@/engine/connectors/schedule-listener"
-import { ScheduleStateStore } from "@/engine/connectors/schedule-state-store"
+import { FunnelScheduleStateStore } from "@/engine/connectors/schedule-state-store"
 
 export type ScheduleConnectorOptions = {
   /** Invoked after a schedule entry fires successfully — e.g. to drop one-shot entries. */
@@ -40,7 +40,7 @@ export const scheduleConnector = (
 
     return new FunnelScheduleListener({
       config: parsed,
-      lastFiredStore: new ScheduleStateStore({
+      lastFiredStore: new FunnelScheduleStateStore({
         path: join(deps.connectorDir(deps.channelId, parsed.id), "state.json"),
         fs: deps.fs,
       }),
@@ -48,6 +48,10 @@ export const scheduleConnector = (
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
       onFired: options.onFired,
+      // Funnel-injected clock so a memory clock controls tick selection in
+      // tests; setTimeout still resolves against the real event loop because
+      // the funnel has no scheduler boundary to inject.
+      now: () => deps.clock.now(),
     })
   },
   createAdapter: null,

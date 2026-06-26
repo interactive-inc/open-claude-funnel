@@ -7,7 +7,7 @@ import type { ConnectorDescriptor } from "@/engine/connectors/connector-descript
 import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
-import { FileProcessGuard } from "@/engine/claude/file-process-guard"
+import { FunnelFileProcessGuard } from "@/engine/claude/file-process-guard"
 import { FunnelDiagnostics } from "@/services/diagnostics/funnel-diagnostics"
 import { FunnelDoctor } from "@/services/doctor/funnel-doctor"
 import { FunnelDocs } from "@/engine/docs/funnel-docs"
@@ -37,6 +37,11 @@ import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { FunnelClock } from "@/engine/time/clock"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
+import { FunnelHttpClient } from "@/engine/http/http-client"
+import { MemoryFunnelHttpClient } from "@/engine/http/memory-http-client"
+import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
+import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { Env } from "@/gateway/factory"
@@ -101,6 +106,13 @@ type Props = {
    * Defaults to a TTY-only stdin prompter. Inject MemoryFunnelTokenPrompter in tests.
    */
   tokenPrompter?: FunnelTokenPrompter
+  /**
+   * HTTP client used by connector adapters and listeners (e.g. Slack
+   * auth.test, reactions.add, Web API; Discord REST). Defaults to
+   * `NodeFunnelHttpClient` (global `fetch`). Inject `MemoryFunnelHttpClient`
+   * in tests to assert request shape and stub responses without network.
+   */
+  http?: FunnelHttpClient
 }
 
 /**
@@ -157,6 +169,7 @@ export class Funnel {
   private readonly process: FunnelProcessRunner
   private readonly logger: FunnelLogger | undefined
   private readonly clock: FunnelClock
+  private readonly http: FunnelHttpClient
   private readonly onError: OnFunnelError
 
   constructor(props: Props = {}) {
@@ -166,12 +179,14 @@ export class Funnel {
     const process = props.process ?? new NodeFunnelProcessRunner()
     const clock = props.clock ?? new NodeFunnelClock()
     const idGenerator = props.idGenerator ?? new NodeFunnelIdGenerator()
+    const http = props.http ?? new NodeFunnelHttpClient()
 
     this.paths = { dir, tmpDir, settings: join(dir, "settings.json") }
     this.fs = fs
     this.process = process
     this.logger = props.logger
     this.clock = clock
+    this.http = http
     this.onError = props.onError ?? noopOnError
 
     const store =
@@ -186,6 +201,8 @@ export class Funnel {
       descriptors: props.connectors ?? [],
       fs,
       process,
+      http,
+      clock,
       logger: this.logger,
       diagnosticLog: props.diagnosticLog,
       dir,
@@ -237,7 +254,7 @@ export class Funnel {
       mcp,
       gateway: this.gateway,
       sessions: this.profiles,
-      guard: new FileProcessGuard({ fs, process, dir }),
+      guard: new FunnelFileProcessGuard({ fs, process, dir }),
       process,
       logger: this.logger,
       dir,
@@ -268,9 +285,20 @@ export class Funnel {
   }
 
   /**
-   * Sandboxed Funnel wired with in-memory implementations for every IO boundary.
-   * Touches no real disk, processes, wall-clock time, or UUIDs — safe for tests
-   * and ad-hoc experiments. Override individual fields by passing them in `props`.
+   * Sandboxed Funnel wired with in-memory implementations for every IO
+   * boundary. Touches no real disk, processes, wall-clock time, UUIDs, HTTP,
+   * TTY prompts, or diagnostic SQLite — safe for tests and ad-hoc
+   * experiments. Override individual fields by passing them in `props`.
+   *
+   * NOT covered by `inMemory()`:
+   *   - `gatewayServer()` still calls `Bun.serve` and binds a real port; use
+   *     `port: 0` to let the OS pick one. The WebSocket subscription path
+   *     also crosses the real socket.
+   *   - Flume sources opened by listeners (Slack Socket Mode, Discord
+   *     Gateway, GitHub poll) still open real WebSockets / HTTP. Pass
+   *     `flumeDeps` to the descriptor's options if a test needs them stubbed.
+   *   - `funnel.gateway` (daemon process) — `start()` still spawns a child
+   *     process; only the in-process `gatewayServer()` is sandbox-friendly.
    */
   static inMemory(props: Props = {}): Funnel {
     return new Funnel({
@@ -281,6 +309,9 @@ export class Funnel {
       logger: props.logger ?? new MemoryFunnelLogger(),
       clock: props.clock ?? new MemoryFunnelClock(),
       idGenerator: props.idGenerator ?? new MemoryFunnelIdGenerator(),
+      http: props.http ?? new MemoryFunnelHttpClient(),
+      tokenPrompter: props.tokenPrompter ?? new MemoryFunnelTokenPrompter(),
+      diagnosticLog: props.diagnosticLog ?? new MemoryConnectorDiagnosticLog(),
       dir: props.dir ?? SANDBOX_DIR,
       tmpDir: props.tmpDir ?? SANDBOX_TMP_DIR,
     })
@@ -315,8 +346,8 @@ export class Funnel {
    * Useful for hosts that need to check or manage singleton PID files
    * independently of FunnelClaude (e.g. checking if a named profile is running).
    */
-  createProcessGuard(): FileProcessGuard {
-    return new FileProcessGuard({
+  createProcessGuard(): FunnelFileProcessGuard {
+    return new FunnelFileProcessGuard({
       fs: this.fs,
       process: this.process,
       dir: this.paths.dir,

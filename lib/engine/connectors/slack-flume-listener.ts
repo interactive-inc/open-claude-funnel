@@ -4,6 +4,8 @@ import { z } from "zod"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { FunnelAuthFailedError } from "@/engine/error/funnel-error"
+import { FunnelHttpClient } from "@/engine/http/http-client"
+import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import {
   FunnelSlackEventProcessor,
   type SlackRawEvent,
@@ -22,6 +24,8 @@ type Deps = {
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
   flumeDeps?: Partial<FlumeRuntimeDeps>
+  /** HTTP client for `auth.test` and `reactions.add`. Defaults to NodeFunnelHttpClient. */
+  http?: FunnelHttpClient
 }
 
 const authTestResponseSchema = z.object({
@@ -47,6 +51,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   private readonly config: SlackConnectorConfig
   private readonly env: NodeJS.ProcessEnv
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
+  private readonly http: FunnelHttpClient
   private processor: FunnelSlackEventProcessor | null = null
   private botToken = ""
 
@@ -61,6 +66,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.config = deps.config
     this.env = deps.env ?? process.env
     this.flumeDeps = deps.flumeDeps ?? {}
+    this.http = deps.http ?? new NodeFunnelHttpClient()
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -128,22 +134,23 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   }
 
   private async callAuthTest() {
-    let res: Response
+    let text: string
 
     try {
-      res = await fetch(AUTH_TEST_URL, {
+      const res = await this.http.fetch({
         method: "POST",
+        url: AUTH_TEST_URL,
         headers: {
           Authorization: `Bearer ${this.botToken}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
       })
+      text = await res.text()
     } catch (error) {
       this.diagnostics.recordConnection("auth-failed", errorMessageOf(error))
       throw error
     }
 
-    const text = await res.text()
     const parsed = authTestResponseSchema.safeParse(safeJsonParse(text))
 
     if (!parsed.success) {
@@ -222,8 +229,9 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   }
 
   private async postReaction(meta: Record<string, string>): Promise<void> {
-    const res = await fetch("https://slack.com/api/reactions.add", {
+    const res = await this.http.fetch({
       method: "POST",
+      url: "https://slack.com/api/reactions.add",
       headers: {
         Authorization: `Bearer ${this.botToken}`,
         "Content-Type": "application/x-www-form-urlencoded",

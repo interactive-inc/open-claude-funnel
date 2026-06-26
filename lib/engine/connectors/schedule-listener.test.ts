@@ -4,7 +4,7 @@ import type {
   ScheduleConnectorConfig,
   ScheduleEntry,
 } from "@/engine/connectors/schedule-connector-schema"
-import { ScheduleStateStore } from "@/engine/connectors/schedule-state-store"
+import { FunnelScheduleStateStore } from "@/engine/connectors/schedule-state-store"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
@@ -33,7 +33,7 @@ const buildListener = (
   sent: { content: string; meta?: Record<string, string> }[]
 } => {
   const fs = new MemoryFunnelFileSystem()
-  const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+  const lastFiredStore = new FunnelScheduleStateStore({ path: "/funnel/state.json", fs })
   const listener = new FunnelScheduleListener({
     config,
     lastFiredStore,
@@ -99,7 +99,7 @@ describe("FunnelScheduleListener", () => {
     const fired: { id: string; firedAt: Date }[] = []
     const config = buildConfig([buildEntry({ cron: "* * * * *" })])
     const fs = new MemoryFunnelFileSystem()
-    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const lastFiredStore = new FunnelScheduleStateStore({ path: "/funnel/state.json", fs })
     const listener = new FunnelScheduleListener({
       config,
       lastFiredStore,
@@ -123,7 +123,7 @@ describe("FunnelScheduleListener", () => {
       buildEntry({ id: "b", cron: "* * * * *" }),
     ])
     const fs = new MemoryFunnelFileSystem()
-    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const lastFiredStore = new FunnelScheduleStateStore({ path: "/funnel/state.json", fs })
     const sent: string[] = []
     const listener = new FunnelScheduleListener({
       config,
@@ -145,7 +145,7 @@ describe("FunnelScheduleListener", () => {
   test("tick failure does not stop the next timer from scheduling", async () => {
     const config = buildConfig([buildEntry({ cron: "* * * * *" })])
     const fs = new MemoryFunnelFileSystem()
-    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const lastFiredStore = new FunnelScheduleStateStore({ path: "/funnel/state.json", fs })
     let tickCount = 0
     const listener = new FunnelScheduleListener({
       config,
@@ -188,7 +188,7 @@ describe("FunnelScheduleListener", () => {
 
     const firstListener = new FunnelScheduleListener({
       config,
-      lastFiredStore: new ScheduleStateStore({ path, fs }),
+      lastFiredStore: new FunnelScheduleStateStore({ path, fs }),
       logger: new NoopFunnelLogger(),
       now: () => new Date("2026-01-01T00:00:00.000Z"),
     })
@@ -203,7 +203,7 @@ describe("FunnelScheduleListener", () => {
 
     const secondListener = new FunnelScheduleListener({
       config,
-      lastFiredStore: new ScheduleStateStore({ path, fs }),
+      lastFiredStore: new FunnelScheduleStateStore({ path, fs }),
       logger: new NoopFunnelLogger(),
       // same minute → should NOT fire again because the previous run already recorded it.
       now: () => new Date("2026-01-01T00:00:00.000Z"),
@@ -226,7 +226,7 @@ describe("FunnelScheduleListener: diagnostic log", () => {
     channelId?: string,
   ): FunnelScheduleListener => {
     const fs = new MemoryFunnelFileSystem()
-    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const lastFiredStore = new FunnelScheduleStateStore({ path: "/funnel/state.json", fs })
 
     return new FunnelScheduleListener({
       config,
@@ -293,7 +293,7 @@ describe("FunnelScheduleListener: diagnostic log", () => {
     const now = new Date("2026-01-01T00:00:00.000Z")
     const config = buildConfig([buildEntry({ cron: "* * * * *" })])
     const fs = new MemoryFunnelFileSystem()
-    const lastFiredStore = new ScheduleStateStore({ path: "/funnel/state.json", fs })
+    const lastFiredStore = new FunnelScheduleStateStore({ path: "/funnel/state.json", fs })
     const listener = new FunnelScheduleListener({
       config,
       lastFiredStore,

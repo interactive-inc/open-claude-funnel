@@ -15,7 +15,7 @@ const defaultFs = new NodeFunnelFileSystem()
  * connectorDir) so this store does not know about the funnel directory layout
  * (`channels/<id>/connectors/<id>/state.json` lives outside this class).
  */
-export class ScheduleStateStore {
+export class FunnelScheduleStateStore {
   private readonly path: string
   private readonly fs: FunnelFileSystem
 

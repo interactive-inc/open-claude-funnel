@@ -101,6 +101,33 @@ describe("FunnelSlackAdapter", () => {
 
     expect(result).toEqual(expect.objectContaining({ ok: false }))
   })
+
+  test("uses the injected FunnelHttpClient instead of globalThis.fetch", async () => {
+    // Patch globalThis.fetch to throw so we can prove the adapter never
+    // touches it when an http boundary is injected.
+    globalThis.fetch = vi.fn(() => {
+      throw new Error("global fetch must not be called when http is injected")
+    }) as unknown as typeof fetch
+
+    const { MemoryFunnelHttpClient } = await import("@/engine/http/memory-http-client")
+    const http = new MemoryFunnelHttpClient().on(() => ({
+      status: 200,
+      body: JSON.stringify({ ok: true, captured: true }),
+    }))
+
+    const adapter = new FunnelSlackAdapter({ config, http })
+
+    const result = await adapter.call({
+      method: "post",
+      path: "chat.postMessage",
+      body: { channel: "D1", text: "hi" },
+    })
+
+    expect(result).toEqual({ ok: true, captured: true })
+    expect(http.calls).toHaveLength(1)
+    expect(http.calls[0]!.url).toBe("https://slack.com/api/chat.postMessage")
+    expect(http.calls[0]!.method).toBe("POST")
+  })
 })
 
 describe("FunnelSlackAdapter domain methods", () => {

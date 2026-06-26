@@ -1,7 +1,7 @@
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { matchCron } from "@/engine/connectors/match-cron"
-import { ScheduleStateStore } from "@/engine/connectors/schedule-state-store"
+import { FunnelScheduleStateStore } from "@/engine/connectors/schedule-state-store"
 import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connector-diagnostics-recorder"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
@@ -14,7 +14,7 @@ export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Pr
 
 type Deps = {
   config: ScheduleConnectorConfig
-  lastFiredStore: ScheduleStateStore
+  lastFiredStore: FunnelScheduleStateStore
   /** Funnel channel uuid this connector lives under; stamped onto diagnostic-log rows. */
   channelId?: string
   logger?: FunnelLogger
@@ -33,7 +33,7 @@ const MAX_CATCHUP_MINUTES = 60 * 24
 
 export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly config: ScheduleConnectorConfig
-  private readonly lastFiredStore: ScheduleStateStore
+  private readonly lastFiredStore: FunnelScheduleStateStore
   private readonly logger: FunnelLogger | undefined
   private readonly diagnostics: FunnelConnectorDiagnosticsRecorder
   private readonly now: () => Date

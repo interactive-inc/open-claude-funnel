@@ -16,6 +16,10 @@ import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
+import { FunnelHttpClient } from "@/engine/http/http-client"
+import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
+import { FunnelClock } from "@/engine/time/clock"
+import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FUNNEL_DIR } from "@/engine/settings/settings-store"
 
 type Deps = {
@@ -25,6 +29,8 @@ type Deps = {
   descriptors: ConnectorDescriptor[]
   fs?: FunnelFileSystem
   process?: FunnelProcessRunner
+  http?: FunnelHttpClient
+  clock?: FunnelClock
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
   dir?: string
@@ -32,6 +38,8 @@ type Deps = {
 
 const defaultFs = new NodeFunnelFileSystem()
 const defaultProcess = new NodeFunnelProcessRunner()
+const defaultHttp = new NodeFunnelHttpClient()
+const defaultClock = new NodeFunnelClock()
 
 /**
  * Dispatches connector work to injected descriptors by `type`. Replaces the old
@@ -46,6 +54,8 @@ export class FunnelConnectorRegistry {
   private readonly descriptors: Map<string, ConnectorDescriptor>
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
+  private readonly http: FunnelHttpClient
+  private readonly clock: FunnelClock
   private readonly logger: FunnelLogger | undefined
   private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
   private readonly dir: string
@@ -54,6 +64,8 @@ export class FunnelConnectorRegistry {
     this.descriptors = new Map(deps.descriptors.map((descriptor) => [descriptor.type, descriptor]))
     this.fs = deps.fs ?? defaultFs
     this.process = deps.process ?? defaultProcess
+    this.http = deps.http ?? defaultHttp
+    this.clock = deps.clock ?? defaultClock
     this.logger = deps.logger
     this.diagnosticLog = deps.diagnosticLog
     this.dir = deps.dir ?? FUNNEL_DIR
@@ -139,6 +151,8 @@ export class FunnelConnectorRegistry {
       channelId,
       fs: this.fs,
       process: this.process,
+      http: this.http,
+      clock: this.clock,
       logger: this.logger,
       diagnosticLog: this.diagnosticLog,
       connectorDir: (channel, connector) => this.connectorDir(channel, connector),
@@ -146,6 +160,11 @@ export class FunnelConnectorRegistry {
   }
 
   private adapterDeps(): ConnectorAdapterDeps {
-    return { fs: this.fs, process: this.process, logger: this.logger }
+    return {
+      fs: this.fs,
+      process: this.process,
+      http: this.http,
+      logger: this.logger,
+    }
   }
 }

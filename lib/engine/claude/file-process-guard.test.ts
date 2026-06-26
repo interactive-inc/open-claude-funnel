@@ -1,17 +1,17 @@
 import { describe, expect, test } from "vitest"
-import { FileProcessGuard } from "@/engine/claude/file-process-guard"
+import { FunnelFileProcessGuard } from "@/engine/claude/file-process-guard"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 
 const buildGuard = () => {
   const fs = new MemoryFunnelFileSystem({ dirs: ["/funnel"] })
   const process = new MemoryFunnelProcessRunner()
-  const guard = new FileProcessGuard({ fs, process, dir: "/funnel" })
+  const guard = new FunnelFileProcessGuard({ fs, process, dir: "/funnel" })
 
   return { guard, fs, process }
 }
 
-describe("FileProcessGuard", () => {
+describe("FunnelFileProcessGuard", () => {
   test("isRunning returns false when no PID file exists", () => {
     const { guard } = buildGuard()
 

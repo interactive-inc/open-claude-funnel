@@ -20,7 +20,7 @@ type PidRecord = {
 const defaultFs = new NodeFunnelFileSystem()
 const defaultProcess = new NodeFunnelProcessRunner()
 
-export class FileProcessGuard implements ProcessGuard {
+export class FunnelFileProcessGuard implements ProcessGuard {
   private readonly fs: FunnelFileSystem
   private readonly process: FunnelProcessRunner
   private readonly pidDir: string

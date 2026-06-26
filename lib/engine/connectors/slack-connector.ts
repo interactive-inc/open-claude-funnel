@@ -24,10 +24,14 @@ export const slackConnector = (): ConnectorDescriptor => ({
       channelId: deps.channelId,
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
+      http: deps.http,
     })
   },
-  createAdapter(config) {
-    return new FunnelSlackAdapter({ config: slackConnectorSchema.parse(config) })
+  createAdapter(config, deps) {
+    return new FunnelSlackAdapter({
+      config: slackConnectorSchema.parse(config),
+      http: deps.http,
+    })
   },
   secretTokens(config) {
     const parsed = slackConnectorSchema.parse(config)

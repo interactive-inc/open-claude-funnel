@@ -1,5 +1,7 @@
 import { FunnelConnectorAdapter, type CallInput } from "@/engine/connectors/connector-adapter"
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
+import { FunnelHttpClient } from "@/engine/http/http-client"
+import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 
 const SLACK_API_BASE = "https://slack.com/api/"
@@ -15,18 +17,20 @@ const toRecord = (value: object): Record<string, unknown> => {
 type Deps = {
   config: SlackConnectorConfig
   env?: NodeJS.ProcessEnv
+  /** HTTP client injection — defaults to `NodeFunnelHttpClient`. Tests inject `MemoryFunnelHttpClient`. */
+  http?: FunnelHttpClient
 }
 
 /**
- * Slack Web API adapter over plain `fetch`. Replaces the former `@slack/web-api`
- * binding so the package has no Slack SDK dependency. `call()` posts to
- * `https://slack.com/api/<method>` with `Authorization: Bearer <botToken>` and
- * returns the parsed JSON body verbatim — Slack signals failures with
+ * Slack Web API adapter over the injected `FunnelHttpClient`. `call()` posts
+ * to `https://slack.com/api/<method>` with `Authorization: Bearer <botToken>`
+ * and returns the parsed JSON body verbatim — Slack signals failures with
  * `{ ok: false, error: "..." }` in a 200 response, so we surface that body
  * unchanged and let the caller inspect `ok`.
  */
 export class FunnelSlackAdapter extends FunnelConnectorAdapter {
   private readonly token: string
+  private readonly http: FunnelHttpClient
 
   constructor(deps: Deps) {
     super()
@@ -36,6 +40,7 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
       env: deps.env ?? process.env,
       label: `${deps.config.name}.botToken`,
     })
+    this.http = deps.http ?? new NodeFunnelHttpClient()
     Object.freeze(this)
   }
 
@@ -48,8 +53,9 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
       form.set(key, typeof value === "string" ? value : JSON.stringify(value))
     }
 
-    const res = await fetch(url, {
+    const res = await this.http.fetch({
       method: "POST",
+      url,
       headers: {
         Authorization: `Bearer ${this.token}`,
         "Content-Type": "application/x-www-form-urlencoded",
