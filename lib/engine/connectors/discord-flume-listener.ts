@@ -73,26 +73,28 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       throw error
     }
 
+    // Source ctor takes only protocol-specific options in Flume 0.6.
+    // Funnel's processor reads message content and mentions, so the privileged
+    // `MessageContent` intent must be requested explicitly — Flume's default
+    // omits it. Guilds + GuildMessages cover server channels; DirectMessages
+    // covers DM threads with the bot.
     const source = new FlumeDiscordSource({
       token,
-      // Funnel's processor reads message content and mentions, so the
-      // privileged `MessageContent` intent must be requested explicitly —
-      // Flume's default omits it. Guilds + GuildMessages cover server
-      // channels; DirectMessages covers DM threads with the bot.
       intents:
         FlumeDiscordGatewayIntents.Guilds |
         FlumeDiscordGatewayIntents.GuildMessages |
         FlumeDiscordGatewayIntents.MessageContent |
         FlumeDiscordGatewayIntents.DirectMessages,
-      reconnect: true,
-      onLog: flumeLogHandler(this.logger),
-      onStatus: (status, detail) => this.handleStatus(status, detail),
-      deps: resolveFlumeDeps(this.flumeDeps),
     })
 
-    await this.runStart(source, (event) => {
-      if (event.source !== "discord") return
-      this.handleEvent(event, notify)
+    await this.runStart({
+      source,
+      onLog: flumeLogHandler(this.logger),
+      deps: resolveFlumeDeps(this.flumeDeps),
+      onEvent: (event) => {
+        if (event.source !== "discord") return
+        this.handleEvent(event, notify)
+      },
     })
   }
 

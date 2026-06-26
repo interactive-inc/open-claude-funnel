@@ -114,18 +114,23 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       minify: this.config.minify,
     })
 
+    // In Flume 0.6 the source ctor takes only protocol-specific options;
+    // cross-cutting concerns (onEvent / onLog / onStatus / reconnect / deps)
+    // belong to the Flume that owns the source. We assemble that Flume via
+    // runStart so handleStatus stays wired in the base class.
     const source = new FlumeSlackSource({
       appToken,
       botToken: this.botToken,
-      reconnect: true,
-      onLog: flumeLogHandler(this.logger),
-      onStatus: (status, detail) => this.handleStatus(status, detail),
-      deps: resolveFlumeDeps(this.flumeDeps),
     })
 
-    await this.runStart(source, (event) => {
-      if (event.source !== "slack") return
-      this.handleEvent(event, notify)
+    await this.runStart({
+      source,
+      onLog: flumeLogHandler(this.logger),
+      deps: resolveFlumeDeps(this.flumeDeps),
+      onEvent: (event) => {
+        if (event.source !== "slack") return
+        this.handleEvent(event, notify)
+      },
     })
   }
 

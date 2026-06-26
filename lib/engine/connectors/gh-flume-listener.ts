@@ -68,18 +68,20 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       throw error
     }
 
+    // Source ctor takes only protocol-specific options in Flume 0.6.
     const source = new FlumeGitHubSource({
       token,
       pollInterval: this.config.pollInterval ?? 60,
-      reconnect: false,
-      onLog: flumeLogHandler(this.logger),
-      onStatus: (status, detail) => this.handleStatus(status, detail),
-      deps: resolveFlumeDeps(this.flumeDeps),
     })
 
-    await this.runStart(source, (event) => {
-      if (event.source !== "github") return
-      this.handleEvent(event, notify)
+    await this.runStart({
+      source,
+      onLog: flumeLogHandler(this.logger),
+      deps: resolveFlumeDeps(this.flumeDeps),
+      onEvent: (event) => {
+        if (event.source !== "github") return
+        this.handleEvent(event, notify)
+      },
     })
   }
 

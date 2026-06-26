@@ -1,51 +1,69 @@
 import { describe, expect, test } from "bun:test"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
-import type { FlumeHandler, FlumeSource, FlumeStatus } from "@interactive-inc/flume"
+import {
+  FlumeSource,
+  type FlumeEventHandler,
+  type FlumeSourceStartContext,
+  type FlumeStatus,
+  type FlumeStatusEvent,
+} from "@interactive-inc/flume"
 
-type SourceHooks = {
-  startError?: Error
-  stopError?: Error
+type FakeHooks = {
+  /** Error to return from `connect()` so Flume rolls back the start and we hit the FlumeStartError path. */
+  connectError?: Error
+  /** Throw from `disconnect()` so we exercise the stop-error branch in the base class. */
+  disconnectError?: Error
 }
 
-const buildSource = (hooks: SourceHooks = {}): FlumeSource => {
-  let stopped = false
-  return {
-    name: "slack",
-    start: async () => hooks.startError ?? null,
-    stop: async () => {
-      if (stopped) return
-      stopped = true
-      if (hooks.stopError) throw hooks.stopError
-    },
-    status: () => "connected",
+class FakeFlumeSource extends FlumeSource {
+  readonly name = "slack"
+  capturedCtx: FlumeSourceStartContext | null = null
+
+  constructor(private readonly hooks: FakeHooks = {}) {
+    super()
+  }
+
+  protected override async connect(ctx: FlumeSourceStartContext): Promise<Error | null> {
+    if (this.hooks.connectError) return this.hooks.connectError
+    this.capturedCtx = ctx
+    return null
+  }
+
+  protected override async disconnect(): Promise<void> {
+    if (this.hooks.disconnectError) throw this.hooks.disconnectError
+    this.capturedCtx = null
   }
 }
 
 class TestListener extends FunnelFlumeSourceListener {
   resetCount = 0
+  readonly source: FakeFlumeSource
 
-  constructor(diagnosticLog: MemoryConnectorDiagnosticLog) {
+  constructor(diagnosticLog: MemoryConnectorDiagnosticLog, hooks: FakeHooks = {}) {
     super({
       type: "slack",
       connectorId: "co-1",
       channelId: "ch-1",
       diagnosticLog,
     })
+    this.source = new FakeFlumeSource(hooks)
   }
 
   async start(): Promise<void> {
-    // Real subclasses build their source here; this stub exists only because
-    // the abstract FunnelConnectorListener.start signature is inherited. Tests
-    // drive the flow via runFromTest below.
+    await this.runStart({
+      source: this.source,
+      onEvent: () => {},
+    })
   }
 
-  async runFromTest(source: FlumeSource, handler: FlumeHandler): Promise<void> {
-    await this.runStart(source, handler)
+  async startWithHandler(onEvent: FlumeEventHandler): Promise<void> {
+    await this.runStart({ source: this.source, onEvent })
   }
 
   emitStatus(status: FlumeStatus, detail?: string): void {
-    this.handleStatus(status, detail)
+    const event: FlumeStatusEvent = { source: "slack", status, ...(detail !== undefined ? { detail } : {}) }
+    this.handleStatus(event)
   }
 
   protected override onStop(): void {
@@ -57,9 +75,8 @@ describe("FunnelFlumeSourceListener", () => {
   test("records connected/disconnected on status transitions and flips alive accordingly", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
-    const source = buildSource()
 
-    await listener.runFromTest(source, (() => {}) as FlumeHandler)
+    await listener.start()
     listener.emitStatus("connected", "ws open")
     expect(listener.isAlive()).toBe(true)
 
@@ -79,52 +96,49 @@ describe("FunnelFlumeSourceListener", () => {
     expect(statuses).toEqual(["connected", "connected", "disconnected"])
   })
 
-  test("stop records disconnected then stopped, calls onStop, and survives a stop error", async () => {
+  test("stop records disconnected then stopped and calls onStop even when the source disconnect throws", async () => {
+    // Flume 0.6 owns the stop pipeline and never re-throws a per-source
+    // disconnect error to its caller (the runStop wrapper converts unexpected
+    // throws into FlumeStopped). So our listener's stop() does not see a
+    // disconnect error — it just sees a clean stop. We verify the lifecycle
+    // still finalises and onStop fires.
     const log = new MemoryConnectorDiagnosticLog()
-    const listener = new TestListener(log)
-    const source = buildSource({ stopError: new Error("close kaput") })
+    const listener = new TestListener(log, { disconnectError: new Error("close kaput") })
 
-    await listener.runFromTest(source, (() => {}) as FlumeHandler)
+    await listener.start()
     listener.emitStatus("connected")
     await listener.stop()
 
     expect(listener.isAlive()).toBe(false)
     expect(listener.resetCount).toBe(1)
 
-    const rows = log.queryConnection({ type: "slack" }).map((r) => ({
-      status: r.status,
-      detail: r.detail,
-    }))
-
-    expect(rows).toContainEqual({ status: "connected", detail: "" })
-    expect(rows).toContainEqual({ status: "error", detail: "close kaput" })
-    expect(rows[rows.length - 1]).toEqual({ status: "stopped", detail: "" })
+    const rows = log.queryConnection({ type: "slack" }).map((r) => r.status)
+    expect(rows).toContain("connected")
+    expect(rows[rows.length - 1]).toBe("stopped")
   })
 
-  test("runStart records error on flume returning a start error and rethrows", async () => {
+  test("runStart records error on a FlumeStartError and rethrows", async () => {
     const log = new MemoryConnectorDiagnosticLog()
-    const listener = new TestListener(log)
-    const source = buildSource({ startError: new Error("socket refused") })
+    const listener = new TestListener(log, { connectError: new Error("socket refused") })
 
-    await expect(listener.runFromTest(source, (() => {}) as FlumeHandler)).rejects.toThrow(
-      "socket refused",
-    )
+    await expect(listener.start()).rejects.toBeInstanceOf(Error)
 
     expect(listener.isAlive()).toBe(false)
 
     const errorRows = log
       .queryConnection({ type: "slack", status: "error" })
-      .map((r) => r.detail)
+      .map((r) => r.detail ?? "")
 
-    expect(errorRows).toContain("socket refused")
+    // Flume wraps the source error in FlumeStartError with a context message;
+    // the original "socket refused" text is preserved in the chain.
+    expect(errorRows.some((d) => d.includes("socket refused"))).toBe(true)
   })
 
   test("reconnecting status does not write a row but still flips alive off", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
-    const source = buildSource()
 
-    await listener.runFromTest(source, (() => {}) as FlumeHandler)
+    await listener.start()
     listener.emitStatus("connected")
     listener.emitStatus("reconnecting", "network blip")
 
@@ -138,4 +152,3 @@ describe("FunnelFlumeSourceListener", () => {
     expect(statuses).toEqual(["connected"])
   })
 })
-
