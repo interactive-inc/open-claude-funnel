@@ -178,6 +178,17 @@ describe("FunnelFlumeSourceListener", () => {
     expect(listener.source.disconnectCalls).toBeGreaterThan(0)
   })
 
+  test("enables reconnect by default so the source receives a reconnect config", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+
+    await listener.start()
+    // The base class always builds a Flume with reconnect enabled, so the
+    // source's ctx.reconnect is the resolved config (non-null) — otherwise a
+    // single Socket Mode close would leave us permanently dead.
+    expect(listener.source.capturedCtx?.reconnect).not.toBeNull()
+  })
+
   test("reconnecting status does not write a row but still flips alive off", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)

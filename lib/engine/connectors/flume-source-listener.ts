@@ -4,6 +4,7 @@ import {
   FlumeStartError,
   type FlumeEventHandler,
   type FlumeLogHandler,
+  type FlumeReconnectOptions,
   type FlumeRuntimeDeps,
   type FlumeSource,
   type FlumeStatusEvent,
@@ -35,6 +36,14 @@ type RunStartOptions = {
    * down to the WebSocket layer without racing through `stop()`.
    */
   signal?: AbortSignal
+  /**
+   * Reconnect policy override forwarded to the Flume. The base class enables
+   * reconnect with Flume's defaults (infinite attempts, 1s base / 30s max
+   * exponential backoff with jitter) so a wifi drop or upstream socket close
+   * is auto-recovered. Subclasses can pass a stricter `{ maxAttempts, ... }`
+   * or `false` to opt out of reconnect entirely. Defaults to `true`.
+   */
+  reconnect?: boolean | FlumeReconnectOptions
 }
 
 /**
@@ -77,11 +86,21 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
    * table is wired here so subclasses do not each repeat it.
    */
   protected async runStart(options: RunStartOptions): Promise<void> {
+    // Default `reconnect: true` so a flake / overnight disconnect recovers
+    // automatically. Flume's reconnect default is `disabled`, which would
+    // leave a Slack Socket Mode listener permanently dead after the first
+    // close — funnel's supervisor would only catch it on the 30s health
+    // check, and only as "not alive", with no auto-heal.
+    const reconnectOption = options.reconnect ?? true
+    const flumeReconnect =
+      reconnectOption === false ? undefined : reconnectOption === true ? {} : reconnectOption
+
     const flume = new Flume([options.source], {
       onEvent: options.onEvent,
       onLog: options.onLog,
       deps: options.deps,
       signal: options.signal,
+      reconnect: flumeReconnect,
       onStatus: (event) => this.handleStatus(event),
     })
 
