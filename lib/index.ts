@@ -76,6 +76,19 @@ export * from "@/engine/connectors/base-connector-config"
 export * from "@/engine/connectors/connector-descriptor"
 export * from "@/engine/connectors/connector-registry"
 
+// Per-connector config schemas and pure event types. These modules only
+// depend on `zod` (already a root runtime dep) and pure type aliases — they
+// never pull in @slack/bolt, discord.js, or flume sources. Consumers that
+// hold typed config or event shapes can stay on the root import; the
+// runtime listener/adapter classes still live behind subentries
+// (`@interactive-inc/claude-funnel/connectors/<type>`).
+export * from "@/engine/connectors/slack-connector-schema"
+export * from "@/engine/connectors/slack-event-types"
+export * from "@/engine/connectors/slack-event-processor"
+export * from "@/engine/connectors/discord-connector-schema"
+export * from "@/engine/connectors/gh-connector-schema"
+export * from "@/engine/connectors/schedule-connector-schema"
+
 // Gateway
 export type { GatewayApp } from "@/gateway/routes"
 export * from "@/gateway/gateway"
