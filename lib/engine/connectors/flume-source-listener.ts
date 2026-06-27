@@ -1,7 +1,6 @@
 import {
   Flume,
   FlumeRunning,
-  FlumeStartError,
   type FlumeEventHandler,
   type FlumeLog,
   type FlumeLogHandler,
@@ -97,8 +96,8 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
 
   /**
    * Assemble a single-source Flume, open it, and store the `FlumeRunning`
-   * handle. Records `error` on a `FlumeStartError` and rethrows so the
-   * supervisor sees the failure.
+   * handle. Records `error` on any `Error` returned by `flume.open()` and
+   * rethrows so the supervisor sees the failure.
    *
    * The firehose handler routes:
    *   - `kind: "event"`   → subclass's typed `onEvent`
@@ -144,7 +143,14 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
 
     const result = await flume.open()
 
-    if (result instanceof FlumeStartError) {
+    // Branch on the abstract `Error` rather than the concrete
+    // `FlumeStartError`: future flume versions may introduce additional
+    // error subclasses (FlumeOpenError, FlumeAbortedError) in the same
+    // result union, and a stricter `instanceof FlumeStartError` check would
+    // silently assign them to `this.running: FlumeRunning`, leaving the
+    // listener half-started with a broken handle. `Error` is the documented
+    // discriminant for the result union.
+    if (result instanceof Error) {
       this.diagnostics.recordConnection("error", errorMessageOf(result))
       throw result
     }
