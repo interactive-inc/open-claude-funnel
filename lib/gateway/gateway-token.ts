@@ -51,24 +51,24 @@ export class FunnelGatewayToken {
   }
 
   /**
-   * Returns the existing token or, if missing, generates one and writes it with mode 0600.
-   *
-   * NOTE: not atomic — two concurrent `ensure()` calls (e.g., `fnl gateway start` racing
-   * itself before the PID lock is acquired) could each generate independent tokens. The
-   * gateway PID file makes this practically a non-issue; if you need stronger guarantees,
-   * take a file lock around this call externally.
+   * Returns the existing token or, if missing, generates one and writes it
+   * with mode 0600. Read+write runs inside an exclusive lock so two
+   * concurrent `ensure()` calls (a daemon spawn racing a CLI helper that
+   * reads the token before the gateway PID lock is acquired) cannot each
+   * persist a different token and leave one side authenticating against a
+   * value the other never sees.
    */
   ensure(): string {
-    const existing = this.read()
-
-    if (existing) return existing
-
-    const token = this.generate()
-
     this.fs.mkdirSync(dirname(this.path), { recursive: true })
-    this.fs.writeSecretFileSync(this.path, `${token}\n`)
+    return this.fs.withFileLock(`${this.path}.lock`, () => {
+      const existing = this.read()
 
-    return token
+      if (existing) return existing
+
+      const token = this.generate()
+      this.fs.writeSecretFileSync(this.path, `${token}\n`)
+      return token
+    })
   }
 
   getPath(): string {
