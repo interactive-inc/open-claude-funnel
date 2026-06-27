@@ -29,6 +29,27 @@ export type SlackPreprocessEvent = (
   event: SlackRawEvent,
 ) => SlackRawEvent | null | Promise<SlackRawEvent | null>
 
+/**
+ * Optional host hook for Slack interactivity (`block_actions`,
+ * `view_submission`, `view_closed`, `message_action`, `shortcut`) delivered
+ * via Socket Mode under the `interactive` envelope type. Funnel auto-acks
+ * the envelope for the host (flume's socket layer sends `{envelope_id}` back
+ * regardless of payload), so the host can take its time responding via the
+ * Slack web API (`views.open`, `chat.update`, …). Returning is enough — the
+ * return value is unused. Thrown errors land in the funnel logger and the
+ * connector's diagnostic log but never bubble up to flume's queue.
+ *
+ * Payload shape is intentionally `Record<string, unknown>` because Slack's
+ * interactive payload is a wide discriminated union (`type: "block_actions" |
+ * "view_submission" | "view_closed" | "message_action" | "shortcut"`) whose
+ * narrowest accurate type would couple funnel to Slack's API revisions.
+ * Hosts that need a typed payload should parse it with their own zod schema
+ * scoped to the interaction types they care about.
+ */
+export type SlackInteractiveHandler = (
+  payload: Record<string, unknown>,
+) => void | Promise<void>
+
 type Deps = {
   config: SlackConnectorConfig
   channelId?: string
@@ -42,6 +63,8 @@ type Deps = {
   signal?: AbortSignal
   /** See `SlackPreprocessEvent`. Default: identity (no preprocessing). */
   preprocessEvent?: SlackPreprocessEvent
+  /** See `SlackInteractiveHandler`. Default: drop interactive envelopes silently. */
+  onInteractive?: SlackInteractiveHandler
 }
 
 const authTestResponseSchema = z.object({
@@ -70,6 +93,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   private readonly http: FunnelHttpClient
   private readonly signal: AbortSignal | undefined
   private readonly preprocessEvent: SlackPreprocessEvent | undefined
+  private readonly onInteractive: SlackInteractiveHandler | undefined
   private processor: FunnelSlackEventProcessor | null = null
   private botToken = ""
 
@@ -87,6 +111,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.http = deps.http ?? new NodeFunnelHttpClient()
     this.signal = deps.signal
     this.preprocessEvent = deps.preprocessEvent
+    this.onInteractive = deps.onInteractive
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -162,6 +187,37 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.processor = null
   }
 
+  private async handleInteractive(payload: Record<string, unknown>): Promise<void> {
+    const eventId = crypto.randomUUID()
+    const rawJson = JSON.stringify(payload)
+    this.diagnostics.recordRaw(eventId, rawJson)
+
+    if (!this.onInteractive) {
+      // No host hook means the consumer does not care about interactivity.
+      // Record an audit row so a forgotten hook is visible in diagnostics
+      // (`outcome === "skip:no-interactive-handler"`) rather than appearing
+      // as silent data loss when users start clicking buttons.
+      this.diagnostics.recordProcessed(eventId, "skip:no-interactive-handler", "")
+      return
+    }
+
+    // The interactive payload's `type` field discriminates block_actions /
+    // view_submission / etc.; surface it as the outcome so diagnostics can
+    // distinguish handled action types at a glance without payload decoding.
+    const subtype = typeof payload.type === "string" ? payload.type : "unknown"
+
+    try {
+      await this.onInteractive(payload)
+      this.diagnostics.recordProcessed(eventId, `interactive:${subtype}`, "")
+    } catch (error) {
+      // Host hook errors must not break flume's serial queue — record and log
+      // so the user-facing approval flow's failure is auditable, then return.
+      const message = errorMessageOf(error)
+      this.diagnostics.recordProcessed(eventId, `interactive-error:${subtype}`, message)
+      this.logger?.error(`slack interactive handler error (${subtype})`, { error: message })
+    }
+  }
+
   private async callAuthTest() {
     let text: string
 
@@ -194,6 +250,19 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
 
   private async handleEvent(event: FlumeSlackEvent, notify: NotifyFn): Promise<void> {
     if (!this.processor) return
+
+    // Slack Socket Mode multiplexes envelope types over the same WebSocket;
+    // flume forwards every type with `event.type` set to the envelope kind.
+    // `interactive` (block_actions / view_submission / view_closed /
+    // message_action / shortcut) bypasses the events_api processor and goes
+    // straight to the host hook so consumers can run an approval flow without
+    // standing up a parallel Bolt app. Flume's socket layer already acked
+    // the envelope (sends `{envelope_id}` back regardless of payload), so the
+    // host can take its time and respond via the Slack web API.
+    if (event.type === "interactive") {
+      await this.handleInteractive(event.data)
+      return
+    }
 
     // Flume's Slack source delivers the envelope's `payload` as `event.data`.
     // The events_api envelope nests the actual event under `payload.event`, so

@@ -2,6 +2,7 @@ import { FunnelSlackAdapter } from "@/engine/connectors/slack-adapter"
 import { slackConnectorSchema } from "@/engine/connectors/slack-connector-schema"
 import {
   FunnelFlumeSlackListener,
+  type SlackInteractiveHandler,
   type SlackPreprocessEvent,
 } from "@/engine/connectors/slack-flume-listener"
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
@@ -20,6 +21,15 @@ export type SlackConnectorOptions = {
    * way to drop an event for a reason the processor's gates do not cover.
    */
   preprocessEvent?: SlackPreprocessEvent
+  /**
+   * Optional host handler for Slack interactivity (button clicks, modal
+   * submissions, message actions, global shortcuts) delivered via Socket
+   * Mode under the `interactive` envelope type. Funnel auto-acks the
+   * envelope for the host, so the handler can take its time and respond via
+   * the Slack web API. Setting this is the supported alternative to running
+   * a parallel Bolt app alongside funnel just for interactivity.
+   */
+  onInteractive?: SlackInteractiveHandler
 }
 
 /**
@@ -27,11 +37,15 @@ export type SlackConnectorOptions = {
  * `new Funnel({ connectors: [...] })` to enable the type.
  *
  * The listener is backed by `@interactive-inc/flume`'s `FlumeSlackSource`
- * (raw Socket Mode WebSocket). Only the events API envelope is delivered —
- * there is no equivalent for the Bolt-style `app.action` / `app.command`
- * dispatch. For HTTP-side interactivity (buttons, slash commands), run a
- * separate Bolt app outside funnel; this descriptor only handles the
- * incoming events firehose.
+ * (raw Socket Mode WebSocket). Both the `events_api` envelope (messages,
+ * mentions, reactions, …) and the `interactive` envelope (block actions,
+ * view submissions, message actions, shortcuts) are delivered — the former
+ * runs through the funnel processor and emits notifications, the latter is
+ * handed to the optional `onInteractive` host hook (funnel auto-acks the
+ * envelope, so the host can respond via the Slack web API at its leisure).
+ * Slash commands (`slash_commands` envelope) and Bolt's middleware chain
+ * have no equivalent here yet — wire those via the Slack HTTP endpoints if
+ * needed.
  */
 export const slackConnector = (options: SlackConnectorOptions = {}): ConnectorDescriptor => ({
   type: "slack",
@@ -47,6 +61,7 @@ export const slackConnector = (options: SlackConnectorOptions = {}): ConnectorDe
       http: deps.http,
       signal: deps.signal,
       preprocessEvent: options.preprocessEvent,
+      onInteractive: options.onInteractive,
     })
   },
   createAdapter(config, deps) {
