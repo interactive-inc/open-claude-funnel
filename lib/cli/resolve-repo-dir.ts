@@ -28,9 +28,11 @@ export const resolveRepoDir = (deps: Deps, cwd: string): string | null => {
     return join(deps.home, ".funnel", "projects", local.id)
   }
 
-  const id = deps.idGenerator.generate()
+  const candidate = deps.idGenerator.generate()
+  // Use the id that actually landed in funnel.json — a concurrent launch may
+  // have written its own candidate first; we must follow whatever it picked
+  // so both processes converge on the same projects/<id>/ state dir.
+  const resolved = deps.writer.ensureId(cwd, candidate) ?? candidate
 
-  deps.writer.ensureId(cwd, id)
-
-  return join(deps.home, ".funnel", "projects", id)
+  return join(deps.home, ".funnel", "projects", resolved)
 }

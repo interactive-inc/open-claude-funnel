@@ -43,19 +43,33 @@ export class FunnelLocalConfigWriter {
     Object.freeze(this)
   }
 
-  ensureId(cwd: string, id: string): void {
+  /**
+   * Returns the id that ends up persisted in funnel.json. If the file already
+   * has an id, the candidate is ignored and the persisted one wins. Otherwise
+   * the candidate is written and returned. Returns null when there is no
+   * funnel.json (the caller stays on the global ~/.funnel).
+   *
+   * The read+merge+write runs under an exclusive lock so two concurrent
+   * 'fnl claude' launches on the same repo cannot each persist a different
+   * generated id and split state across two ~/.funnel/projects/<id>/ dirs.
+   */
+  ensureId(cwd: string, candidate: string): string | null {
     const path = join(cwd, LOCAL_CONFIG_FILENAME)
 
-    if (!this.fs.existsSync(path)) return
+    if (!this.fs.existsSync(path)) return null
 
-    const parsed = JSON.parse(this.fs.readFileSync(path)) as unknown
+    return this.fs.withFileLock(`${path}.lock`, () => {
+      const parsed = JSON.parse(this.fs.readFileSync(path)) as unknown
 
-    if (!isRecord(parsed)) return
+      if (!isRecord(parsed)) return null
 
-    if (typeof parsed.id === "string" && parsed.id !== "") return
+      if (typeof parsed.id === "string" && parsed.id !== "") return parsed.id
 
-    const ordered = withIdFirst(parsed, id)
+      const ordered = withIdFirst(parsed, candidate)
 
-    this.fs.writeFileSync(path, `${JSON.stringify(ordered, null, 2)}\n`)
+      this.fs.writeFileSync(path, `${JSON.stringify(ordered, null, 2)}\n`)
+
+      return candidate
+    })
   }
 }

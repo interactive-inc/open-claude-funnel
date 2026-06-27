@@ -43,37 +43,45 @@ export class FunnelMcp {
       throw new Error(`repository does not exist: ${repoPath}`)
     }
 
-    const config = this.readConfig(repoPath)
-    const existing = config.mcpServers
-    const servers = isRecord(existing) ? existing : {}
+    // Two concurrent 'fnl claude' on the same repo (or a parallel claude-code
+    // edit) would otherwise both read the same .mcp.json, each merge its own
+    // entry, and the slower write would drop the other's edit. The lockfile
+    // serializes the read+merge+write into one atomic step.
+    this.fs.withFileLock(join(repoPath, ".mcp.json.lock"), () => {
+      const config = this.readConfig(repoPath)
+      const existing = config.mcpServers
+      const servers = isRecord(existing) ? existing : {}
 
-    const existingName = this.findServerName(servers)
-    const targetName = existingName ?? FUNNEL_MCP_NAME
+      const existingName = this.findServerName(servers)
+      const targetName = existingName ?? FUNNEL_MCP_NAME
 
-    servers[targetName] = {
-      command: FUNNEL_MCP_COMMAND,
-      args: FUNNEL_MCP_ARGS,
-    }
-    config.mcpServers = servers
+      servers[targetName] = {
+        command: FUNNEL_MCP_COMMAND,
+        args: FUNNEL_MCP_ARGS,
+      }
+      config.mcpServers = servers
 
-    this.writeConfig(repoPath, config)
+      this.writeConfig(repoPath, config)
+    })
   }
 
   uninstall(repoPath: string): void {
     if (!this.fs.existsSync(repoPath)) return
 
-    const config = this.readConfig(repoPath)
-    const servers = config.mcpServers
+    this.fs.withFileLock(join(repoPath, ".mcp.json.lock"), () => {
+      const config = this.readConfig(repoPath)
+      const servers = config.mcpServers
 
-    if (!isRecord(servers)) return
+      if (!isRecord(servers)) return
 
-    const name = this.findServerName(servers)
+      const name = this.findServerName(servers)
 
-    if (!name) return
+      if (!name) return
 
-    delete servers[name]
+      delete servers[name]
 
-    this.writeConfig(repoPath, config)
+      this.writeConfig(repoPath, config)
+    })
   }
 
   findInstalledName(cwd: string): string | null {
