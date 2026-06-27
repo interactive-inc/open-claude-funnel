@@ -113,8 +113,11 @@ describe("FunnelFlumeSourceListener", () => {
     listener.emitStatus("connected", "ws open")
     expect(listener.isAlive()).toBe(true)
 
+    // `reconnecting` is treated as alive so the supervisor's health check
+    // does not preempt Flume's internal retry. The connected flag flips
+    // off internally but isAlive stays true via the reconnecting flag.
     listener.emitStatus("reconnecting", "")
-    expect(listener.isAlive()).toBe(false)
+    expect(listener.isAlive()).toBe(true)
 
     listener.emitStatus("connected")
     expect(listener.isAlive()).toBe(true)
@@ -195,7 +198,7 @@ describe("FunnelFlumeSourceListener", () => {
     expect(listener.source.capturedCtx?.reconnect).not.toBeNull()
   })
 
-  test("reconnecting status does not write a row but still flips alive off", async () => {
+  test("reconnecting status does not write a row but isAlive stays true (supervisor stays out of flume's way)", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
 
@@ -203,7 +206,10 @@ describe("FunnelFlumeSourceListener", () => {
     listener.emitStatus("connected")
     listener.emitStatus("reconnecting", "network blip")
 
-    expect(listener.isAlive()).toBe(false)
+    // isAlive is the supervisor's health check input. We deliberately keep
+    // it true during reconnect so the supervisor lets Flume's faster,
+    // lower-overhead reconnect finish instead of stop+start+auth.test.
+    expect(listener.isAlive()).toBe(true)
 
     const statuses = log
       .queryConnection({ type: "slack" })
@@ -211,6 +217,22 @@ describe("FunnelFlumeSourceListener", () => {
 
     // No "reconnecting" row — only the prior connected.
     expect(statuses).toEqual(["connected"])
+  })
+
+  test("disconnected after reconnecting flips isAlive off so the supervisor can recover a truly dead listener", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+
+    await listener.start()
+    listener.emitStatus("connected")
+    listener.emitStatus("reconnecting", "network blip")
+    expect(listener.isAlive()).toBe(true)
+
+    // Flume gave up — reconnect exhausted, terminal close, or stop() was
+    // explicit. The listener must now report not-alive so the supervisor's
+    // recoverDead pass picks it up.
+    listener.emitStatus("disconnected", "give up")
+    expect(listener.isAlive()).toBe(false)
   })
 
   test("end-to-end reconnect: a simulated upstream disconnect schedules a retry that connects again", async () => {

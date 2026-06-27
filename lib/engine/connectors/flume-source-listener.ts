@@ -81,6 +81,15 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   protected readonly type: string
   protected running: FlumeRunning | null = null
   protected connected = false
+  /**
+   * Flipped on by Flume's `reconnecting` status, off when the new socket
+   * lands on `connected` or the source gives up with `disconnected`. Used by
+   * `isAlive()` to treat a brief reconnect window as "still alive" so the
+   * supervisor does not preempt Flume's in-progress recovery with a heavier
+   * stop+start cycle (which would discard auth.test results and rebuild
+   * every per-listener state).
+   */
+  protected reconnecting = false
 
   constructor(props: Props) {
     super()
@@ -109,11 +118,15 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     const flumeReconnect =
       reconnectOption === false ? undefined : reconnectOption === true ? {} : reconnectOption
 
-    const handleItem = (item: FlumeStreamItem) => {
+    const handleItem = async (item: FlumeStreamItem): Promise<void> => {
       if (item.kind === "event") {
-        // Promise resolution is the subclass's concern — onEvent typed as
-        // void | Promise<void> in Flume's API.
-        void Promise.resolve(options.onEvent(item.event))
+        // Return the awaited promise so Flume's serial queue holds the next
+        // event until this one's delivery (notify + diagnostic write) has
+        // completed. The previous fire-and-forget form was correct under
+        // microtask FIFO but would reorder if any await chain in the
+        // delivery path ever introduced a real async pause (network /
+        // file IO). Awaiting here makes ordering an explicit guarantee.
+        await options.onEvent(item.event)
         return
       }
 
@@ -170,37 +183,49 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     } finally {
       this.running = null
       this.connected = false
+      this.reconnecting = false
       this.onStop()
       this.diagnostics.recordConnection("stopped", "")
     }
   }
 
   override isAlive(): boolean {
-    return this.running !== null && this.connected
+    if (this.running === null) return false
+
+    // Treat an in-progress reconnect as still alive so the supervisor's
+    // 30s health check does not preempt Flume's internal retry. Flume's
+    // reconnect default (infinite attempts, 1s base / 30s max backoff) is
+    // usually faster than the supervisor's stop+start+auth.test cycle, so
+    // letting it finish recovers Slack notifications sooner with less
+    // diagnostic noise.
+    return this.connected || this.reconnecting
   }
 
   /**
    * Maps Flume's transport status to the connection table. `reconnecting`
    * deliberately produces no row — Flume drives many transient reconnects per
    * minute on a flaky network, and the row would drown the more meaningful
-   * `connected`/`disconnected` pair. The `connected` flag still flips so
-   * `isAlive()` is honest.
+   * `connected`/`disconnected` pair. The `reconnecting` flag still flips so
+   * `isAlive()` can surface it to the supervisor.
    */
   protected handleStatus(event: StatusEvent): void {
     if (event.status === "connected") {
       this.connected = true
+      this.reconnecting = false
       this.diagnostics.recordConnection("connected", event.detail ?? "")
       return
     }
 
     if (event.status === "disconnected") {
       this.connected = false
+      this.reconnecting = false
       this.diagnostics.recordConnection("disconnected", event.detail ?? "")
       return
     }
 
     if (event.status === "reconnecting") {
       this.connected = false
+      this.reconnecting = true
     }
   }
 
