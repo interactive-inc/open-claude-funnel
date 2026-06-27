@@ -37,16 +37,43 @@ const processRunner = new NodeFunnelProcessRunner()
 
 mkdirSync(funnelDir, { recursive: true })
 
-if (existsSync(PID_FILE)) {
+// PID file race: two daemons that both see "no PID file" (or "stale PID")
+// would race the writeFileSync below — both succeed, last writer's PID
+// sticks, and Bun.serve EADDRINUSE-crashes the loser. The crash leaves the
+// winner's PID in the file but with no daemon attached if the loser was
+// also writing concurrently. Fix by attempting an O_EXCL create (`wx`) and
+// only falling back to the stale-PID check if the create races a
+// pre-existing file.
+const tryClaimPid = (): boolean => {
+  try {
+    writeFileSync(PID_FILE, String(process.pid), { flag: "wx" })
+    return true
+  } catch (error) {
+    // EEXIST is the only error we tolerate — anything else (permission,
+    // disk full) should crash here loudly instead of silently degrading.
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
+      throw error
+    }
+    return false
+  }
+}
+
+if (!tryClaimPid()) {
   const existing = Number(readFileSync(PID_FILE, "utf-8").trim())
 
   if (existing > 0 && processRunner.isAlive(existing)) {
     logger.error("funnel gateway already running", { pid: existing })
     process.exit(1)
   }
-}
 
-writeFileSync(PID_FILE, String(process.pid))
+  // Stale PID — owner is gone. Remove and retry the exclusive claim so a
+  // second concurrent retry path cannot end up writing over the winner.
+  unlinkSync(PID_FILE)
+  if (!tryClaimPid()) {
+    logger.error("funnel gateway PID file claimed by another daemon mid-race")
+    process.exit(1)
+  }
+}
 
 process.on("exit", () => {
   try {

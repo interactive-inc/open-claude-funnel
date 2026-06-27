@@ -64,8 +64,15 @@ export class NodeFunnelFileSystem extends FunnelFileSystem {
   unlink(path: string): void {
     try {
       unlinkSync(path)
-    } catch {
-      // ignore
+    } catch (error) {
+      // ENOENT is the documented "remove if exists" semantic — silent OK.
+      // Any other error (EACCES, EPERM, EBUSY on Windows) means the file
+      // still exists. Swallowing those silently lets stale PID files,
+      // stale lock files, and stale token files survive a "delete" call,
+      // which has produced confusing "daemon already running" / "stale
+      // session" reports in the past. Surface them.
+      if (isErrnoCode(error, "ENOENT")) return
+      throw error
     }
   }
 
@@ -82,6 +89,18 @@ export class NodeFunnelFileSystem extends FunnelFileSystem {
 
     return { mtimeMs: stat.mtimeMs, mode: stat.mode & 0o777 }
   }
+}
+
+/**
+ * Narrow `unknown` to a Node errno-typed error and check whether its `code`
+ * matches the expected value. Avoids `as NodeJS.ErrnoException` casts at
+ * each call site while still letting callers distinguish ENOENT / EACCES /
+ * etc. without falling back to message-string matching.
+ */
+const isErrnoCode = (error: unknown, code: string): boolean => {
+  if (!(error instanceof Error)) return false
+  if (!("code" in error)) return false
+  return error.code === code
 }
 
 /**
