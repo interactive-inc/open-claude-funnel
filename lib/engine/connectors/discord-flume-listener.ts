@@ -97,8 +97,8 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       deps: resolveFlumeDeps(this.flumeDeps),
       signal: this.signal,
       onEvent: (event) => {
-        if (event.source !== "discord") return
-        this.handleEvent(event, notify)
+        if (event.source !== "discord") return Promise.resolve()
+        return this.handleEvent(event, notify)
       },
     })
   }
@@ -107,7 +107,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
     this.processor = null
   }
 
-  private handleEvent(event: FlumeDiscordEvent, notify: NotifyFn): void {
+  private async handleEvent(event: FlumeDiscordEvent, notify: NotifyFn): Promise<void> {
     // Capture the bot's own user id from READY and build the processor once.
     // Flume passes the READY dispatch through like any other event; we
     // intercept it here so the processor can self-filter, then return without
@@ -161,7 +161,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       return
     }
 
-    void this.deliver(notify, eventId, rawJson, result.content, result.meta)
+    await this.deliver(notify, eventId, rawJson, result.content, result.meta)
   }
 
   private adoptReady(data: Record<string, unknown>): void {

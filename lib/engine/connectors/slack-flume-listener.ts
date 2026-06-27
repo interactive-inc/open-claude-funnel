@@ -133,8 +133,11 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       deps: resolveFlumeDeps(this.flumeDeps),
       signal: this.signal,
       onEvent: (event) => {
-        if (event.source !== "slack") return
-        this.handleEvent(event, notify)
+        if (event.source !== "slack") return Promise.resolve()
+        // Return the handleEvent promise so flume's serial queue waits for
+        // notify() to land before processing the next event — guarantees
+        // broadcaster offset order matches Slack's event-receive order.
+        return this.handleEvent(event, notify)
       },
     })
   }
@@ -173,7 +176,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     return parsed.data
   }
 
-  private handleEvent(event: FlumeSlackEvent, notify: NotifyFn): void {
+  private async handleEvent(event: FlumeSlackEvent, notify: NotifyFn): Promise<void> {
     if (!this.processor) return
 
     // Flume's Slack source delivers the envelope's `payload` as `event.data`.
@@ -201,7 +204,10 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       return
     }
 
-    void this.deliver(notify, eventId, rawJson, result.content, result.meta, result.shouldReact)
+    // Await deliver so the firehose handler can chain it back to flume's
+    // serial queue: broadcaster offsets land in receive order even if the
+    // notify path ever becomes truly async.
+    await this.deliver(notify, eventId, rawJson, result.content, result.meta, result.shouldReact)
   }
 
   private async deliver(
@@ -223,18 +229,17 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.diagnostics.recordProcessed(eventId, "emitted", content)
 
     if (shouldReact) {
-      try {
-        await this.postReaction(meta)
-      } catch (error) {
-        // Reactions are non-fatal but record both transport and logical
-        // failures so the operator can spot a wedged token / wrong scope.
+      // Reaction is post-delivery cosmetic — fire-and-forget so a ~300ms
+      // round-trip to slack.com/api/reactions.add does not gate the next
+      // event's notify. Notify ordering is the contract; reactions are not.
+      void this.postReaction(meta).catch((error: unknown) => {
         this.diagnostics.recordProcessed(
           eventId,
           "emitted:reaction-failed",
           errorMessageOf(error),
         )
         this.logger?.warn("slack reaction failed", { error: errorMessageOf(error) })
-      }
+      })
     }
   }
 

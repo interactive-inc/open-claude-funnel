@@ -305,7 +305,21 @@ export class FunnelBroadcaster {
         continue
       }
 
-      ws.send(payload)
+      // ws.send can throw if the socket is in a transitional state (close
+      // frame already queued, peer-reset between the buffered-amount check
+      // and the send call). Catch per-recipient so one broken socket does
+      // not stop the broadcast loop from reaching healthy subscribers.
+      try {
+        ws.send(payload)
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+        const data = this.clients.get(ws)
+        this.logger?.warn("ws.send failed; dropping client", {
+          channel: data?.channel,
+          error: err.message,
+        })
+        this.clients.delete(ws)
+      }
     }
 
     for (const handler of this.subscribers) {

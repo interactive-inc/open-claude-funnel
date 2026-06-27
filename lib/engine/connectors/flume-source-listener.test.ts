@@ -219,6 +219,59 @@ describe("FunnelFlumeSourceListener", () => {
     expect(statuses).toEqual(["connected"])
   })
 
+  test("delivery is serialised — a slow onEvent forces the next one to wait, preserving FIFO order", async () => {
+    // Drive two events through the firehose where the first one's onEvent
+    // takes 20ms and the second is instant. Without the delivery chain
+    // they would resolve out of order (second finishes first); with the
+    // chain the first must complete before the second starts.
+    const log = new MemoryConnectorDiagnosticLog()
+
+    const completionOrder: string[] = []
+    let onEventCount = 0
+    const onEvent = async () => {
+      const tag = `event-${++onEventCount}`
+      if (onEventCount === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      completionOrder.push(tag)
+    }
+
+    class TestSerialisedListener extends FunnelFlumeSourceListener {
+      readonly source = new FakeFlumeSource()
+
+      constructor() {
+        super({ type: "slack", connectorId: "co-1", channelId: "ch-1", diagnosticLog: log })
+      }
+
+      async start(): Promise<void> {
+        await this.runStart({ source: this.source, onEvent })
+      }
+
+      driveEvent(): void {
+        const ctx = this.source.capturedCtx
+        if (!ctx) throw new Error("source not yet connected")
+        ctx.onEvent({
+          source: "slack",
+          type: "test",
+          data: {},
+          meta: {},
+          receivedAt: 0,
+        })
+      }
+    }
+
+    const listener = new TestSerialisedListener()
+    await listener.start()
+
+    listener.driveEvent()
+    listener.driveEvent()
+
+    // Yield for both deliveries to complete (the slow one is ~20ms).
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(completionOrder).toEqual(["event-1", "event-2"])
+  })
+
   test("disconnected after reconnecting flips isAlive off so the supervisor can recover a truly dead listener", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)

@@ -84,8 +84,8 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       deps: resolveFlumeDeps(this.flumeDeps),
       signal: this.signal,
       onEvent: (event) => {
-        if (event.source !== "github") return
-        this.handleEvent(event, notify)
+        if (event.source !== "github") return Promise.resolve()
+        return this.handleEvent(event, notify)
       },
     })
   }
@@ -115,7 +115,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
     return result.stdout.trim()
   }
 
-  private handleEvent(event: FlumeGitHubEvent, notify: NotifyFn): void {
+  private async handleEvent(event: FlumeGitHubEvent, notify: NotifyFn): Promise<void> {
     const eventId = event.data.id
     const rawJson = JSON.stringify(event.data)
 
@@ -132,7 +132,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       updated_at: event.data.updated_at,
     }
 
-    void this.deliver(notify, eventId, rawJson, meta)
+    await this.deliver(notify, eventId, rawJson, meta)
   }
 
   private async deliver(

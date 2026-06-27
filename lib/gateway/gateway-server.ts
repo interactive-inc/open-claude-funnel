@@ -340,7 +340,19 @@ export class FunnelGatewayServer {
     if (typeof ws.data.since === "number") {
       const replay = this.broadcaster.replaySince(ws.data.since, ws.data)
 
-      for (const event of replay) ws.send(JSON.stringify(event))
+      // ws.send can throw if the client raced a close before we got here.
+      // Wrap the whole replay so one failure does not skip both the
+      // remaining replay events AND the addClient call below — without
+      // the catch, addClient would never run and the client would silently
+      // miss live broadcasts.
+      try {
+        for (const event of replay) ws.send(JSON.stringify(event))
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+        this.logger?.warn("replay send failed during ws.open", { error: err.message })
+        this.onError(err, { component: "gateway-server.replay" })
+        return
+      }
     }
 
     this.broadcaster.addClient(ws, ws.data)

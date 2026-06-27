@@ -91,6 +91,7 @@ export class FunnelListenerSupervisor {
   private readonly onError: OnFunnelError
   private readonly running = new Map<string, RunningEntry>()
   private readonly failureCounts = new Map<string, number>()
+  private readonly starting = new Set<string>()
   private readonly stats = new Map<string, ListenerStats>()
   private readonly healthCheckIntervalMs: number
   private readonly maxBackoffMs: number
@@ -150,6 +151,29 @@ export class FunnelListenerSupervisor {
       return { ok: true, reason: "already running" }
     }
 
+    // Per-key start guard: without this, a concurrent pendingRetry +
+    // operator-driven restart could both pass the `running.has(key)` check,
+    // both spawn a listener (each opening a Slack socket on the same token),
+    // and only register one — the loser would leak a second Socket Mode
+    // connection that Slack splits inbound events across.
+    if (this.starting.has(key)) {
+      return { ok: false, reason: "already starting", retriable: true }
+    }
+
+    this.starting.add(key)
+
+    try {
+      return await this.startLocked(channelName, connectorName, key)
+    } finally {
+      this.starting.delete(key)
+    }
+  }
+
+  private async startLocked(
+    channelName: string,
+    connectorName: string,
+    key: string,
+  ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const created = this.channels.createListener(channelName, connectorName)
 
     if (!created) {
@@ -346,7 +370,15 @@ export class FunnelListenerSupervisor {
     if (this.healthCheckTimer) return
 
     this.healthCheckTimer = setInterval(() => {
-      void this.runHealthCheck()
+      // Catch any rejection so a single health-check failure cannot crash
+      // the gateway daemon. `runHealthCheck` already wraps each per-listener
+      // recover/retry in try/catch, but `Promise.all` rejection could still
+      // surface here. Route to onError so host observability sees it.
+      this.runHealthCheck().catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error))
+        this.logger?.error("health check pass failed", { error: err.message })
+        this.onError(err, { component: "listener-supervisor.health-check" })
+      })
     }, this.healthCheckIntervalMs)
 
     this.healthCheckTimer.unref()

@@ -90,6 +90,16 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
    * every per-listener state).
    */
   protected reconnecting = false
+  /**
+   * Promise chain that serializes typed-event delivery. Flume's emitItem
+   * fire-and-forgets the onEvent callback (see flume.ts emitItem:
+   * `Promise.resolve(onEvent(item)).catch(() => {})`), so awaiting onEvent
+   * inside the handler does NOT pause flume's source queue — multiple event
+   * deliveries would race their microtask chains. Chaining each new event
+   * onto the previous promise's `.then(...)` guarantees per-listener
+   * end-to-end FIFO regardless of whether the notify path is sync or async.
+   */
+  private deliveryChain: Promise<void> = Promise.resolve()
 
   constructor(props: Props) {
     super()
@@ -118,15 +128,16 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     const flumeReconnect =
       reconnectOption === false ? undefined : reconnectOption === true ? {} : reconnectOption
 
-    const handleItem = async (item: FlumeStreamItem): Promise<void> => {
+    const handleItem = (item: FlumeStreamItem): void => {
       if (item.kind === "event") {
-        // Return the awaited promise so Flume's serial queue holds the next
-        // event until this one's delivery (notify + diagnostic write) has
-        // completed. The previous fire-and-forget form was correct under
-        // microtask FIFO but would reorder if any await chain in the
-        // delivery path ever introduced a real async pause (network /
-        // file IO). Awaiting here makes ordering an explicit guarantee.
-        await options.onEvent(item.event)
+        // Append to the per-listener delivery chain so each event's full
+        // delivery (notify + diagnostic write) completes before the next
+        // one starts — even when flume's emitItem fires onEvent without
+        // awaiting it. The `.catch(() => {})` between steps keeps a single
+        // failed delivery from breaking the chain for everything after.
+        this.deliveryChain = this.deliveryChain
+          .catch(() => {})
+          .then(() => Promise.resolve(options.onEvent(item.event)))
         return
       }
 
@@ -184,6 +195,10 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       this.running = null
       this.connected = false
       this.reconnecting = false
+      // Reset the chain so the next start() does not inherit a settled
+      // promise from the previous lifecycle (preserves the invariant that
+      // the chain head reflects this lifecycle's deliveries only).
+      this.deliveryChain = Promise.resolve()
       this.onStop()
       this.diagnostics.recordConnection("stopped", "")
     }
