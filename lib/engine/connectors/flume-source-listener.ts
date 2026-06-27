@@ -3,11 +3,13 @@ import {
   FlumeRunning,
   FlumeStartError,
   type FlumeEventHandler,
+  type FlumeLog,
   type FlumeLogHandler,
   type FlumeReconnectOptions,
   type FlumeRuntimeDeps,
   type FlumeSource,
-  type FlumeStatusEvent,
+  type FlumeStatus,
+  type FlumeStreamItem,
 } from "@interactive-inc/flume"
 import { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
@@ -26,12 +28,14 @@ type Props = {
 
 type RunStartOptions = {
   source: FlumeSource
+  /** Typed event handler — receives the source's events only (logs are routed separately). */
   onEvent: FlumeEventHandler
+  /** Optional log handler for everything the firehose emits (including status transitions). */
   onLog?: FlumeLogHandler
   deps?: FlumeRuntimeDeps
   /**
    * Optional AbortSignal forwarded to the underlying Flume. When aborted, the
-   * Flume auto-stops every source and resolves to `FlumeStopped`. Use this to
+   * Flume auto-closes every source and resolves to `FlumeClosed`. Use this to
    * propagate a host-level shutdown (SIGTERM, supervisor stop, parent timeout)
    * down to the WebSocket layer without racing through `stop()`.
    */
@@ -47,18 +51,30 @@ type RunStartOptions = {
 }
 
 /**
+ * Status event reconstructed from the firehose `status` log entry. Funnel
+ * keeps its own shape because Flume 0.9 collapsed the dedicated `onStatus`
+ * callback into the unified `onEvent` firehose — state transitions now arrive
+ * as `log.action === "status"` entries with `detail: { from, to, reason }`.
+ */
+type StatusEvent = {
+  source: string
+  status: FlumeStatus
+  detail: string | null
+}
+
+/**
  * Shared lifecycle for any listener whose transport is a `FlumeSource`. Owns
  * the per-listener `Flume` instance + the `FlumeRunning` handle returned by
- * `start()`, the connected/alive bit, the `FlumeStatus ↔
- * ConnectorConnectionStatus` mapping, and the stop sequence — every Flume
+ * `open()`, the connected/alive bit, the `FlumeStatus ↔
+ * ConnectorConnectionStatus` mapping, and the close sequence — every Flume
  * subclass plugs in only its own token resolution, source construction, and
  * event dispatch around this skeleton.
  *
- * In Flume 0.6 the cross-cutting concerns (`onEvent`, `onLog`, `onStatus`,
- * `reconnect`, `deps`) live on the `Flume` constructor, not on each source;
- * the source ctor takes only protocol-specific options (tokens, intents,
- * pollInterval). This base wires the Flume side once so subclasses do not
- * each re-implement the assembly.
+ * Flume 0.9 collapsed every observation channel into one firehose: events
+ * and all logs arrive through `onEvent` as a discriminated union
+ * (`{ kind: "event" } | { kind: "log" }`). This base class splits that back
+ * into the funnel-shaped trio (typed event handler, log forward, status
+ * mapping) so subclasses keep their per-protocol code unchanged.
  */
 export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener {
   protected readonly logger: FunnelLogger | undefined
@@ -80,31 +96,53 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   }
 
   /**
-   * Assemble a single-source Flume, start it, and store the `FlumeRunning`
+   * Assemble a single-source Flume, open it, and store the `FlumeRunning`
    * handle. Records `error` on a `FlumeStartError` and rethrows so the
-   * supervisor sees the failure. The `onStatus` mapping into the diagnostics
-   * table is wired here so subclasses do not each repeat it.
+   * supervisor sees the failure.
+   *
+   * The firehose handler routes:
+   *   - `kind: "event"`   → subclass's typed `onEvent`
+   *   - `kind: "log"` with `action === "status"` → `handleStatus()`
+   *   - `kind: "log"` (any)                     → optional `onLog` handler
    */
   protected async runStart(options: RunStartOptions): Promise<void> {
-    // Default `reconnect: true` so a flake / overnight disconnect recovers
-    // automatically. Flume's reconnect default is `disabled`, which would
-    // leave a Slack Socket Mode listener permanently dead after the first
-    // close — funnel's supervisor would only catch it on the 30s health
-    // check, and only as "not alive", with no auto-heal.
     const reconnectOption = options.reconnect ?? true
     const flumeReconnect =
       reconnectOption === false ? undefined : reconnectOption === true ? {} : reconnectOption
 
-    const flume = new Flume([options.source], {
-      onEvent: options.onEvent,
-      onLog: options.onLog,
-      deps: options.deps,
-      signal: options.signal,
-      reconnect: flumeReconnect,
-      onStatus: (event) => this.handleStatus(event),
-    })
+    const handleItem = (item: FlumeStreamItem) => {
+      if (item.kind === "event") {
+        // Promise resolution is the subclass's concern — onEvent typed as
+        // void | Promise<void> in Flume's API.
+        void Promise.resolve(options.onEvent(item.event))
+        return
+      }
 
-    const result = await flume.start()
+      const log = item.log
+      const statusEvent = readStatusLog(log)
+      if (statusEvent) this.handleStatus(statusEvent)
+
+      options.onLog?.(log)
+    }
+
+    const flumeOptions: {
+      sources: ReadonlyArray<FlumeSource>
+      onEvent: (item: FlumeStreamItem) => void
+      deps?: FlumeRuntimeDeps
+      signal?: AbortSignal
+      reconnect?: FlumeReconnectOptions
+    } = {
+      sources: [options.source],
+      onEvent: handleItem,
+    }
+
+    if (options.deps) flumeOptions.deps = options.deps
+    if (options.signal) flumeOptions.signal = options.signal
+    if (flumeReconnect) flumeOptions.reconnect = flumeReconnect
+
+    const flume = new Flume(flumeOptions)
+
+    const result = await flume.open()
 
     if (result instanceof FlumeStartError) {
       this.diagnostics.recordConnection("error", errorMessageOf(result))
@@ -118,7 +156,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     if (!this.running) return
 
     try {
-      await this.running.stop()
+      await this.running.close()
       this.diagnostics.recordConnection("disconnected", "")
     } catch (error) {
       this.diagnostics.recordConnection("error", errorMessageOf(error))
@@ -142,7 +180,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
    * `connected`/`disconnected` pair. The `connected` flag still flips so
    * `isAlive()` is honest.
    */
-  protected handleStatus(event: FlumeStatusEvent): void {
+  protected handleStatus(event: StatusEvent): void {
     if (event.status === "connected") {
       this.connected = true
       this.diagnostics.recordConnection("connected", event.detail ?? "")
@@ -166,4 +204,33 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
    * row is recorded). Default is no-op.
    */
   protected onStop(): void {}
+}
+
+const STATUS_VALUES: ReadonlyArray<FlumeStatus> = [
+  "disconnected",
+  "connecting",
+  "connected",
+  "reconnecting",
+]
+
+const isFlumeStatus = (value: unknown): value is FlumeStatus =>
+  typeof value === "string" && (STATUS_VALUES as ReadonlyArray<string>).includes(value)
+
+/**
+ * Reconstructs the old `FlumeStatusEvent` shape from a `status` log entry.
+ * Returns `null` for anything else so the firehose pump is a single check.
+ * Flume 0.9 emits these as `log.action === "status"` with a structured
+ * `detail: { from, to, reason }` payload (see flume's FlumeStatusEmitter).
+ */
+const readStatusLog = (log: FlumeLog): StatusEvent | null => {
+  if (log.action !== "status") return null
+  const detail = log.detail
+  if (!detail) return null
+
+  const to = detail.to
+  if (!isFlumeStatus(to)) return null
+
+  const reason = typeof detail.reason === "string" ? detail.reason : null
+
+  return { source: log.source, status: to, detail: reason }
 }

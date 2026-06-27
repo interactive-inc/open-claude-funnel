@@ -6,8 +6,12 @@ import {
   type FlumeEventHandler,
   type FlumeSourceStartContext,
   type FlumeStatus,
-  type FlumeStatusEvent,
 } from "@interactive-inc/flume"
+
+// Flume 0.9 dropped FlumeStatusEvent; funnel reconstructs the same shape
+// internally from `log.action === "status"` log entries. The tests still want
+// to call `handleStatus()` directly to drive deterministic transitions.
+type StatusEvent = { source: string; status: FlumeStatus; detail: string | null }
 
 type FakeHooks = {
   /** Error to return from `connect()` so Flume rolls back the start and we hit the FlumeStartError path. */
@@ -58,7 +62,7 @@ class TestListenerWithSignal extends FunnelFlumeSourceListener {
   }
 
   emitStatus(status: FlumeStatus, detail?: string): void {
-    const event: FlumeStatusEvent = { source: "slack", status, ...(detail !== undefined ? { detail } : {}) }
+    const event: StatusEvent = { source: "slack", status, detail: detail ?? null }
     this.handleStatus(event)
   }
 }
@@ -89,7 +93,7 @@ class TestListener extends FunnelFlumeSourceListener {
   }
 
   emitStatus(status: FlumeStatus, detail?: string): void {
-    const event: FlumeStatusEvent = { source: "slack", status, ...(detail !== undefined ? { detail } : {}) }
+    const event: StatusEvent = { source: "slack", status, detail: detail ?? null }
     this.handleStatus(event)
   }
 

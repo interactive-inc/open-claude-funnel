@@ -66,19 +66,26 @@ For targeted imports (smaller bundle / clearer dependency footprint):
   // Schedule fires can be observed by passing onFired to the descriptor:
   //   scheduleConnector({ onFired: (entry, firedAt) => { ... } })
 
-── flume 0.6 transport notes ───────────────────────────────────────────────
+── flume 0.9 transport notes ───────────────────────────────────────────────
 
-Slack / Discord / GitHub connectors wrap @interactive-inc/flume 0.6. Each
-listener owns a single-source Flume FSM:
+Slack / Discord / GitHub connectors wrap @interactive-inc/flume 0.9. Each
+listener owns a single-source Flume FSM and reconnect is enabled by
+default (infinite attempts, 1s base / 30s max exponential backoff +
+jitter), so a wifi drop or upstream socket close auto-recovers without
+the supervisor intervening.
 
    Source ctor                      Flume options (cross-cutting)
    -----------                      -----------------------------
-   FlumeSlackSource({appToken,      onEvent / onLog / onStatus
-       botToken})                   reconnect / signal / deps
+   FlumeSlackSource({appToken,      sources / onEvent (firehose) /
+       botToken})                   onError / signal / deps / reconnect
    FlumeDiscordSource({token,
-       intents})
-   FlumeGitHubSource({token,
-       pollInterval})
+       intents})                    Flume 0.9 collapsed every
+   FlumeGitHubSource({token,        observation into one firehose: the
+       pollInterval})               onEvent callback receives a union of
+                                    { kind: "event" } | { kind: "log" }.
+                                    Funnel's base listener splits this
+                                    back into typed events, log forward,
+                                    and status mapping for subclasses.
 
 new Funnel({ signal: controller.signal }) plumbs the AbortSignal down to
 every Flume so a host SIGTERM handler can stop every listener cleanly:

@@ -72,7 +72,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       throw error
     }
 
-    // Source ctor takes only protocol-specific options in Flume 0.6.
+    // Source ctor takes only protocol-specific options in Flume 0.9.
     const source = new FlumeGitHubSource({
       token,
       pollInterval: this.config.pollInterval ?? 60,

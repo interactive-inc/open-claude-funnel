@@ -77,7 +77,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       throw error
     }
 
-    // Source ctor takes only protocol-specific options in Flume 0.6.
+    // Source ctor takes only protocol-specific options in Flume 0.9.
     // Funnel's processor reads message content and mentions, so the privileged
     // `MessageContent` intent must be requested explicitly — Flume's default
     // omits it. Guilds + GuildMessages cover server channels; DirectMessages
