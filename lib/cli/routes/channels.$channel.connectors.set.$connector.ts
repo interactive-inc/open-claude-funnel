@@ -14,7 +14,12 @@ export const channelsConnectorsSetHandler = factory.createHandlers(
         "app-token": z.string().optional(),
         "poll-interval": z.coerce.number().int().positive().optional(),
       })
-      .passthrough(),
+      // `.loose()` is the zod 4 replacement for the deprecated
+      // `.passthrough()` — extra query keys (e.g. future flags the CLI
+      // hasn't taught the engine yet) survive validation instead of being
+      // stripped, so the engine still sees them via the descriptor's
+      // `applyUpdate(fields, ...)` interface.
+      .loose(),
   ),
   async (c) => {
     const param = c.req.valid("param")

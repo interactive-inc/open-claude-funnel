@@ -49,7 +49,7 @@ export const claudeHandler = factory.createHandlers(
         profile: z.string().optional(),
         channel: z.string().optional(),
       })
-      .passthrough(),
+      .loose(),
   ),
   async (c) => {
     const query = c.req.valid("query")

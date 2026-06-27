@@ -8,7 +8,7 @@ const querySchema = z
     content: z.string().min(1, { message: "--content is required" }),
     connector: z.string().min(1).optional(),
   })
-  .passthrough()
+  .loose()
 
 export const channelsPublishHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string() })),

@@ -24,7 +24,7 @@ export const channelsConnectorsRequestHandler = factory.createHandlers(
         method: z.string(),
         path: z.string().optional(),
       })
-      .passthrough(),
+      .loose(),
   ),
   async (c) => {
     const param = c.req.valid("param")

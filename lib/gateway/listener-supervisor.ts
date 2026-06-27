@@ -2,6 +2,7 @@ import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-con
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
+import { FunnelAuthFailedError } from "@/engine/error/funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 
 type ConnectorRegistry = {
@@ -142,7 +143,7 @@ export class FunnelListenerSupervisor {
   async start(
     channelName: string,
     connectorName: string,
-  ): Promise<{ ok: boolean; reason?: string }> {
+  ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
 
     if (this.running.has(key)) {
@@ -210,14 +211,20 @@ export class FunnelListenerSupervisor {
         type: created.config.type,
       })
 
-      return { ok: false, reason: err.message }
+      // Auth failures need host action (token rotation) and will keep
+      // returning the same error on every retry, so surface them as
+      // non-retriable. Callers (startAll / recoverDead / health check)
+      // skip pendingRetry / restart for these.
+      const retriable = !(err instanceof FunnelAuthFailedError)
+
+      return { ok: false, reason: err.message, retriable }
     }
   }
 
   async stop(
     channelName: string,
     connectorName: string,
-  ): Promise<{ ok: boolean; reason?: string }> {
+  ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
     const entry = this.running.get(key)
 
@@ -261,7 +268,7 @@ export class FunnelListenerSupervisor {
   async restart(
     channelName: string,
     connectorName: string,
-  ): Promise<{ ok: boolean; reason?: string }> {
+  ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const stopped = await this.stop(channelName, connectorName)
 
     if (!stopped.ok) return stopped
@@ -280,7 +287,21 @@ export class FunnelListenerSupervisor {
       const result = results[i]!
       const view = all[i]!
 
-      if (result.status === "rejected" || (result.status === "fulfilled" && !result.value.ok)) {
+      if (result.status === "rejected") {
+        // throw paths are always retriable — only the structured
+        // `{ ok: false, retriable: false }` return marks a permanent failure.
+        const key = FunnelListenerSupervisor.keyOf(view.channelName, view.name)
+        this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
+        continue
+      }
+
+      if (result.status === "fulfilled" && !result.value.ok) {
+        // Skip pendingRetry for non-retriable failures (e.g. auth-failed).
+        // The operator has to rotate the token / fix config before any
+        // retry can succeed; spinning on a 401 / invalid_auth wastes CPU
+        // and logs nothing new every backoff interval.
+        if (result.value.retriable === false) continue
+
         const key = FunnelListenerSupervisor.keyOf(view.channelName, view.name)
         this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
       }
@@ -349,14 +370,40 @@ export class FunnelListenerSupervisor {
     this.healthCheckInFlight = true
 
     try {
+      // Recover dead listeners in parallel — each recoverDead awaits its own
+      // backoff sleep, and a sequential `for await` would serialise the
+      // sleeps so a 10-connector mass-disconnect would take 10 × backoffMs
+      // before the last one even started restarting. Mass disconnects
+      // happen on host hibernate-resume and OS-level network changes; the
+      // parallel form keeps the worst-case restart time at one backoff.
+      const dead: Array<{ channelName: string; connectorName: string; type: string }> = []
+
       for (const [key, entry] of [...this.running.entries()]) {
         if (entry.listener.isAlive()) {
           this.failureCounts.delete(key)
           continue
         }
 
-        await this.recoverDead(entry.channelName, entry.config.name, entry.config.type)
+        dead.push({
+          channelName: entry.channelName,
+          connectorName: entry.config.name,
+          type: entry.config.type,
+        })
       }
+
+      await Promise.all(
+        dead.map((target) =>
+          this.recoverDead(target.channelName, target.connectorName, target.type),
+        ),
+      )
+
+      // pendingRetry runs in parallel for the same reason: each entry
+      // sleeps its own backoff before re-attempting start.
+      const retries: Array<{
+        key: string
+        channelName: string
+        connectorName: string
+      }> = []
 
       for (const [key, pending] of [...this.pendingRetry.entries()]) {
         if (this.running.has(key)) {
@@ -364,28 +411,53 @@ export class FunnelListenerSupervisor {
           continue
         }
 
-        this.logger?.info("retrying failed listener", {
-          channel: pending.channelName,
-          connector: pending.connectorName,
-        })
-
-        const failureCount = this.failureCounts.get(key) ?? 0
-        const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
-
-        await this.sleep(backoffMs)
-
-        const result = await this.start(pending.channelName, pending.connectorName)
-
-        if (result.ok) {
-          this.pendingRetry.delete(key)
-          this.failureCounts.delete(key)
-        } else {
-          this.failureCounts.set(key, failureCount + 1)
-        }
+        retries.push({ key, channelName: pending.channelName, connectorName: pending.connectorName })
       }
+
+      await Promise.all(retries.map((retry) => this.attemptRetry(retry)))
     } finally {
       this.healthCheckInFlight = false
     }
+  }
+
+  private async attemptRetry(retry: {
+    key: string
+    channelName: string
+    connectorName: string
+  }): Promise<void> {
+    this.logger?.info("retrying failed listener", {
+      channel: retry.channelName,
+      connector: retry.connectorName,
+    })
+
+    const failureCount = this.failureCounts.get(retry.key) ?? 0
+    const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
+
+    await this.sleep(backoffMs)
+
+    const result = await this.start(retry.channelName, retry.connectorName)
+
+    if (result.ok) {
+      this.pendingRetry.delete(retry.key)
+      this.failureCounts.delete(retry.key)
+      return
+    }
+
+    if (result.retriable === false) {
+      // Drop a non-retriable failure from the queue. The supervisor will
+      // not poke it again until the operator calls restart() explicitly
+      // (after rotating the token / fixing config).
+      this.pendingRetry.delete(retry.key)
+      this.failureCounts.delete(retry.key)
+      this.logger?.warn("dropping listener from retry queue (non-retriable)", {
+        channel: retry.channelName,
+        connector: retry.connectorName,
+        reason: result.reason,
+      })
+      return
+    }
+
+    this.failureCounts.set(retry.key, failureCount + 1)
   }
 
   private async recoverDead(
@@ -414,6 +486,16 @@ export class FunnelListenerSupervisor {
       this.logger?.info(`${type} listener recovered`, {
         channel: channelName,
         connector: connectorName,
+      })
+    } else if (result.retriable === false) {
+      // Non-retriable: stop bouncing on it. The diagnostic table will
+      // still show auth-failed, and the operator can `fnl doctor` /
+      // `fnl listeners restart` after rotating the credential.
+      this.failureCounts.delete(key)
+      this.logger?.warn(`${type} listener cannot recover (non-retriable)`, {
+        channel: channelName,
+        connector: connectorName,
+        reason: result.reason,
       })
     } else {
       this.failureCounts.set(key, failureCount + 1)

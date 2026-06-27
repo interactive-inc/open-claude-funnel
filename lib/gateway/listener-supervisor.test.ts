@@ -360,4 +360,111 @@ describe("FunnelListenerSupervisor", () => {
     expect(listener.startCalls).toBe(2)
     expect(supervisor.isRunning("ops", "cron")).toBe(true)
   })
+
+  test("FunnelAuthFailedError is not retried (token rotation needs operator action)", async () => {
+    const { FunnelAuthFailedError } = await import("@/engine/error/funnel-error")
+
+    let attempts = 0
+    class AuthFailingListener extends FunnelConnectorListener {
+      async start(): Promise<void> {
+        attempts += 1
+        throw new FunnelAuthFailedError("slack", "invalid_auth")
+      }
+      async stop(): Promise<void> {}
+      override isAlive(): boolean {
+        return false
+      }
+    }
+
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({
+          config,
+          channelId: "ch-1",
+          listener: new AuthFailingListener(),
+        }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      healthCheckIntervalMs: 1,
+      sleep: async () => {},
+    })
+
+    await supervisor.startAll()
+    expect(attempts).toBe(1)
+
+    // Run two health-check passes — a retriable failure would queue a
+    // retry per pass and bump attempts up; auth-failed must be dropped
+    // from the queue so attempts stays at 1.
+    await supervisor.runHealthCheckForTest()
+    await supervisor.runHealthCheckForTest()
+
+    expect(attempts).toBe(1)
+
+    await supervisor.stopAll()
+  })
+
+  test("recoverDead runs in parallel — a slow restart does not block sibling restarts", async () => {
+    // Two listeners go dead at the same time. With the sequential loop the
+    // second one's recovery would wait for the first one's backoff sleep
+    // (default sleep is 0 in this test, but recoverDead awaits anyway).
+    // Parallel recovery starts both within the same microtask.
+
+    let restartTimes: number[] = []
+
+    class TrackedListener extends FunnelConnectorListener {
+      alive = true
+      async start(): Promise<void> {
+        restartTimes.push(Date.now())
+        this.alive = true
+      }
+      async stop(): Promise<void> {
+        this.alive = false
+      }
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listenerA = new TrackedListener()
+    const listenerB = new TrackedListener()
+
+    const supervisor = new FunnelListenerSupervisor({
+      channels: {
+        listAllConnectors: () => [
+          { ...view, name: "a" },
+          { ...view, name: "b" },
+        ],
+        createListener: (_channelName: string, connectorName: string) => ({
+          config: { ...config, name: connectorName },
+          channelId: "ch-1",
+          listener: connectorName === "a" ? listenerA : listenerB,
+        }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      healthCheckIntervalMs: 1,
+      // sleep returns after a real ~5ms so we can observe overlap; if
+      // recoverDead were sequential, B would only fire after A's sleep
+      // completes — i.e. ≥10ms apart instead of within a few ms.
+      sleep: (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 5))),
+    })
+
+    await supervisor.startAll()
+
+    // Wipe restart timings from the initial start
+    restartTimes = []
+
+    listenerA.alive = false
+    listenerB.alive = false
+
+    await supervisor.runHealthCheckForTest()
+
+    expect(restartTimes).toHaveLength(2)
+    const gap = Math.abs((restartTimes[1] ?? 0) - (restartTimes[0] ?? 0))
+    expect(gap).toBeLessThan(10)
+
+    await supervisor.stopAll()
+  })
 })

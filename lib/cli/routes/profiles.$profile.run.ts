@@ -16,7 +16,7 @@ const RESERVED_KEYS: string[] = []
 export const profilesLaunchHandler = factory.createHandlers(
   zValidator("param", z.object({ profile: z.string() })),
   helpGuard(launchHelp),
-  zValidator("query", z.object({}).passthrough()),
+  zValidator("query", z.object({}).loose()),
   async (c) => {
     const param = c.req.valid("param")
     const funnel = c.env.funnel
