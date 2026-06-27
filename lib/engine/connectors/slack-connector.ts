@@ -1,8 +1,26 @@
 import { FunnelSlackAdapter } from "@/engine/connectors/slack-adapter"
 import { slackConnectorSchema } from "@/engine/connectors/slack-connector-schema"
-import { FunnelFlumeSlackListener } from "@/engine/connectors/slack-flume-listener"
+import {
+  FunnelFlumeSlackListener,
+  type SlackPreprocessEvent,
+} from "@/engine/connectors/slack-flume-listener"
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
+
+export type SlackConnectorOptions = {
+  /**
+   * Optional host-side preprocessor applied to every raw Slack event after
+   * the envelope is unwrapped and BEFORE the funnel processor runs. Return
+   * the (possibly transformed) event to keep processing, or `null` to drop
+   * it (the listener records `skip:preprocess` so the drop is auditable).
+   *
+   * Useful for tenant-specific concerns funnel deliberately does not
+   * enshrine: stripping attachments, neutralizing channel-tag injection,
+   * fan-out to multiple processors, etc. Returning `null` here is the only
+   * way to drop an event for a reason the processor's gates do not cover.
+   */
+  preprocessEvent?: SlackPreprocessEvent
+}
 
 /**
  * Slack connector descriptor. Pass `slackConnector()` to
@@ -11,9 +29,11 @@ import { slotFields } from "@/engine/connectors/slot-fields"
  * The listener is backed by `@interactive-inc/flume`'s `FlumeSlackSource`
  * (raw Socket Mode WebSocket). Only the events API envelope is delivered —
  * there is no equivalent for the Bolt-style `app.action` / `app.command`
- * dispatch or middleware preprocessing.
+ * dispatch. For HTTP-side interactivity (buttons, slash commands), run a
+ * separate Bolt app outside funnel; this descriptor only handles the
+ * incoming events firehose.
  */
-export const slackConnector = (): ConnectorDescriptor => ({
+export const slackConnector = (options: SlackConnectorOptions = {}): ConnectorDescriptor => ({
   type: "slack",
   toolExposed: true,
   createListener(config, deps) {
@@ -26,6 +46,7 @@ export const slackConnector = (): ConnectorDescriptor => ({
       diagnosticLog: deps.diagnosticLog,
       http: deps.http,
       signal: deps.signal,
+      preprocessEvent: options.preprocessEvent,
     })
   },
   createAdapter(config, deps) {

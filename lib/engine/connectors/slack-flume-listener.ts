@@ -17,6 +17,18 @@ import type { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
 
+/**
+ * Optional host hook: inspect the raw Slack event after envelope unwrap and
+ * before the funnel processor runs. Return the event (possibly transformed)
+ * to keep processing, or `null` to drop it with a `skip:preprocess` row in
+ * the diagnostic log. The funnel does not assume any specific transform —
+ * stripping images, neutralizing channel-tag injection, redacting PII, etc.
+ * are all valid uses.
+ */
+export type SlackPreprocessEvent = (
+  event: SlackRawEvent,
+) => SlackRawEvent | null | Promise<SlackRawEvent | null>
+
 type Deps = {
   config: SlackConnectorConfig
   channelId?: string
@@ -28,6 +40,8 @@ type Deps = {
   http?: FunnelHttpClient
   /** Shutdown signal forwarded to the underlying Flume. */
   signal?: AbortSignal
+  /** See `SlackPreprocessEvent`. Default: identity (no preprocessing). */
+  preprocessEvent?: SlackPreprocessEvent
 }
 
 const authTestResponseSchema = z.object({
@@ -55,6 +69,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
   private readonly http: FunnelHttpClient
   private readonly signal: AbortSignal | undefined
+  private readonly preprocessEvent: SlackPreprocessEvent | undefined
   private processor: FunnelSlackEventProcessor | null = null
   private botToken = ""
 
@@ -71,6 +86,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.flumeDeps = deps.flumeDeps ?? {}
     this.http = deps.http ?? new NodeFunnelHttpClient()
     this.signal = deps.signal
+    this.preprocessEvent = deps.preprocessEvent
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -197,7 +213,21 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     const rawJson = JSON.stringify(rawEvent)
     this.diagnostics.recordRaw(eventId, rawJson)
 
-    const result = this.processor.process(rawEvent)
+    // Host preprocessor: optional last-mile transform before the processor's
+    // gates. Null return drops the event with an auditable skip:preprocess
+    // row so a host rule (e.g. block image-only messages) is traceable in
+    // diagnostics the same way the processor's own skips are.
+    let preprocessed: SlackRawEvent = rawEvent
+    if (this.preprocessEvent) {
+      const next = await this.preprocessEvent(rawEvent)
+      if (next === null) {
+        this.diagnostics.recordProcessed(eventId, "skip:preprocess", rawJson)
+        return
+      }
+      preprocessed = next
+    }
+
+    const result = this.processor.process(preprocessed)
 
     if (result.skip) {
       this.diagnostics.recordProcessed(eventId, result.reason, rawJson)
