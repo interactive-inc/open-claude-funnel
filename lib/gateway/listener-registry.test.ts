@@ -3,7 +3,7 @@ import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-con
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
-import { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
+import { FunnelListenerRegistry } from "@/gateway/listener-registry"
 
 class FakeListener extends FunnelConnectorListener {
   alive = false
@@ -38,10 +38,10 @@ const buildRegistry = (listener: FakeListener) => ({
   },
 })
 
-describe("FunnelListenerSupervisor", () => {
+describe("FunnelListenerRegistry", () => {
   test("startAll boots every connector and list reflects channel/connector identity", async () => {
     const listener = new FakeListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: buildRegistry(listener),
       notify: async () => {},
       logger: new NoopFunnelLogger(),
@@ -64,7 +64,7 @@ describe("FunnelListenerSupervisor", () => {
   test("notify is forwarded with the channel and connector arguments", async () => {
     const listener = new FakeListener()
     const seen: { channel: string; connector: string; content: string }[] = []
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: buildRegistry(listener),
       notify: async (channel, connector, content) => {
         seen.push({ channel, connector, content })
@@ -92,7 +92,7 @@ describe("FunnelListenerSupervisor", () => {
   })
 
   test("start returns an error when the connector cannot be created", async () => {
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [],
         createListener: () => null,
@@ -120,7 +120,7 @@ describe("FunnelListenerSupervisor", () => {
 
     const listener = new ThrowingStartListener()
     const captured: { error: Error; context?: Record<string, unknown> }[] = []
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -136,7 +136,7 @@ describe("FunnelListenerSupervisor", () => {
     expect(captured.length).toBe(1)
     expect(captured[0]?.error.message).toBe("listener boom")
     expect(captured[0]?.context).toMatchObject({
-      component: "listener-supervisor.start",
+      component: "listener-registry.start",
       channel: "ops",
       connector: "cron",
       type: "schedule",
@@ -159,7 +159,7 @@ describe("FunnelListenerSupervisor", () => {
     }
 
     const failingListener = new FailingListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [badView, view],
         createListener: (_ch: string, name: string) => {
@@ -191,7 +191,7 @@ describe("FunnelListenerSupervisor", () => {
     }
 
     const listener = new HangingListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -224,7 +224,7 @@ describe("FunnelListenerSupervisor", () => {
     }
 
     const listener = new HangingListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -256,7 +256,7 @@ describe("FunnelListenerSupervisor", () => {
     }
 
     const listener = new FailAndLeakListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -289,7 +289,7 @@ describe("FunnelListenerSupervisor", () => {
     }
 
     const listener = new EventuallyGoodListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -339,7 +339,7 @@ describe("FunnelListenerSupervisor", () => {
     }
 
     const listener = new FlakyStopListener()
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -376,7 +376,7 @@ describe("FunnelListenerSupervisor", () => {
       }
     }
 
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({
@@ -430,7 +430,7 @@ describe("FunnelListenerSupervisor", () => {
     const listenerA = new TrackedListener()
     const listenerB = new TrackedListener()
 
-    const supervisor = new FunnelListenerSupervisor({
+    const supervisor = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [
           { ...view, name: "a" },

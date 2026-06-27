@@ -13,7 +13,7 @@ type ConnectorRegistry = {
   ): { config: BaseConnectorConfig; channelId: string; listener: FunnelConnectorListener } | null
 }
 
-type SupervisorNotify = (
+type ListenerRegistryNotify = (
   channelName: string,
   connectorName: string,
   content: string,
@@ -36,7 +36,7 @@ type ListenerStats = {
 
 type Deps = {
   channels: ConnectorRegistry
-  notify: SupervisorNotify
+  notify: ListenerRegistryNotify
   logger?: FunnelLogger
   /** Host hook for surfacing listener lifecycle exceptions. Defaults to no-op. */
   onError?: OnFunnelError
@@ -84,9 +84,9 @@ type ListenerEntryStatus = {
  * dead listeners with exponential backoff (1s, 2s, 4s, ... capped). Resets
  * the backoff counter on successful restart.
  */
-export class FunnelListenerSupervisor {
+export class FunnelListenerRegistry {
   private readonly channels: ConnectorRegistry
-  private readonly notify: SupervisorNotify
+  private readonly notify: ListenerRegistryNotify
   private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
   private readonly running = new Map<string, RunningEntry>()
@@ -120,7 +120,7 @@ export class FunnelListenerSupervisor {
   }
 
   isRunning(channelName: string, connectorName: string): boolean {
-    return this.running.has(FunnelListenerSupervisor.keyOf(channelName, connectorName))
+    return this.running.has(FunnelListenerRegistry.keyOf(channelName, connectorName))
   }
 
   list(): ListenerEntryStatus[] {
@@ -145,7 +145,7 @@ export class FunnelListenerSupervisor {
     channelName: string,
     connectorName: string,
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
-    const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
+    const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
 
     if (this.running.has(key)) {
       return { ok: true, reason: "already running" }
@@ -229,7 +229,7 @@ export class FunnelListenerSupervisor {
         error: err.message,
       })
       this.onError(err, {
-        component: "listener-supervisor.start",
+        component: "listener-registry.start",
         channel: channelName,
         connector: connectorName,
         type: created.config.type,
@@ -249,7 +249,7 @@ export class FunnelListenerSupervisor {
     channelName: string,
     connectorName: string,
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
-    const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
+    const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
     const entry = this.running.get(key)
 
     if (!entry) return { ok: true, reason: "not running" }
@@ -271,7 +271,7 @@ export class FunnelListenerSupervisor {
         error: err.message,
       })
       this.onError(err, {
-        component: "listener-supervisor.stop",
+        component: "listener-registry.stop",
         channel: channelName,
         connector: connectorName,
         type: entry.config.type,
@@ -314,7 +314,7 @@ export class FunnelListenerSupervisor {
       if (result.status === "rejected") {
         // throw paths are always retriable — only the structured
         // `{ ok: false, retriable: false }` return marks a permanent failure.
-        const key = FunnelListenerSupervisor.keyOf(view.channelName, view.name)
+        const key = FunnelListenerRegistry.keyOf(view.channelName, view.name)
         this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
         continue
       }
@@ -326,7 +326,7 @@ export class FunnelListenerSupervisor {
         // and logs nothing new every backoff interval.
         if (result.value.retriable === false) continue
 
-        const key = FunnelListenerSupervisor.keyOf(view.channelName, view.name)
+        const key = FunnelListenerRegistry.keyOf(view.channelName, view.name)
         this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
       }
     }
@@ -377,7 +377,7 @@ export class FunnelListenerSupervisor {
       this.runHealthCheck().catch((error: unknown) => {
         const err = error instanceof Error ? error : new Error(String(error))
         this.logger?.error("health check pass failed", { error: err.message })
-        this.onError(err, { component: "listener-supervisor.health-check" })
+        this.onError(err, { component: "listener-registry.health-check" })
       })
     }, this.healthCheckIntervalMs)
 
@@ -497,7 +497,7 @@ export class FunnelListenerSupervisor {
     connectorName: string,
     type: string,
   ): Promise<void> {
-    const key = FunnelListenerSupervisor.keyOf(channelName, connectorName)
+    const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
     const failureCount = this.failureCounts.get(key) ?? 0
     const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
 

@@ -119,7 +119,7 @@ export const debugHandler = factory.createHandlers(async (c) => {
     ? allChannels.filter((ch) => ch.name === channelFilter || ch.id === channelFilter)
     : allChannels
 
-  const gatewayListeners = deps.supervisor.list()
+  const gatewayListeners = deps.registry.list()
   const gatewayClients = deps.broadcaster.listChannels()
   const metrics = deps.broadcaster.getMetrics()
 

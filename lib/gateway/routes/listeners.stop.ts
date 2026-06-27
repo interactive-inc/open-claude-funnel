@@ -8,7 +8,7 @@ export const listenersStopHandler = factory.createHandlers(
   async (c) => {
     const param = c.req.valid("param")
 
-    const result = await c.var.deps.supervisor.stop(param.channel, param.connector)
+    const result = await c.var.deps.registry.stop(param.channel, param.connector)
 
     return c.json(result, result.ok ? 200 : 400)
   },

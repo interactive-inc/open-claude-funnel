@@ -9,6 +9,6 @@ export const healthHandler = factory.createHandlers((c) => {
     pid: deps.selfPid,
     funnelDir: deps.dir,
     clients: deps.broadcaster.getClientCount(),
-    listeners: deps.supervisor.list(),
+    listeners: deps.registry.list(),
   })
 })

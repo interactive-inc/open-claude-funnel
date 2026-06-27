@@ -9,7 +9,7 @@ import { type Env, factory } from "@/gateway/factory"
 import { type BroadcastSubscriber, FunnelBroadcaster } from "@/gateway/broadcaster"
 import { FunnelEventLog } from "@/gateway/event-log/event-log"
 import { SqliteFunnelEventLog } from "@/gateway/event-log/sqlite-event-log"
-import { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
+import { FunnelListenerRegistry } from "@/gateway/listener-registry"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
 import { gatewayRoutes } from "@/gateway/routes"
 import { FunnelLogger } from "@/engine/logger/logger"
@@ -89,7 +89,7 @@ const defaultOnError: OnFunnelError = () => {}
 
 /**
  * In-process gateway: runs `Bun.serve` (HTTP + WebSocket /ws), boots connector
- * listeners through `FunnelListenerSupervisor`, fans events out via
+ * listeners through `FunnelListenerRegistry`, fans events out via
  * `FunnelBroadcaster`, and persists them via a `FunnelEventLog` (SQLite by default).
  * System events (gateway lifecycle, connect/disconnect) flow to `FunnelLogger`
  * instead — keeping the SQLite seq space exclusive to broadcaster traffic so
@@ -112,7 +112,7 @@ export class FunnelGatewayServer {
   private readonly allowInsecureHost: boolean
   private readonly broadcaster: FunnelBroadcaster
   private readonly eventLog: FunnelEventLog
-  private readonly supervisor: FunnelListenerSupervisor
+  private readonly registry: FunnelListenerRegistry
   private readonly nowMs: () => number
   private readonly extraRoutes: Hono<Env> | null
   private readonly ownsEventLog: boolean
@@ -160,7 +160,7 @@ export class FunnelGatewayServer {
       persistentReplay: this.eventLog,
     })
     this.broadcaster.seedLatestOffset(this.eventLog.findMaxOffset())
-    this.supervisor = new FunnelListenerSupervisor({
+    this.registry = new FunnelListenerRegistry({
       channels: this.channels,
       logger: this.logger,
       onError: this.onError,
@@ -245,7 +245,7 @@ export class FunnelGatewayServer {
   }
 
   async stop(): Promise<void> {
-    await this.supervisor.stopAll()
+    await this.registry.stopAll()
 
     if (this.server) {
       this.server.stop()
@@ -267,8 +267,8 @@ export class FunnelGatewayServer {
     return this.broadcaster
   }
 
-  getSupervisor(): FunnelListenerSupervisor {
-    return this.supervisor
+  getRegistry(): FunnelListenerRegistry {
+    return this.registry
   }
 
   getEventLog(): FunnelEventLog {
@@ -402,7 +402,7 @@ export class FunnelGatewayServer {
         selfPid: this.selfPid,
         dir: this.dir,
         broadcaster: this.broadcaster,
-        supervisor: this.supervisor,
+        registry: this.registry,
         channels: this.channels,
         uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
         emit: (input) => this.emit(input),
@@ -490,9 +490,9 @@ export class FunnelGatewayServer {
   }
 
   private async bootListeners(): Promise<void> {
-    await this.supervisor.startAll()
+    await this.registry.startAll()
 
-    for (const entry of this.supervisor.list()) {
+    for (const entry of this.registry.list()) {
       this.logger?.info(`${entry.type} listener started: ${entry.name}`, {
         event_type: "system",
         action: `${entry.type}_connect`,

@@ -1,6 +1,6 @@
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { FunnelBroadcaster } from "@/gateway/broadcaster"
-import type { FunnelListenerSupervisor } from "@/gateway/listener-supervisor"
+import type { FunnelListenerRegistry } from "@/gateway/listener-registry"
 
 export type GatewayEmitInput = {
   channel: string
@@ -15,7 +15,7 @@ export type GatewayRouteDeps = {
    *  daemon answering on a shared port belongs to the expected repo/scope. */
   dir: string
   broadcaster: FunnelBroadcaster
-  supervisor: FunnelListenerSupervisor
+  registry: FunnelListenerRegistry
   channels: FunnelChannels
   uptimeMs: () => number
   emit: (input: GatewayEmitInput) => { offset: number }

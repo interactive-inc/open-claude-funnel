@@ -10,7 +10,7 @@ export const statusHandler = factory.createHandlers((c) => {
     funnelDir: deps.dir,
     uptimeMs: deps.uptimeMs(),
     clients: deps.broadcaster.listChannels(),
-    listeners: deps.supervisor.list(),
+    listeners: deps.registry.list(),
     broadcaster: deps.broadcaster.getMetrics(),
   })
 })
