@@ -20,4 +20,12 @@ export abstract class FunnelFileSystem {
   abstract mkdirSync(path: string, options?: { recursive?: boolean }): void
   abstract readdirSync(path: string): string[]
   abstract statSync(path: string): FileStat
+  /**
+   * Run `fn` while holding an exclusive lock on `lockPath`. The lock file is
+   * created atomically (`O_EXCL`) so two processes cannot both enter. A stale
+   * lock whose owning pid is no longer alive is forcibly broken (this is what
+   * keeps a SIGKILL'd CLI command from wedging the lock forever). The Memory
+   * impl is a no-op because tests are single-threaded.
+   */
+  abstract withFileLock<T>(lockPath: string, fn: () => T): T
 }

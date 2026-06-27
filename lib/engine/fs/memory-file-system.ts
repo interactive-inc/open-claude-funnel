@@ -87,6 +87,11 @@ export class MemoryFunnelFileSystem extends FunnelFileSystem {
     return { mtimeMs, mode: this.modes.get(path) ?? null }
   }
 
+  withFileLock<T>(_lockPath: string, fn: () => T): T {
+    // Memory FS is single-threaded — no cross-process contention to serialize.
+    return fn()
+  }
+
   setMtime(path: string, mtimeMs: number): void {
     this.mtimes.set(path, mtimeMs)
   }

@@ -1,8 +1,10 @@
 import {
   appendFileSync,
   chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -89,6 +91,117 @@ export class NodeFunnelFileSystem extends FunnelFileSystem {
 
     return { mtimeMs: stat.mtimeMs, mode: stat.mode & 0o777 }
   }
+
+  withFileLock<T>(lockPath: string, fn: () => T): T {
+    const fd = acquireLock(lockPath)
+    try {
+      return fn()
+    } finally {
+      try {
+        closeSync(fd)
+      } catch {
+        // ignore — best-effort release
+      }
+      try {
+        unlinkSync(lockPath)
+      } catch {
+        // ignore — the lock file may already be gone if another process
+        // broke a stale lock and rewrote it. The semantic invariant
+        // (we held the lock during fn()) is preserved either way.
+      }
+    }
+  }
+}
+
+const LOCK_RETRY_BASE_MS = 10
+const LOCK_RETRY_MAX_MS = 100
+const LOCK_TIMEOUT_MS = 5_000
+const LOCK_STALE_AFTER_MS = 30_000
+
+/**
+ * Acquire an exclusive lock by atomically creating `lockPath` (`O_EXCL`).
+ * Retries with bounded backoff up to LOCK_TIMEOUT_MS. If the existing lock
+ * file is older than LOCK_STALE_AFTER_MS or owned by a dead pid, break it
+ * and try again. The pid is written to the lock file so the staleness check
+ * can be precise (mtime alone is fooled by clock jumps).
+ */
+const acquireLock = (lockPath: string): number => {
+  const deadline = performance.now() + LOCK_TIMEOUT_MS
+  let attempt = 0
+
+  while (true) {
+    try {
+      const fd = openSync(lockPath, "wx", 0o600)
+      writeFileSync(fd, String(process.pid))
+      return fd
+    } catch (error) {
+      if (!isErrnoCode(error, "EEXIST")) throw error
+
+      if (performance.now() >= deadline) {
+        throw new Error(`failed to acquire file lock ${lockPath} within ${LOCK_TIMEOUT_MS}ms`)
+      }
+
+      breakIfStale(lockPath)
+
+      const wait = Math.min(LOCK_RETRY_MAX_MS, LOCK_RETRY_BASE_MS * 2 ** Math.min(attempt, 4))
+      sleepSyncMs(wait)
+      attempt = attempt + 1
+    }
+  }
+}
+
+const breakIfStale = (lockPath: string): void => {
+  let pid: number
+  let mtimeMs: number
+
+  try {
+    const stat = statSync(lockPath)
+    mtimeMs = stat.mtimeMs
+    pid = Number(readFileSync(lockPath, "utf-8").trim())
+  } catch {
+    return
+  }
+
+  const ageMs = Date.now() - mtimeMs
+
+  if (ageMs > LOCK_STALE_AFTER_MS) {
+    try {
+      unlinkSync(lockPath)
+    } catch {
+      // race with another breaker — fine, retry path will see EEXIST again
+    }
+    return
+  }
+
+  if (pid > 0 && !isPidAlive(pid)) {
+    try {
+      unlinkSync(lockPath)
+    } catch {
+      // race with another breaker — fine
+    }
+  }
+}
+
+const isPidAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (isErrnoCode(error, "EPERM")) return true
+    return false
+  }
+}
+
+/**
+ * Sleep synchronously for `ms` by spinning on Atomics.wait against a private
+ * SharedArrayBuffer. Required because the lock acquisition path is itself
+ * synchronous (every settings-mutating call site is sync) and cannot await.
+ * The spin is bounded by LOCK_RETRY_MAX_MS so total wall time stays low.
+ */
+const sleepSyncMs = (ms: number): void => {
+  const sab = new SharedArrayBuffer(4)
+  const view = new Int32Array(sab)
+  Atomics.wait(view, 0, 0, ms)
 }
 
 /**

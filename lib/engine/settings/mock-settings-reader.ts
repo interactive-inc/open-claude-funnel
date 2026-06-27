@@ -24,4 +24,9 @@ export class MockFunnelSettingsReader extends FunnelSettingsReader {
   write(settings: Settings): void {
     this.state = settings
   }
+
+  update<T>(mutator: (settings: Settings) => T): T {
+    const result = mutator(this.state)
+    return result
+  }
 }

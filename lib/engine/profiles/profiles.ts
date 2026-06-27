@@ -67,73 +67,65 @@ export class FunnelProfiles {
     env?: Record<string, string>
     resume?: boolean
   }): void {
-    const settings = this.store.read()
+    this.store.update((settings) => {
+      if (settings.profiles.some((p) => p.name === input.name)) {
+        throw new Error(`profile "${input.name}" already exists`)
+      }
 
-    if (settings.profiles.some((p) => p.name === input.name)) {
-      throw new Error(`profile "${input.name}" already exists`)
-    }
+      if (!settings.channels.some((c) => c.id === input.channelId)) {
+        throw new Error(`channel id "${input.channelId}" not found`)
+      }
 
-    if (!settings.channels.some((c) => c.id === input.channelId)) {
-      throw new Error(`channel id "${input.channelId}" not found`)
-    }
-
-    settings.profiles.push({
-      id: this.idGenerator.generate(),
-      name: input.name,
-      path: input.path,
-      channelId: input.channelId,
-      options: input.options ?? [],
-      env: input.env ?? {},
-      resume: input.resume ?? true,
+      settings.profiles.push({
+        id: this.idGenerator.generate(),
+        name: input.name,
+        path: input.path,
+        channelId: input.channelId,
+        options: input.options ?? [],
+        env: input.env ?? {},
+        resume: input.resume ?? true,
+      })
     })
-
-    this.store.write(settings)
   }
 
   remove(name: string): void {
-    const settings = this.store.read()
+    this.store.update((settings) => {
+      const index = settings.profiles.findIndex((p) => p.name === name)
 
-    const index = settings.profiles.findIndex((p) => p.name === name)
+      if (index < 0) throw new Error(`profile "${name}" not found`)
 
-    if (index < 0) throw new Error(`profile "${name}" not found`)
-
-    settings.profiles.splice(index, 1)
-
-    this.store.write(settings)
+      settings.profiles.splice(index, 1)
+    })
   }
 
   rename(oldName: string, newName: string): void {
-    const settings = this.store.read()
+    this.store.update((settings) => {
+      const profile = settings.profiles.find((p) => p.name === oldName)
 
-    const profile = settings.profiles.find((p) => p.name === oldName)
+      if (!profile) throw new Error(`profile "${oldName}" not found`)
 
-    if (!profile) throw new Error(`profile "${oldName}" not found`)
+      if (settings.profiles.some((p) => p.name === newName)) {
+        throw new Error(`profile "${newName}" already exists`)
+      }
 
-    if (settings.profiles.some((p) => p.name === newName)) {
-      throw new Error(`profile "${newName}" already exists`)
-    }
-
-    profile.name = newName
-
-    this.store.write(settings)
+      profile.name = newName
+    })
   }
 
   asDefault(name: string): void {
-    const settings = this.store.read()
+    this.store.update((settings) => {
+      const index = settings.profiles.findIndex((p) => p.name === name)
 
-    const index = settings.profiles.findIndex((p) => p.name === name)
+      if (index < 0) throw new Error(`profile "${name}" not found`)
 
-    if (index < 0) throw new Error(`profile "${name}" not found`)
+      if (index === 0) return
 
-    if (index === 0) return
+      const [profile] = settings.profiles.splice(index, 1)
 
-    const [profile] = settings.profiles.splice(index, 1)
+      if (!profile) return
 
-    if (!profile) return
-
-    settings.profiles.unshift(profile)
-
-    this.store.write(settings)
+      settings.profiles.unshift(profile)
+    })
   }
 
   hasChannelRef(channelId: string): boolean {
@@ -147,15 +139,13 @@ export class FunnelProfiles {
 
   /** Records the claude session id this profile launched, overwriting any prior one. */
   setSessionId(id: string, sessionId: string): void {
-    const settings = this.store.read()
+    this.store.update((settings) => {
+      const profile = settings.profiles.find((p) => p.id === id)
 
-    const profile = settings.profiles.find((p) => p.id === id)
+      if (!profile) throw new Error(`profile id "${id}" not found`)
 
-    if (!profile) throw new Error(`profile id "${id}" not found`)
-
-    profile.sessionId = sessionId
-
-    this.store.write(settings)
+      profile.sessionId = sessionId
+    })
   }
 
   /**
@@ -183,28 +173,26 @@ export class FunnelProfiles {
   }
 
   update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {
-    const settings = this.store.read()
+    this.store.update((settings) => {
+      const profile = settings.profiles.find((p) => p.name === name)
 
-    const profile = settings.profiles.find((p) => p.name === name)
+      if (!profile) throw new Error(`profile "${name}" not found`)
 
-    if (!profile) throw new Error(`profile "${name}" not found`)
+      if (fields.channelId !== undefined) {
+        if (!settings.channels.some((c) => c.id === fields.channelId)) {
+          throw new Error(`channel id "${fields.channelId}" not found`)
+        }
 
-    if (fields.channelId !== undefined) {
-      if (!settings.channels.some((c) => c.id === fields.channelId)) {
-        throw new Error(`channel id "${fields.channelId}" not found`)
+        profile.channelId = fields.channelId
       }
 
-      profile.channelId = fields.channelId
-    }
+      if (fields.path !== undefined) profile.path = fields.path
 
-    if (fields.path !== undefined) profile.path = fields.path
+      if (fields.options !== undefined) profile.options = fields.options
 
-    if (fields.options !== undefined) profile.options = fields.options
+      if (fields.env !== undefined) profile.env = fields.env
 
-    if (fields.env !== undefined) profile.env = fields.env
-
-    if (fields.resume !== undefined) profile.resume = fields.resume
-
-    this.store.write(settings)
+      if (fields.resume !== undefined) profile.resume = fields.resume
+    })
   }
 }

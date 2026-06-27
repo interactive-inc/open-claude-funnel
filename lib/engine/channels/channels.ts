@@ -83,61 +83,58 @@ export class FunnelChannels {
   }
 
   add(input: { name: string; delivery?: ChannelDeliveryMode }): ChannelConfig {
-    const settings = this.store.read()
+    return this.store.update((settings) => {
+      if (settings.channels.some((c) => c.name === input.name)) {
+        throw new FunnelChannelAlreadyExistsError(input.name)
+      }
 
-    if (settings.channels.some((c) => c.name === input.name)) {
-      throw new FunnelChannelAlreadyExistsError(input.name)
-    }
+      const channel: ChannelConfig = {
+        id: this.idGenerator.generate(),
+        name: input.name,
+        delivery: input.delivery ?? "fanout",
+        connectors: [],
+      }
 
-    const channel: ChannelConfig = {
-      id: this.idGenerator.generate(),
-      name: input.name,
-      delivery: input.delivery ?? "fanout",
-      connectors: [],
-    }
+      settings.channels.push(channel)
 
-    settings.channels.push(channel)
-    this.store.write(settings)
-
-    return channel
+      return channel
+    })
   }
 
   setDelivery(name: string, delivery: ChannelDeliveryMode): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, name)
-
-    channel.delivery = delivery
-
-    this.store.write(settings)
+    this.store.update((settings) => {
+      const channel = this.requireChannel(settings, name)
+      channel.delivery = delivery
+    })
   }
 
   remove(name: string): void {
-    const settings = this.store.read()
-    const index = settings.channels.findIndex((c) => c.name === name)
+    this.store.update((settings) => {
+      const index = settings.channels.findIndex((c) => c.name === name)
 
-    if (index < 0) throw new FunnelChannelNotFoundError(name)
+      if (index < 0) throw new FunnelChannelNotFoundError(name)
 
-    const channel = settings.channels[index]
+      const channel = settings.channels[index]
 
-    if (channel && this.profileChecker?.hasChannelRef(channel.id)) {
-      throw new Error(`channel "${name}" is referenced by a profile`)
-    }
+      if (channel && this.profileChecker?.hasChannelRef(channel.id)) {
+        throw new Error(`channel "${name}" is referenced by a profile`)
+      }
 
-    settings.channels.splice(index, 1)
-    this.store.write(settings)
+      settings.channels.splice(index, 1)
+    })
   }
 
   rename(oldName: string, newName: string): void {
-    const settings = this.store.read()
-    const channel = settings.channels.find((c) => c.name === oldName)
+    this.store.update((settings) => {
+      const channel = settings.channels.find((c) => c.name === oldName)
 
-    if (!channel) throw new FunnelChannelNotFoundError(oldName)
-    if (settings.channels.some((c) => c.name === newName)) {
-      throw new FunnelChannelAlreadyExistsError(newName)
-    }
+      if (!channel) throw new FunnelChannelNotFoundError(oldName)
+      if (settings.channels.some((c) => c.name === newName)) {
+        throw new FunnelChannelAlreadyExistsError(newName)
+      }
 
-    channel.name = newName
-    this.store.write(settings)
+      channel.name = newName
+    })
   }
 
   listConnectors(channelName: string): BaseConnectorConfig[] {
@@ -165,55 +162,55 @@ export class FunnelChannels {
   }
 
   addConnector(channelName: string, input: AddConnectorInput): BaseConnectorConfig {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
+    return this.store.update((settings) => {
+      const channel = this.requireChannel(settings, channelName)
 
-    if (channel.connectors.some((c) => c.name === input.name)) {
-      throw new Error(`connector "${input.name}" already exists in channel "${channelName}"`)
-    }
+      if (channel.connectors.some((c) => c.name === input.name)) {
+        throw new Error(`connector "${input.name}" already exists in channel "${channelName}"`)
+      }
 
-    const candidate = this.registry.buildConfig(input, {
-      id: this.idGenerator.generate(),
-      now: this.clock.iso(),
+      const candidate = this.registry.buildConfig(input, {
+        id: this.idGenerator.generate(),
+        now: this.clock.iso(),
+      })
+
+      this.assertNoTokenCollision(settings, candidate)
+
+      channel.connectors.push(candidate)
+
+      return candidate
     })
-
-    this.assertNoTokenCollision(settings, candidate)
-
-    channel.connectors.push(candidate)
-    this.store.write(settings)
-
-    return candidate
   }
 
   removeConnector(channelName: string, connectorName: string): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const index = channel.connectors.findIndex((c) => c.name === connectorName)
+    this.store.update((settings) => {
+      const channel = this.requireChannel(settings, channelName)
+      const index = channel.connectors.findIndex((c) => c.name === connectorName)
 
-    if (index < 0) {
-      throw new FunnelConnectorNotFoundError(channelName, connectorName)
-    }
+      if (index < 0) {
+        throw new FunnelConnectorNotFoundError(channelName, connectorName)
+      }
 
-    channel.connectors.splice(index, 1)
-    this.store.write(settings)
+      channel.connectors.splice(index, 1)
+    })
   }
 
   renameConnector(channelName: string, oldName: string, newName: string): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = channel.connectors.find((c) => c.name === oldName)
+    this.store.update((settings) => {
+      const channel = this.requireChannel(settings, channelName)
+      const connector = channel.connectors.find((c) => c.name === oldName)
 
-    if (!connector) {
-      throw new Error(`connector "${oldName}" not found in channel "${channelName}"`)
-    }
+      if (!connector) {
+        throw new Error(`connector "${oldName}" not found in channel "${channelName}"`)
+      }
 
-    if (channel.connectors.some((c) => c.name === newName)) {
-      throw new Error(`connector "${newName}" already exists in channel "${channelName}"`)
-    }
+      if (channel.connectors.some((c) => c.name === newName)) {
+        throw new Error(`connector "${newName}" already exists in channel "${channelName}"`)
+      }
 
-    connector.name = newName
-    connector.updatedAt = this.clock.iso()
-    this.store.write(settings)
+      connector.name = newName
+      connector.updatedAt = this.clock.iso()
+    })
   }
 
   /**
@@ -222,19 +219,19 @@ export class FunnelChannels {
    * so a slot can move between a literal and an env reference cleanly).
    */
   updateConnector(channelName: string, connectorName: string, fields: Record<string, unknown>): void {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = channel.connectors.find((c) => c.name === connectorName)
+    this.store.update((settings) => {
+      const channel = this.requireChannel(settings, channelName)
+      const connector = channel.connectors.find((c) => c.name === connectorName)
 
-    if (!connector) {
-      throw new FunnelConnectorNotFoundError(channelName, connectorName)
-    }
+      if (!connector) {
+        throw new FunnelConnectorNotFoundError(channelName, connectorName)
+      }
 
-    const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
+      const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
 
-    this.assertNoTokenCollision(settings, updated)
-    this.replaceConnector(channel, connector.name, updated)
-    this.store.write(settings)
+      this.assertNoTokenCollision(settings, updated)
+      this.replaceConnector(channel, connector.name, updated)
+    })
   }
 
   /** Back-compat wrapper for `updateConnector` on a slack connector. */
@@ -275,25 +272,25 @@ export class FunnelChannels {
     operation: string,
     args: unknown,
   ): unknown {
-    const settings = this.store.read()
-    const channel = this.requireChannel(settings, channelName)
-    const connector = channel.connectors.find((c) => c.name === connectorName)
+    return this.store.update((settings) => {
+      const channel = this.requireChannel(settings, channelName)
+      const connector = channel.connectors.find((c) => c.name === connectorName)
 
-    if (!connector) {
-      throw new FunnelConnectorNotFoundError(channelName, connectorName)
-    }
+      if (!connector) {
+        throw new FunnelConnectorNotFoundError(channelName, connectorName)
+      }
 
-    const outcome = this.registry.runOperation(connector, operation, args, {
-      generateId: () => this.idGenerator.generate(),
-      now: this.clock.iso(),
+      const outcome = this.registry.runOperation(connector, operation, args, {
+        generateId: () => this.idGenerator.generate(),
+        now: this.clock.iso(),
+      })
+
+      if (outcome.config !== connector) {
+        this.replaceConnector(channel, connector.name, outcome.config)
+      }
+
+      return outcome.result
     })
-
-    if (outcome.config !== connector) {
-      this.replaceConnector(channel, connector.name, outcome.config)
-      this.store.write(settings)
-    }
-
-    return outcome.result
   }
 
   async call(channelName: string, connectorName: string, input: CallInput): Promise<unknown> {

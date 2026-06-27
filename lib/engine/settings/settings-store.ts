@@ -178,4 +178,24 @@ export class FunnelSettingsStore extends FunnelSettingsReader {
     // so it must be owner-only (0600) like gateway.token — never world-readable.
     this.fs.writeSecretFileSync(this.path, `${JSON.stringify(versioned, null, 2)}\n`)
   }
+
+  /**
+   * Run `mutator` against a freshly-read settings object inside an exclusive
+   * file lock, then persist the result. Use this instead of bare `read()` +
+   * `write()` for any logical edit (add channel, set token, rename profile),
+   * so two concurrent CLI invocations or `fnl claude` launches cannot lose
+   * each other's updates via a read-modify-write race. The mutator may
+   * mutate `settings` in place and/or return a value; the value is returned
+   * to the caller. A thrown error from the mutator skips the write but still
+   * releases the lock.
+   */
+  update<T>(mutator: (settings: Settings) => T): T {
+    this.fs.mkdirSync(dirname(this.path), { recursive: true })
+    return this.fs.withFileLock(`${this.path}.lock`, () => {
+      const settings = this.read()
+      const result = mutator(settings)
+      this.write(settings)
+      return result
+    })
+  }
 }
