@@ -323,9 +323,7 @@ export class FunnelBroadcaster {
     }
 
     for (const handler of this.subscribers) {
-      try {
-        handler(event)
-      } catch (error) {
+      const captureError = (error: unknown): void => {
         const err = error instanceof Error ? error : new Error(String(error))
 
         this.logger?.error("broadcast subscriber threw", { error: err.message })
@@ -335,6 +333,22 @@ export class FunnelBroadcaster {
           connector: event.meta?.connector ?? null,
           channel: event.meta?.channel ?? null,
         })
+      }
+
+      // BroadcastSubscriber is typed sync `(event) => void` but a host can
+      // still pass an async function — TS will accept it because Promise<void>
+      // is assignable to void. Wrap with Promise.resolve so a rejected
+      // async subscriber lands in onError instead of becoming an
+      // unhandled rejection that crashes the daemon under
+      // unhandledRejection=strict.
+      try {
+        // The cast widens the typed-void return to "could be a thenable" so
+        // a host-supplied async subscriber (TS allows Promise<void> where
+        // void is expected) does not slip through as a rejected microtask.
+        const result = handler(event) as unknown
+        if (result instanceof Promise) result.catch(captureError)
+      } catch (error) {
+        captureError(error)
       }
     }
 
