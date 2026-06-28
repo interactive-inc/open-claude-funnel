@@ -4,6 +4,25 @@ import { FunnelFlumeDiscordListener } from "@/engine/connectors/discord-flume-li
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
 
+export type DiscordConnectorOptions = {
+  /**
+   * Discord gateway dispatch types funnel forwards to the broadcaster.
+   * Pass an explicit allowlist (`["MESSAGE_CREATE", "MESSAGE_UPDATE"]`) for
+   * fine-grained control, or `"all"` to skip the filter entirely and forward
+   * every dispatch type the gateway emits. Defaults to MESSAGE_CREATE and
+   * MESSAGE_UPDATE so the typical chat-style consumer is not flooded by
+   * GUILD_CREATE / PRESENCE_UPDATE / VOICE_STATE_UPDATE snapshots on
+   * connect. Reactions, interactivity, and guild-state dispatches require
+   * opt-in via this list.
+   *
+   * Common values:
+   *   ["MESSAGE_CREATE", "MESSAGE_UPDATE", "MESSAGE_REACTION_ADD"]
+   *   ["MESSAGE_CREATE", "INTERACTION_CREATE"]
+   *   "all"   — debug / firehose
+   */
+  eventTypes?: ReadonlyArray<string> | "all"
+}
+
 /**
  * Discord connector descriptor. Pass `discordConnector()` to
  * `new Funnel({ connectors: [...] })` to enable the type.
@@ -11,7 +30,7 @@ import { slotFields } from "@/engine/connectors/slot-fields"
  * The listener is backed by `@interactive-inc/flume`'s `FlumeDiscordSource`
  * (raw Gateway WebSocket).
  */
-export const discordConnector = (): ConnectorDescriptor => ({
+export const discordConnector = (options: DiscordConnectorOptions = {}): ConnectorDescriptor => ({
   type: "discord",
   toolExposed: true,
   createListener(config, deps) {
@@ -21,6 +40,7 @@ export const discordConnector = (): ConnectorDescriptor => ({
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
       signal: deps.signal,
+      eventTypes: options.eventTypes,
     })
   },
   createAdapter(config, deps) {

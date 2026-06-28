@@ -19,17 +19,17 @@ type Deps = {
   flumeDeps?: Partial<FlumeRuntimeDeps>
   /** Shutdown signal forwarded to the underlying Flume. */
   signal?: AbortSignal
+  /** See `DiscordConnectorOptions.eventTypes`. */
+  eventTypes?: ReadonlyArray<string> | "all"
 }
 
 /**
- * Discord dispatch types that funnel forwards to the broadcaster. Everything
- * else (GUILD_*, PRESENCE_*, VOICE_*, TYPING_*, CHANNEL_*, USER_*, INTEGRATION_*,
- * INVITE_*, AUTO_MODERATION_*, etc.) is dropped at the listener layer with a
- * skip:non-message:<type> diagnostic row. MESSAGE_REACTION_* are deliberately
- * excluded because reactions surface as separate dispatches and currently lack
- * a use case in funnel's downstream consumers.
+ * Default allowlist of Discord gateway dispatch types funnel forwards. Set
+ * to chat-style events so the typical consumer is not flooded by guild
+ * snapshot dispatches (GUILD_CREATE / PRESENCE_UPDATE / VOICE_STATE_UPDATE
+ * etc.). Override per-instance via `discordConnector({ eventTypes })`.
  */
-const MESSAGE_EVENT_TYPES = new Set(["MESSAGE_CREATE", "MESSAGE_UPDATE"])
+const DEFAULT_EVENT_TYPES: ReadonlyArray<string> = ["MESSAGE_CREATE", "MESSAGE_UPDATE"]
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -54,6 +54,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
   private readonly env: NodeJS.ProcessEnv
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
   private readonly signal: AbortSignal | undefined
+  private readonly eventTypes: ReadonlySet<string> | "all"
   private processor: FunnelDiscordEventProcessor | null = null
 
   constructor(deps: Deps) {
@@ -68,6 +69,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
     this.env = deps.env ?? process.env
     this.flumeDeps = deps.flumeDeps ?? {}
     this.signal = deps.signal
+    this.eventTypes = deps.eventTypes === "all" ? "all" : new Set(deps.eventTypes ?? DEFAULT_EVENT_TYPES)
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -139,16 +141,15 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
 
     // Discord's gateway sends 70+ dispatch types (GUILD_CREATE / GUILD_UPDATE /
     // PRESENCE_UPDATE / GUILD_MEMBER_UPDATE / VOICE_STATE_UPDATE / TYPING_START /
-    // CHANNEL_UPDATE / …). Their payloads contain the entire guild snapshot
-    // (members, roles, channels, voice states) — tens of KB each. Funnel's
-    // purpose is to deliver chat-like events that Claude should react to, so
-    // the listener narrows to message-shaped dispatches. Every other type is
-    // recorded so a diagnostic trail is still left for "did the event arrive?"
-    // questions, and silently dropped from the outbound broadcast.
-    if (!MESSAGE_EVENT_TYPES.has(event.type)) {
+    // CHANNEL_UPDATE / …). Their payloads carry the entire guild snapshot
+    // (members, roles, channels, voice states) — tens of KB each. By default
+    // the listener narrows to chat-shaped dispatches; the host can override
+    // via `discordConnector({ eventTypes: [...] | "all" })`. Dropped events
+    // still get a diagnostic row so 'did the event arrive' stays answerable.
+    if (this.eventTypes !== "all" && !this.eventTypes.has(event.type)) {
       const skipId = crypto.randomUUID()
       this.diagnostics.recordRaw(skipId, JSON.stringify(event.data))
-      this.diagnostics.recordProcessed(skipId, `skip:non-message:${event.type}`, "")
+      this.diagnostics.recordProcessed(skipId, `skip:filtered:${event.type}`, "")
       return
     }
 
