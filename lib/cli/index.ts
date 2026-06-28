@@ -13,8 +13,6 @@ import { FunnelLocalConfigWriter } from "@/services/local-config/local-config-wr
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { Funnel } from "@/funnel"
 
-process.title = "funnel"
-
 // A `funnel` CLI launch defaults to a distinct gateway port so it never
 // collides with a gateway hosted programmatically on 9742 (e.g. another app
 // embedding Funnel). FUNNEL_PORT still overrides. Set before building Funnel so

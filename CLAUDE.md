@@ -278,6 +278,18 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 - funnel.json はリポジトリ側 commit 物。funnel が書き換えるのは初回起動時の `id`(uuid) 付与のみ（state 隔離用の不変キー、`FunnelLocalConfigWriter` が担う）。token は絶対に書かない — CLI 設定か TTY prompt で `~/.funnel/projects/<id>/settings.json` に保存し、commit されない
 - Gateway ポートのデフォルトは 2 系統 — `funnel` CLI 起動時は 9743、programmatic（`new Funnel().gatewayServer()`）は 9742（`FUNNEL_PORT` で両方上書き可）。CLI を別ポートにするのは、同マシンで Funnel を埋め込む別アプリの gateway（9742）と CLI 起動が port 衝突しないため。port 解決は `resolveFunnelPort()` に一元化し、CLI entry（`cli/index.ts`）が `FUNNEL_PORT` 未設定時に 9743 を立てて daemon spawn / MCP / listener client 全部に行き渡らせる。bind は loopback（`127.0.0.1`）固定で off-box から到達不可。`FUNNEL_HOST=0.0.0.0` で明示的に公開できる（公開しても全特権エンドポイントは bearer token 必須）
 
+## クロスプラットフォーム規約
+
+Windows と macOS / Linux の両方で動くようにする。詳細は consumer（nocker-inc, inta）の歴史的事故を反映している。
+
+パスは必ず `os.homedir()` と `node:path` の `join` から組み立てる。consumer 側 .mcp.json などに `${USERPROFILE}\.nocker\funnel` のような OS 特化テンプレートを書いて commit すると、別 OS で env が未定義 → literal が funnel に到達 → cwd 配下に `${USERPROFILE}\.nocker\funnel` というディレクトリが作られて gateway.token が読めなくなり、`claudeClients: 0` の沈黙故障に至った実例がある。`os.homedir()` は OS を自動判定するのでこの問題が出ない。
+
+consumer がスポーンする子プロセス（MCP server）には env / argv で設定を渡す必要があるが、env を経由するのは脆い：Claude Code の `.mcp.json` は `${VAR}` を「親プロセスに既にある env」だけで展開するので、`$HOME` は Windows cmd / PowerShell に無いし `$USERPROFILE` は macOS / Linux に無い。委ねるなら shell でなく consumer 自身の bin を経由させる。具体的には consumer に `n mcp` / `inta mcp` のような自分の MCP entry を持たせて、その中で `startChannelServer({ dir: join(homedir(), ".nocker", "funnel") })` を programmable に呼ぶ。`.mcp.json` は `{ "command": "n", "args": ["mcp"] }` で済み、env も `${HOME}` も `--dir` flag も要らない。これが現在の推奨パターン。
+
+funnel 側のセーフティネットとして、`resolveFunnelDir()` は外部から渡された FUNNEL_DIR の `~` / `${HOME}` / `${USERPROFILE}` を `expandHomeDir()` で展開する（settings-store.ts）。これは「consumer が programmable 経路を取り損ねた時に literal が即破綻しないよう」の最終防衛線で、推奨パスではない。新規 consumer はこれに依存せず programmable 経路を使う。
+
+パスの正規化は forward slash で統一する（`expandHomeDir` が backslash を `/` に置換する）。Node の `path` 系は Windows でも forward slash を受け付けるし、URL 組み立て / glob マッチング / SQL に埋め込む文字列パスはどちらも forward slash の方が安全。
+
 ## 設計原則
 
 ### CLI とルーティング
