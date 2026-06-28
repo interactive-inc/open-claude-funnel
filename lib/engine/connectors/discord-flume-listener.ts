@@ -21,6 +21,16 @@ type Deps = {
   signal?: AbortSignal
 }
 
+/**
+ * Discord dispatch types that funnel forwards to the broadcaster. Everything
+ * else (GUILD_*, PRESENCE_*, VOICE_*, TYPING_*, CHANNEL_*, USER_*, INTEGRATION_*,
+ * INVITE_*, AUTO_MODERATION_*, etc.) is dropped at the listener layer with a
+ * skip:non-message:<type> diagnostic row. MESSAGE_REACTION_* are deliberately
+ * excluded because reactions surface as separate dispatches and currently lack
+ * a use case in funnel's downstream consumers.
+ */
+const MESSAGE_EVENT_TYPES = new Set(["MESSAGE_CREATE", "MESSAGE_UPDATE"])
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
@@ -124,6 +134,21 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       const skipId = crypto.randomUUID()
       this.diagnostics.recordRaw(skipId, JSON.stringify(event.data))
       this.diagnostics.recordProcessed(skipId, "skip:pre-ready", "")
+      return
+    }
+
+    // Discord's gateway sends 70+ dispatch types (GUILD_CREATE / GUILD_UPDATE /
+    // PRESENCE_UPDATE / GUILD_MEMBER_UPDATE / VOICE_STATE_UPDATE / TYPING_START /
+    // CHANNEL_UPDATE / …). Their payloads contain the entire guild snapshot
+    // (members, roles, channels, voice states) — tens of KB each. Funnel's
+    // purpose is to deliver chat-like events that Claude should react to, so
+    // the listener narrows to message-shaped dispatches. Every other type is
+    // recorded so a diagnostic trail is still left for "did the event arrive?"
+    // questions, and silently dropped from the outbound broadcast.
+    if (!MESSAGE_EVENT_TYPES.has(event.type)) {
+      const skipId = crypto.randomUUID()
+      this.diagnostics.recordRaw(skipId, JSON.stringify(event.data))
+      this.diagnostics.recordProcessed(skipId, `skip:non-message:${event.type}`, "")
       return
     }
 
