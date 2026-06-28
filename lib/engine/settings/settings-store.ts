@@ -14,13 +14,44 @@ import type { Settings } from "@/engine/settings/settings-schema"
  * gateway pid/token, claude pids) at a repo-local `<repo>/.funnel` and never
  * touch the global home. Read at call time, not module load, so a daemon
  * spawned with the env set resolves the override.
+ *
+ * The override goes through `expandHomeDir` so a consumer .mcp.json can write
+ * `FUNNEL_DIR: "~/.nocker/funnel"` or `"${HOME}/.nocker/funnel"` and have it
+ * land on the right path on macOS, Linux, and Windows — Claude Code's `${VAR}`
+ * expansion only resolves whichever env happens to be set on the host shell
+ * (`$HOME` is unset on vanilla Windows cmd/PowerShell, `$USERPROFILE` is unset
+ * on macOS/Linux), so funnel takes the second swing here.
  */
 export function resolveFunnelDir(): string {
   const override = process.env.FUNNEL_DIR
 
-  if (override && override.length > 0) return override
+  if (override && override.length > 0) return expandHomeDir(override)
 
   return join(homedir(), ".funnel")
+}
+
+/**
+ * Resolves the three forms a consumer might write for the user home dir:
+ * a leading `~` / `~/`, the literal `${HOME}` token, and the literal
+ * `${USERPROFILE}` token. The expansion is intentionally narrow — only the
+ * home-dir tokens are substituted, no general shell-variable expansion — so
+ * an accidentally embedded `${USERPROFILE}` in a path on macOS does not
+ * silently turn into a different (Windows-style) path elsewhere. Normalizes
+ * Windows backslashes to forward slashes after expansion because Node's
+ * `path` operations accept either on Windows but the cross-platform pieces
+ * (URL building, glob matching) prefer forward slashes.
+ */
+export function expandHomeDir(input: string): string {
+  const home = homedir()
+  let result = input
+
+  if (result === "~") return home
+  if (result.startsWith("~/") || result.startsWith("~\\")) {
+    result = home + result.slice(1)
+  }
+  result = result.split("${HOME}").join(home)
+  result = result.split("${USERPROFILE}").join(home)
+  return result.replace(/\\/g, "/")
 }
 
 export const DEFAULT_GATEWAY_PORT = 9742

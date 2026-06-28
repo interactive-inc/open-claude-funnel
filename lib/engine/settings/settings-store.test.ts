@@ -1,8 +1,14 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
+import { homedir } from "node:os"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { SETTINGS_VERSION } from "@/engine/settings/settings-schema"
-import { FunnelSettingsStore, resolveFunnelPort } from "@/engine/settings/settings-store"
+import {
+  expandHomeDir,
+  FunnelSettingsStore,
+  resolveFunnelDir,
+  resolveFunnelPort,
+} from "@/engine/settings/settings-store"
 
 const PATH = "/funnel/settings.json"
 
@@ -169,6 +175,76 @@ describe("FunnelSettingsStore", () => {
     })
 
     expect(store.read().profiles[0]?.id).toBe("keep-me")
+  })
+})
+
+describe("expandHomeDir", () => {
+  const home = homedir()
+
+  test("bare tilde becomes homedir", () => {
+    expect(expandHomeDir("~")).toBe(home)
+  })
+
+  test("tilde-slash prefix expands", () => {
+    expect(expandHomeDir("~/.nocker/funnel")).toBe(`${home}/.nocker/funnel`)
+  })
+
+  test("tilde-backslash prefix expands (Windows-style paths reaching macOS)", () => {
+    expect(expandHomeDir("~\\.nocker\\funnel")).toBe(`${home}/.nocker/funnel`)
+  })
+
+  test("${HOME} token expands", () => {
+    expect(expandHomeDir("${HOME}/.nocker/funnel")).toBe(`${home}/.nocker/funnel`)
+  })
+
+  test("${USERPROFILE} token expands on any OS", () => {
+    expect(expandHomeDir("${USERPROFILE}/.nocker/funnel")).toBe(`${home}/.nocker/funnel`)
+  })
+
+  test("${USERPROFILE} with Windows backslashes normalises", () => {
+    expect(expandHomeDir("${USERPROFILE}\\.nocker\\funnel")).toBe(`${home}/.nocker/funnel`)
+  })
+
+  test("plain absolute path passes through", () => {
+    expect(expandHomeDir("/var/funnel")).toBe("/var/funnel")
+  })
+
+  test("does NOT expand unrelated shell variables", () => {
+    expect(expandHomeDir("${SOMETHING_ELSE}/funnel")).toBe("${SOMETHING_ELSE}/funnel")
+  })
+})
+
+describe("resolveFunnelDir", () => {
+  test("expands ~ in FUNNEL_DIR override", () => {
+    const prev = process.env.FUNNEL_DIR
+    try {
+      process.env.FUNNEL_DIR = "~/.nocker/funnel"
+      expect(resolveFunnelDir()).toBe(`${homedir()}/.nocker/funnel`)
+    } finally {
+      if (prev === undefined) delete process.env.FUNNEL_DIR
+      else process.env.FUNNEL_DIR = prev
+    }
+  })
+
+  test("expands literal ${USERPROFILE} that Claude Code env-expansion left unresolved on macOS", () => {
+    const prev = process.env.FUNNEL_DIR
+    try {
+      process.env.FUNNEL_DIR = "${USERPROFILE}\\.nocker\\funnel"
+      expect(resolveFunnelDir()).toBe(`${homedir()}/.nocker/funnel`)
+    } finally {
+      if (prev === undefined) delete process.env.FUNNEL_DIR
+      else process.env.FUNNEL_DIR = prev
+    }
+  })
+
+  test("defaults to ~/.funnel when no override", () => {
+    const prev = process.env.FUNNEL_DIR
+    try {
+      delete process.env.FUNNEL_DIR
+      expect(resolveFunnelDir()).toBe(`${homedir()}/.funnel`)
+    } finally {
+      if (prev !== undefined) process.env.FUNNEL_DIR = prev
+    }
   })
 })
 
