@@ -27,6 +27,7 @@ export default defineConfig({
       "connectors/gh": "lib/engine/connectors/gh.ts",
       "connectors/schedule": "lib/engine/connectors/schedule.ts",
       logger: "lib/logger.ts",
+      channel: "lib/channel.ts",
     },
     format: "esm",
     dts: true,
