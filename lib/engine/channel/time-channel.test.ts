@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest"
-import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
@@ -18,20 +17,20 @@ function waitFor(condition: () => boolean, timeoutMs = 1000): Promise<void> {
   })
 }
 
+function freshSupervisor(fs: MemoryFunnelFileSystem) {
+  return new FunnelChannelSupervisor({
+    broadcaster: { broadcast: () => {} },
+    logger: new MemoryFunnelLogger(),
+    clock: new MemoryFunnelClock(),
+    fs,
+    dir: "/sandbox/.funnel",
+  })
+}
+
 describe("timeChannel", () => {
   it("registers and starts a cron-driven channel that broadcasts on tick", async () => {
-    const broadcaster = new FunnelBroadcaster({ logger: new MemoryFunnelLogger() })
     const fs = new MemoryFunnelFileSystem()
-    const received: { content: string; meta?: Record<string, string> }[] = []
-    broadcaster.subscribe((event) => received.push({ content: event.content, meta: event.meta }))
-
-    const supervisor = new FunnelChannelSupervisor({
-      broadcaster,
-      logger: new MemoryFunnelLogger(),
-      clock: new MemoryFunnelClock(),
-      fs,
-      dir: "/sandbox/.funnel",
-    })
+    const supervisor = freshSupervisor(fs)
 
     supervisor.register(
       timeChannel({
@@ -59,7 +58,6 @@ describe("timeChannel", () => {
   })
 
   it("persist:true writes lastFiredAt under <dir>/channels/<id>/time.json", async () => {
-    const broadcaster = new FunnelBroadcaster({ logger: new MemoryFunnelLogger() })
     const fs = new MemoryFunnelFileSystem()
 
     // Seed an existing state so catchup has something to load (verifies file path).
@@ -69,13 +67,7 @@ describe("timeChannel", () => {
       JSON.stringify({ lastFiredAt: 0 }),
     )
 
-    const supervisor = new FunnelChannelSupervisor({
-      broadcaster,
-      logger: new MemoryFunnelLogger(),
-      clock: new MemoryFunnelClock(),
-      fs,
-      dir: "/sandbox/.funnel",
-    })
+    const supervisor = freshSupervisor(fs)
 
     supervisor.register(timeChannel({ id: "persisted", cron: "* * * * *", persist: true }))
     await supervisor.start()

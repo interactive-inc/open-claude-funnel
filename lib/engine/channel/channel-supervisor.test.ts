@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { FlumeSource } from "@interactive-inc/flume"
 import type { FlumeEvent } from "@interactive-inc/flume"
-import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
@@ -42,23 +41,27 @@ class StubSource extends FlumeSource {
   }
 }
 
-function freshSupervisor() {
-  const broadcaster = new FunnelBroadcaster({ logger: new MemoryFunnelLogger() })
+function freshSupervisor(options: { signal?: AbortSignal } = {}) {
+  const received: { content: string; meta?: Record<string, string> }[] = []
+  const logger = new MemoryFunnelLogger()
   const supervisor = new FunnelChannelSupervisor({
-    broadcaster,
-    logger: new MemoryFunnelLogger(),
+    broadcaster: {
+      broadcast: (content, meta) => {
+        received.push({ content, meta })
+      },
+    },
+    logger,
     clock: new MemoryFunnelClock(),
     fs: new MemoryFunnelFileSystem(),
     dir: "/sandbox/.funnel",
+    signal: options.signal,
   })
-  return { broadcaster, supervisor }
+  return { received, logger, supervisor }
 }
 
 describe("FunnelChannelSupervisor", () => {
   it("register + start opens channel sources and forwards transformed events to broadcaster", async () => {
-    const { broadcaster, supervisor } = freshSupervisor()
-    const received: { content: string; meta?: Record<string, string> }[] = []
-    broadcaster.subscribe((event) => received.push({ content: event.content, meta: event.meta }))
+    const { received, supervisor } = freshSupervisor()
 
     const source = new StubSource()
     supervisor.register(
@@ -89,9 +92,7 @@ describe("FunnelChannelSupervisor", () => {
   })
 
   it("transform returning null drops the event", async () => {
-    const { broadcaster, supervisor } = freshSupervisor()
-    const received: unknown[] = []
-    broadcaster.subscribe((event) => received.push(event))
+    const { received, supervisor } = freshSupervisor()
 
     const source = new StubSource()
     supervisor.register(
@@ -115,9 +116,7 @@ describe("FunnelChannelSupervisor", () => {
   })
 
   it("default transform falls back to JSON-stringified event.data + event.meta", async () => {
-    const { broadcaster, supervisor } = freshSupervisor()
-    const received: { content: string; meta?: Record<string, string> }[] = []
-    broadcaster.subscribe((event) => received.push({ content: event.content, meta: event.meta }))
+    const { received, supervisor } = freshSupervisor()
 
     const source = new StubSource()
     supervisor.register(
@@ -138,10 +137,36 @@ describe("FunnelChannelSupervisor", () => {
     expect(received[0]?.meta?.trace).toBe("abc")
   })
 
+  it("a throwing transform is logged and only drops that event", async () => {
+    const { received, logger, supervisor } = freshSupervisor()
+
+    const source = new StubSource()
+    supervisor.register(
+      defineChannel({
+        id: "thrower",
+        build: () => ({
+          sources: [source],
+          transform: (event) => {
+            if (event.type === "bad") throw new Error("transform boom")
+            return { content: "good" }
+          },
+        }),
+      }),
+    )
+
+    await supervisor.start()
+    source.pushEvent?.({ source: "discord", type: "bad", data: {}, meta: {}, receivedAt: 0 })
+    source.pushEvent?.({ source: "discord", type: "ok", data: {}, meta: {}, receivedAt: 0 })
+
+    await waitForCondition(() => received.length === 1)
+    expect(received).toEqual([{ content: "good", meta: undefined }])
+    expect(
+      logger.entries.some((entry) => entry.level === "error" && entry.message.includes("thrower")),
+    ).toBe(true)
+  })
+
   it("unregister stops a single channel without affecting others", async () => {
-    const { broadcaster, supervisor } = freshSupervisor()
-    const received: string[] = []
-    broadcaster.subscribe((event) => received.push(event.content))
+    const { received, supervisor } = freshSupervisor()
 
     const sourceA = new StubSource()
     const sourceB = new StubSource()
@@ -165,13 +190,11 @@ describe("FunnelChannelSupervisor", () => {
     sourceB.pushEvent?.({ source: "discord", type: "x", data: {}, meta: {}, receivedAt: 0 })
 
     await waitForCondition(() => received.length === 1)
-    expect(received).toEqual(["from-b"])
+    expect(received.map((entry) => entry.content)).toEqual(["from-b"])
   })
 
   it("register after start opens the channel immediately", async () => {
-    const { broadcaster, supervisor } = freshSupervisor()
-    const received: string[] = []
-    broadcaster.subscribe((event) => received.push(event.content))
+    const { received, supervisor } = freshSupervisor()
 
     await supervisor.start()
 
@@ -183,11 +206,11 @@ describe("FunnelChannelSupervisor", () => {
       }),
     )
 
-    await waitForCondition(() => supervisor.has("late"))
+    await waitForCondition(() => supervisor.ids().includes("late"))
     source.pushEvent?.({ source: "discord", type: "x", data: {}, meta: {}, receivedAt: 0 })
 
     await waitForCondition(() => received.length === 1)
-    expect(received).toEqual(["late"])
+    expect(received.map((entry) => entry.content)).toEqual(["late"])
   })
 
   it("duplicate register throws", () => {
@@ -206,5 +229,96 @@ describe("FunnelChannelSupervisor", () => {
     await supervisor.start()
     await supervisor.stop()
     expect(supervisor.ids()).toEqual([])
+  })
+
+  it("register and start are inert when the host signal is already aborted", async () => {
+    const abortController = new AbortController()
+    abortController.abort()
+    const { supervisor } = freshSupervisor({ signal: abortController.signal })
+
+    const source = new StubSource()
+    supervisor.register(defineChannel({ id: "dead", build: () => ({ sources: [source] }) }))
+
+    await supervisor.start()
+
+    expect(supervisor.has("dead")).toBe(false)
+    expect(supervisor.ids()).toEqual([])
+    expect(source.pushEvent).toBeNull()
+  })
+
+  it("a channel whose build throws is logged and does not block other channels", async () => {
+    const { received, logger, supervisor } = freshSupervisor()
+
+    const source = new StubSource()
+    supervisor.register(
+      defineChannel({
+        id: "broken",
+        build: () => {
+          throw new Error("build boom")
+        },
+      }),
+    )
+    supervisor.register(
+      defineChannel({
+        id: "healthy",
+        build: () => ({ sources: [source], transform: () => ({ content: "ok" }) }),
+      }),
+    )
+
+    await supervisor.start()
+
+    expect(supervisor.has("broken")).toBe(false)
+    expect(supervisor.has("healthy")).toBe(true)
+    expect(
+      logger.entries.some((entry) => entry.level === "error" && entry.message.includes("broken")),
+    ).toBe(true)
+
+    source.pushEvent?.({ source: "discord", type: "x", data: {}, meta: {}, receivedAt: 0 })
+    await waitForCondition(() => received.length === 1)
+    expect(received[0]?.content).toBe("ok")
+  })
+
+  it("build throwing after start is logged and leaves the channel unregistered", async () => {
+    const { logger, supervisor } = freshSupervisor()
+    await supervisor.start()
+
+    supervisor.register(
+      defineChannel({
+        id: "late-broken",
+        build: async () => {
+          throw new Error("late boom")
+        },
+      }),
+    )
+
+    await waitForCondition(() =>
+      logger.entries.some(
+        (entry) => entry.level === "error" && entry.message.includes("late-broken"),
+      ),
+    )
+    expect(supervisor.has("late-broken")).toBe(false)
+  })
+
+  it("unregister awaits an in-flight post-start open", async () => {
+    const { received, supervisor } = freshSupervisor()
+    await supervisor.start()
+
+    const source = new StubSource()
+    supervisor.register(
+      defineChannel({
+        id: "racy",
+        build: async () => {
+          await new Promise((r) => setTimeout(r, 20))
+          return { sources: [source], transform: () => ({ content: "racy" }) }
+        },
+      }),
+    )
+
+    await supervisor.unregister("racy")
+
+    expect(supervisor.has("racy")).toBe(false)
+    source.pushEvent?.({ source: "discord", type: "x", data: {}, meta: {}, receivedAt: 0 })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(received).toHaveLength(0)
   })
 })

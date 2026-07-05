@@ -1,5 +1,5 @@
 import type { FlumeStatePersister } from "@interactive-inc/flume"
-import { dirname, join } from "node:path"
+import { dirname } from "node:path"
 import type { FunnelFileSystem } from "@/engine/fs/file-system"
 
 type Props = {
@@ -8,9 +8,10 @@ type Props = {
 }
 
 /**
- * `FunnelFileSystem` 上に JSON で 1 行 / 1 状態を保存する `FlumeStatePersister`。
- * 保存先ディレクトリは load/save の前に再帰作成する。
- * load は不在 / parse 失敗時に `null` を返す (flume 側で素直に「初回扱い」になる)
+ * `FlumeStatePersister` storing one JSON document per file on top of
+ * `FunnelFileSystem`. The target directory is created recursively before save.
+ * load returns `null` when the file is absent, empty, or unparsable (flume
+ * then treats the source as first-run)
  */
 export function createFileStatePersister<S>(props: Props): FlumeStatePersister<S> {
   return {
@@ -35,24 +36,4 @@ export function createFileStatePersister<S>(props: Props): FlumeStatePersister<S
       props.fs.writeFileSync(props.path, JSON.stringify(state))
     },
   }
-}
-
-type DirProps = {
-  readonly fs: FunnelFileSystem
-  /** `<funnelDir>/channels/<channelId>` の絶対パス */
-  readonly channelDir: string
-}
-
-/**
- * channel 単位の state persister ファクトリ。`statePersister<S>("time")` を呼ぶと
- * `<channelDir>/time.json` 用の persister を返す
- */
-export function createChannelStatePersisterFactory(
-  props: DirProps,
-): <S>(filename: string) => FlumeStatePersister<S> {
-  return (filename) =>
-    createFileStatePersister({
-      fs: props.fs,
-      path: join(props.channelDir, `${filename}.json`),
-    })
 }

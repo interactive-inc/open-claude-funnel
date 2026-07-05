@@ -6,23 +6,24 @@ type Options = {
   readonly id: string
   readonly name?: string
   readonly cron: string
-  /** 既定: `{ mode: "lastOnly" }` (起動時に直近 1 件だけ取り戻す) */
+  /** Default: `{ mode: "lastOnly" }` (recover only the most recent missed tick on startup) */
   readonly catchupPolicy?: FlumeCatchupPolicy
   /**
-   * 各 tick を broadcast payload に変換する関数。省略時は
-   * `{ content: "tick", meta: { cron, firedAt } }` 相当
+   * Converts each tick into a broadcast payload. Defaults to the equivalent of
+   * `{ content: "tick", meta: { cron, firedAt } }`
    */
   readonly transform?: ChannelTransform
   /**
-   * `statePersister` を有効にするかどうか (既定 true)。`false` にすると catchup も無効
+   * Whether to enable `statePersister` (default true). `false` also disables
+   * catchup
    */
   readonly persist?: boolean
 }
 
 /**
- * 1 cron entry の time channel を作る factory。
+ * Factory for a single-cron-entry time channel.
  *
- * 使用例 (inta jiho):
+ * Example (inta jiho):
  * ```ts
  * const jiho = timeChannel({
  *   id: "inta-jiho",
@@ -34,8 +35,9 @@ type Options = {
  * })
  * ```
  *
- * `persist: true` (既定) の場合、`<channelDir>/time.json` に `lastFiredAt` を残し、
- * 起動時に `catchupPolicy` (既定 lastOnly) に従って過去 tick を取り戻す
+ * With `persist: true` (default), `lastFiredAt` is kept in `<channelDir>/time.json`
+ * and missed ticks are recovered on startup according to `catchupPolicy`
+ * (default lastOnly)
  */
 export function timeChannel(options: Options): Channel {
   const persist = options.persist ?? true

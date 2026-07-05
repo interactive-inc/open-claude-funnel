@@ -419,6 +419,9 @@ import { FunnelLocalConfig } from "@interactive-inc/claude-funnel/local-config"
 // コネクタの descriptor とスキーマ（Slack / Discord / GitHub / Schedule）
 // descriptor（slackConnector 等）を new Funnel({ connectors: [...] }) に渡す
 import { slackConnector, slackConnectorSchema } from "@interactive-inc/claude-funnel/connectors/slack"
+
+// Channel manifest（flume sources を broadcaster に流す宣言的 channel。ConnectorDescriptor 系とは独立）
+import { FunnelChannelSupervisor, timeChannel, defineChannel } from "@interactive-inc/claude-funnel/channel"
 ```
 
 ### テスト用のサンドボックス

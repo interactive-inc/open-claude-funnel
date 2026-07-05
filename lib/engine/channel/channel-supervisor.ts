@@ -9,23 +9,27 @@ import { join } from "node:path"
 import type { FunnelClock } from "@/engine/time/clock"
 import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import type { FunnelLogger } from "@/engine/logger/logger"
-import type { FunnelBroadcaster } from "@/gateway/broadcaster"
-import type { Channel, ChannelRuntime } from "@/engine/channel/channel"
-import { createChannelStatePersisterFactory } from "@/engine/channel/file-state-persister"
+import type {
+  Channel,
+  ChannelBroadcastPayload,
+  ChannelBroadcastSink,
+  ChannelRuntime,
+} from "@/engine/channel/channel"
+import { createChannelStatePersisterFactory } from "@/engine/channel/channel-state-persister-factory"
 
 type Props = {
-  readonly broadcaster: FunnelBroadcaster
+  readonly broadcaster: ChannelBroadcastSink
   readonly logger: FunnelLogger
   readonly clock: FunnelClock
   readonly fs: FunnelFileSystem
   /**
-   * Channel ごとの state / 永続化ファイルの起点。
-   * `<root>/channels/<channelId>/` 配下に書き込む
+   * Root for per-channel state files. Writes go under
+   * `<root>/channels/<channelId>/`
    */
   readonly dir: string
   readonly deps?: FlumeRuntimeDeps
   readonly onError?: FlumeErrorHandler
-  /** Host abort. fired すると全 channel を close する */
+  /** Host abort. Once fired the supervisor closes every channel and goes inert */
   readonly signal?: AbortSignal
 }
 
@@ -36,16 +40,16 @@ type Registered = {
 }
 
 /**
- * Channel-manifest を `FlumeConfluence` 1 つにマッピングする supervisor。
+ * Maps the Channel manifest onto a single `FlumeConfluence`.
  *
- *  - `register(channel)` で受け入れた channel は `start()` 時に `build(ctx)` され
- *    sources が confluence に `add(channelId, sources)` で挿される
- *  - confluence の onItem (groupId 付き) を 1 本受けて、対応する channel の `transform`
- *    を通してから `broadcaster.broadcast(content, meta)` に流す
- *  - `unregister(id)` で個別停止、`stop()` で全停止
+ *  - channels accepted via `register(channel)` are `build(ctx)`-ed on `start()`
+ *    and their sources inserted with `add(channelId, sources)`
+ *  - the confluence onItem stream (tagged with groupId) is routed through the
+ *    owning channel's `transform`, then into `broadcaster.broadcast(content, meta)`
+ *  - `unregister(id)` stops one channel, `stop()` stops them all
  *
- * 既存の `FunnelListenerRegistry` (ConnectorDescriptor 系) とは独立。
- * 並走させて段階的に移行する設計
+ * Independent from the ConnectorDescriptor system (`FunnelListenerRegistry`);
+ * the two run side-by-side so callers can migrate incrementally
  */
 export class FunnelChannelSupervisor {
   private readonly confluence: FlumeConfluence
@@ -54,7 +58,11 @@ export class FunnelChannelSupervisor {
 
   private readonly pending = new Map<string, Channel>()
 
+  private readonly opening = new Map<string, Promise<void>>()
+
   private started = false
+
+  private aborted = false
 
   constructor(private readonly props: Props) {
     this.confluence = new FlumeConfluence({
@@ -64,21 +72,26 @@ export class FunnelChannelSupervisor {
     })
 
     if (props.signal) {
-      const onAbort = (): void => {
-        this.stop().catch(() => {})
-      }
       if (props.signal.aborted) {
-        // host が既に abort 済み。後で start() しても何も挿さない
-        this.started = true
+        this.aborted = true
       } else {
+        const onAbort = (): void => {
+          this.aborted = true
+          this.stop().catch(() => {})
+        }
         props.signal.addEventListener("abort", onAbort, { once: true })
       }
     }
   }
 
-  /** start 前 / 後どちらでも受け付ける。start 後は即座に build + add する */
+  /**
+   * Accepted before or after start (post-start registers open immediately,
+   * tracked in `opening` until settled). No-op once the host signal aborted
+   */
   register(channel: Channel): void {
-    if (this.registered.has(channel.id) || this.pending.has(channel.id)) {
+    if (this.aborted) return
+
+    if (this.has(channel.id)) {
       throw new Error(`FunnelChannelSupervisor: channel id already registered: ${channel.id}`)
     }
 
@@ -87,11 +100,19 @@ export class FunnelChannelSupervisor {
       return
     }
 
-    void this.openChannel(channel)
+    const open = this.openChannel(channel).finally(() => {
+      this.opening.delete(channel.id)
+    })
+
+    this.opening.set(channel.id, open)
   }
 
+  /** Waits for an in-flight post-start open of the same id before removing */
   async unregister(id: string): Promise<void> {
     this.pending.delete(id)
+
+    const open = this.opening.get(id)
+    if (open) await open
 
     const entry = this.registered.get(id)
     if (!entry) return
@@ -102,7 +123,7 @@ export class FunnelChannelSupervisor {
   }
 
   async start(): Promise<void> {
-    if (this.started) return
+    if (this.started || this.aborted) return
     this.started = true
 
     const channels = [...this.pending.values()]
@@ -115,9 +136,12 @@ export class FunnelChannelSupervisor {
 
   async stop(): Promise<void> {
     this.started = false
+    this.pending.clear()
+
+    await Promise.all(this.opening.values())
+
     for (const entry of this.registered.values()) entry.abortController.abort()
     this.registered.clear()
-    this.pending.clear()
     await this.confluence.closeAll()
   }
 
@@ -126,22 +150,21 @@ export class FunnelChannelSupervisor {
   }
 
   has(id: string): boolean {
-    return this.registered.has(id) || this.pending.has(id)
+    return this.registered.has(id) || this.pending.has(id) || this.opening.has(id)
   }
 
+  /** Never rejects: build/add failures are logged and the channel is skipped */
   private async openChannel(channel: Channel): Promise<void> {
-    const channelDir = join(this.props.dir, "channels", channel.id)
     const abortController = new AbortController()
 
-    const runtime = await channel.build({
-      channelId: channel.id,
-      channelName: channel.name ?? channel.id,
-      signal: abortController.signal,
-      logger: this.props.logger,
-      clock: this.props.clock,
-      fs: this.props.fs,
-      statePersister: createChannelStatePersisterFactory({ fs: this.props.fs, channelDir }),
-    })
+    const runtime = await this.buildRuntime(channel, abortController.signal)
+    if (runtime instanceof Error) {
+      this.props.logger.error(`channel "${channel.id}" failed to build`, {
+        error: runtime.message,
+      })
+      abortController.abort()
+      return
+    }
 
     const result = await this.confluence.add(channel.id, runtime.sources)
     if (result instanceof Error) {
@@ -153,6 +176,24 @@ export class FunnelChannelSupervisor {
     }
 
     this.registered.set(channel.id, { channel, runtime, abortController })
+  }
+
+  private async buildRuntime(channel: Channel, signal: AbortSignal): Promise<ChannelRuntime | Error> {
+    const channelDir = join(this.props.dir, "channels", channel.id)
+
+    try {
+      return await channel.build({
+        channelId: channel.id,
+        channelName: channel.name ?? channel.id,
+        signal,
+        logger: this.props.logger,
+        clock: this.props.clock,
+        fs: this.props.fs,
+        statePersister: createChannelStatePersisterFactory({ fs: this.props.fs, channelDir }),
+      })
+    } catch (error) {
+      return error instanceof Error ? error : new Error(String(error))
+    }
   }
 
   private handleItem(item: FlumeConfluenceItem): void {
@@ -167,18 +208,19 @@ export class FunnelChannelSupervisor {
     this.props.broadcaster.broadcast(payload.content, payload.meta)
   }
 
-  private transformToPayload(
-    entry: Registered,
-    event: FlumeEvent,
-  ): { content: string; meta?: Record<string, string> } | null {
+  /** Never throws: a throwing user transform is logged and the event dropped */
+  private transformToPayload(entry: Registered, event: FlumeEvent): ChannelBroadcastPayload | null {
     const transform = entry.runtime.transform
     if (transform === undefined) {
       return { content: JSON.stringify(event.data), meta: event.meta }
     }
 
-    const out = transform(event)
-    if (out === null) return null
-
-    return { content: out.content, meta: out.meta }
+    try {
+      return transform(event)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.props.logger.error(`channel "${entry.channel.id}" transform threw`, { error: message })
+      return null
+    }
   }
 }

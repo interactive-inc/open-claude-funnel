@@ -4,8 +4,8 @@ import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import type { FunnelLogger } from "@/engine/logger/logger"
 
 /**
- * 1 tick / 1 event を `broadcaster.broadcast(content, meta)` に流すための整形済みペイロード。
- * `null` を返すと「drop」(broadcast しない) を意味する
+ * Payload shaped for `broadcaster.broadcast(content, meta)`. A transform
+ * returning `null` means "drop" (do not broadcast)
  */
 export type ChannelBroadcastPayload = {
   readonly content: string
@@ -15,22 +15,31 @@ export type ChannelBroadcastPayload = {
 export type ChannelTransform = (event: FlumeEvent) => ChannelBroadcastPayload | null
 
 /**
- * Channel が `build(ctx)` で返す実体。flume sources の集合と任意の transform を 1 まとまりとして
- * supervisor に渡す
+ * Narrow broadcast seam the supervisor depends on. The gateway
+ * `FunnelBroadcaster` satisfies it structurally, so the engine layer never
+ * imports from the gateway layer
+ */
+export type ChannelBroadcastSink = {
+  broadcast(content: string, meta?: Record<string, string>): void
+}
+
+/**
+ * What `Channel.build(ctx)` returns: the flume sources to run plus an optional
+ * transform, handed to the supervisor as one unit
  */
 export type ChannelRuntime = {
   readonly sources: ReadonlyArray<FlumeSource>
   /**
-   * 各 source の FlumeEvent を broadcast payload に変換する関数。
-   * 省略時は `{ content: JSON.stringify(event.data), meta: event.meta }` でフォールバック
+   * Converts each source's FlumeEvent into a broadcast payload. Defaults to
+   * `{ content: JSON.stringify(event.data), meta: event.meta }` when omitted
    */
   readonly transform?: ChannelTransform
 }
 
 /**
- * Channel.build に渡される環境。FunnelClock / FunnelLogger / FunnelFileSystem を経由して
- * IO 境界を抽象化する。statePersister は funnel-fs に紐づいた `FlumeStatePersister<S>` を
- * channel id-scoped なファイル名で生成するヘルパー
+ * Environment passed to `Channel.build`. IO boundaries stay abstract via
+ * FunnelClock / FunnelLogger / FunnelFileSystem. `statePersister` builds a
+ * funnel-fs-backed `FlumeStatePersister<S>` scoped to the channel id
  */
 export type ChannelBuildContext = {
   readonly channelId: string
@@ -40,15 +49,16 @@ export type ChannelBuildContext = {
   readonly clock: FunnelClock
   readonly fs: FunnelFileSystem
   /**
-   * `<funnelDir>/channels/<channelId>/<filename>.json` に Read/Write する純粋 DI 用 helper。
-   * flume が要求する `FlumeStatePersister<S>` 形に合わせる
+   * Reads/writes `<funnelDir>/channels/<channelId>/<filename>.json` in the
+   * `FlumeStatePersister<S>` shape flume expects
    */
   readonly statePersister: <S>(filename: string) => FlumeStatePersister<S>
 }
 
 /**
- * 1 channel = 1 inbound 受信単位。`build` が confluence に挿す sources を返す。
- * `build` は host abort / token rotation 等で何度でも再呼び出しされうる「純粋なファクトリ」
+ * One channel = one inbound intake unit. `build` returns the sources to plug
+ * into the confluence and may be re-invoked any number of times (host abort,
+ * token rotation, ...) — treat it as a pure factory
  */
 export type Channel = {
   readonly id: string
@@ -56,7 +66,7 @@ export type Channel = {
   readonly build: (ctx: ChannelBuildContext) => ChannelRuntime | Promise<ChannelRuntime>
 }
 
-/** `Channel` を frozen で返す identity helper。consumer の型推論を整える */
+/** Frozen identity helper that keeps consumer type inference tidy */
 export function defineChannel(channel: Channel): Channel {
   return Object.freeze({ ...channel })
 }

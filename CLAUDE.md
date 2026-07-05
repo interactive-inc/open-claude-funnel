@@ -24,6 +24,10 @@ CLI とプログラマブル API (`new Funnel(...)`) を 1 つの core から共
 - `fanout` — 全 subscriber が全 event を受信する。各 subscriber が独立した仕事を持つ場合（複数 Profile が同じ source を別々に処理する、観察用クライアントが覗くなど）
 - `exclusive` — 1 event を 1 subscriber が round-robin で消費する。subscriber が交換可能な worker で、各 event を 1 回だけ処理させたい場合
 
+### Channel manifest（`/channel` サブエントリ）
+
+上記の Channel（settings.json 上の transport 概念）と同名だが別系統の、プログラマブルな inbound 定義。`{ id, name?, build }` の宣言的 manifest を `FunnelChannelSupervisor` に register すると、`build(ctx)` が返す flume sources を 1 つの `FlumeConfluence` に挿し、event を optional な transform 経由で broadcaster に流す。ConnectorDescriptor 系（Listener Supervisor）とは独立に並走する段階的移行用 API。実体は `lib/engine/channel/`、公開は `@interactive-inc/claude-funnel/channel`。supervisor は gateway 具象でなく engine 側の narrow interface `ChannelBroadcastSink` に依存する（`FunnelBroadcaster` が構造的に満たす）。per-channel state は `ctx.statePersister<S>(filename)` が `<dir>/channels/<channelId>/<filename>.json` に書く。`timeChannel({ id, cron, transform })` が最初の具体 channel。
+
 ### Connector
 
 外部サービスとの 1 つの接続。`slack` / `gh` / `discord` / `schedule` の 4 型。Channel に nested で持つ（1 Channel に複数 Connector）。型ごとの内訳：
