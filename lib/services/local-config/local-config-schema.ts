@@ -66,7 +66,7 @@ export const profileSpecSchema = z.object({
   /** Env vars layered under the launched claude process. process.env wins on collision. */
   env: z.record(z.string(), z.string()).optional(),
   /**
-   * When true (the default), funnel injects `--session-id <uuid>` so that
+   * When true, funnel injects `--session-id <uuid>` so that
    * relaunching from the same cwd resumes the previous claude session
    * without bleeding into other channels or workspaces. Set to false for
    * profiles that should always start a fresh session.

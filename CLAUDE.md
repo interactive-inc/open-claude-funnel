@@ -98,7 +98,7 @@ URL を手で組み立てると `channel=` 付け忘れのような事故が起�
 - WS 購読 — `channelWsUrl({ base, channel, subscriberId?, since? })`。`channel` は必須でコンパイル時に強制される。token 認証は `channelWsProtocols(token)` を `new WebSocket(url, protocols)` の第 2 引数に渡す（ブラウザ WS は Authorization ヘッダを付けられないため subprotocol 経由）
 - HTTP（publisher / listeners client / MCP channel server）— loopback base は `gatewayLoopbackUrl(port)` に一元化。`http://127.0.0.1:${port}` を直書きしない
 - 非ループバック bind — `gatewayServer({ hostname: "0.0.0.0" })` は token 無しだと `start()` が throw する（全エンドポイントが無防備に晒されるため）。自前で前段認証を入れている場合のみ `allowInsecureHost: true` で許可する
-- 排他オプション — token は `botToken` か `botTokenEnv` の片方のみ（`EitherToken`、両方同時はコンパイルエラー）、event store は `dbPath` か `eventLog` の片方のみ、launch の `resume` は `profileId` がある時だけ指定できる（`LaunchOptions` の union）
+- 排他オプション — token は `botToken` か `botTokenEnv` の片方のみ（`EitherToken`、両方同時はコンパイルエラー）、event store は `dbPath` か `eventLog` の片方のみ、launch の `resume` は stable な `profileId` がある時だけ指定できる（`LaunchOptions` の union）
 
 ## コマンド
 
@@ -362,7 +362,7 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
 - connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` は engine（`FunnelChannels`）を直接叩いて connector を同期するため route 経由の hot-reload は走らない。`fnl claude` の dispatch が同期後に `reconcileListeners` で listener を取り込む（それ以外の経路は `fnl gateway restart` が必要）
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる
-- 永続 replay は `FunnelEventLog` 抽象 port（`record` / `loadSince` / `findMaxOffset` / `close`）に閉じる。default 実装は `SqliteFunnelEventLog`（再起動跨ぎの replay と offset 永続を担う）、`MemoryFunnelEventLog` は in-process double。`gatewayServer({ eventLog })` で注入でき、無指定なら dbPath の SQLite。Broadcaster が依存するのは `loadSince` だけ（narrow な `ReplaySource`）なので EventLog は interface segregation で繋がる
+- 永続 replay は `FunnelEventLog` 抽象 port（`record` / `loadSince` / `findMaxOffset` / `close`）に閉じる。default 実装は `SqliteFunnelEventLog`（再起動跨ぎの replay と offset 永続を担う）、`MemoryFunnelEventLog` は in-process double。`gatewayServer({ eventLog })` で注入でき、無指定なら tmp 配下で funnel dir + port ごとに分離した SQLite。Broadcaster が依存するのは `loadSince` だけ（narrow な `ReplaySource`）なので EventLog は interface segregation で繋がる
 - in-process で全 event を観測したい host は `FunnelGatewayServer.onEvent(handler)`（= broadcaster.subscribe の薄い委譲）を使う。別プロセスの daemon は観測できない（WS クライアントを使う）。`onEvent` は書き出し専用で、replay（読み戻し）は EventLog の責務 — 2 つを混ぜない
 - daemon 起動コマンドは `bun .../dist/gateway/daemon.js funnel-gateway[<FUNNEL_DIR>]` の形で argv 末尾に dir tag を付ける。Slack Socket Mode 起動時の競合 kill は `ps -o args=` でこの tag を grep して同 dir の daemon だけを kill する（別 `~/.funnel/` を指す他 install には触らない）
 - gateway daemon が built-in HTTP route 以外を露出する必要が出たら、`buildServiceRoutes` のように Hono サブアプリを書いて `gatewayServer({ extraRoutes, token })` に渡す。daemon は `funnel.diagnostics` / `funnel.doctor` 等を保持しているので、外部プロセス（MCP）からの HTTP 経由アクセスはこの経路でだけ提供する（built-in route table の `lib/gateway/routes/index.ts` は触らない）
@@ -391,6 +391,6 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
   5. funnel.json が無く `--channel <name>` のみ → raw launch（recipe 無し、既存 `~/.funnel/settings.json` のチャネルを使う）
   6. default global profile → launch
   7. どれも当たらない → help を stdout
-- recipe（options/env/resume）は解決された profile から `LaunchOptions` 経由で渡す。argv の組立順は `[profile.options] [user CLI args] [MCP server flag]`。env は `profile.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
+- recipe（options/env/resume）は解決された profile から `LaunchOptions` 経由で渡す。repo-local profile は name 由来の `localProfileId` で PID と `<repo-state>/claude/local-sessions.json` の session id を分離する。argv の組立順は `[profile.options] [user CLI args] [MCP server flag]`。env は `profile.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
 - 同一 profile 名の二重起動は PID ファイルで拒否する
 - `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `public/schema.json` を再生成

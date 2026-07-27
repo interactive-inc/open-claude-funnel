@@ -97,7 +97,7 @@ profiles は起動レシピ。各プロファイルは一意な `name` を持ち
 
 `funnel.json` に書けないものが 2 つある。delivery モード（fanout / exclusive）は CLI で設定する（`funnel.json` のチャネルは fanout 固定）。schedule の cron エントリも CLI で足す（`funnel.json` には schedule コネクタの存在だけ宣言できる）。
 
-セッション再開には `resume` の明示が要る。`funnel.json` の `resume` はデフォルト値を持たず、書かないと再開されない（未指定が false 扱いになる）。前回の claude セッションを引き継ぎたいなら必ず `"resume": true` を書く。再開のための session id は funnel が `~/.funnel/projects/<id>/settings.json` に自動で保存・読み出しするので、`funnel.json` には書かない。
+セッション再開には `resume` の明示が要る。`funnel.json` の `resume` はデフォルト値を持たず、書かないと再開されない（未指定が false 扱いになる）。前回の claude セッションを引き継ぎたいなら必ず `"resume": true` を書く。再開のための session id は funnel が `~/.funnel/projects/<id>/claude/local-sessions.json` に自動で保存・読み出しするので、`funnel.json` には書かない。
 
 ### 使い方
 
@@ -300,7 +300,8 @@ Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.j
 ├── gateway.pid                                         デーモン PID
 ├── gateway.token                                       デーモン HTTP / WS の Bearer token
 ├── claude/
-│   └── <profile-id>.pid                                同一プロファイルの二重起動を防ぐ（profile id がキー）
+│   ├── <profile-id>.pid                                同一プロファイルの二重起動を防ぐ（profile id がキー）
+│   └── local-sessions.json                             funnel.json profile の再開用 session id
 └── channels/
     └── <channel-id>/
         └── connectors/
@@ -308,7 +309,7 @@ Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.j
                 └── state.json                          コネクタごとの永続 state（例: schedule の lastFiredAt）
 
 /tmp/funnel/
-├── events.db                                           offset 再生付きの SQLite イベントログ
+├── events/<scope>.db                                   dir + port ごとに分離した offset 再生ログ
 ├── funnel.log                                          診断ログ（デーモンの起動、listener boot、接続）
 └── gateway.log                                         デーモンの stdout/stderr
 ```
@@ -400,7 +401,7 @@ const base = gatewayLoopbackUrl(9743) // → http://127.0.0.1:9743
 ```
 
 - 非ループバック bind（`gatewayServer({ hostname: "0.0.0.0" })`）は token 無しだと `start()` が throw する。前段で自前認証する場合のみ `allowInsecureHost: true`
-- コネクタの token は `botToken` か `botTokenEnv` の片方だけ（両方同時はコンパイルエラー）、event store は `dbPath` か `eventLog` の片方だけ、launch の `resume` は `profileId` がある時だけ指定できる
+- コネクタの token は `botToken` か `botTokenEnv` の片方だけ（両方同時はコンパイルエラー）、event store は `dbPath` か `eventLog` の片方だけ、launch の `resume` は stable な `profileId` がある時だけ指定できる
 
 ### サブエントリ
 

@@ -7,6 +7,7 @@ import type {
   FunnelLocalConfigSync,
   LocalConfigSyncResult,
 } from "@/services/local-config/local-config-sync"
+import { localProfileId } from "@/services/local-config/local-profile-id"
 import type { FunnelProfiles } from "@/engine/profiles/profiles"
 import type { FunnelListenersClient } from "@/gateway/listeners-client"
 
@@ -226,15 +227,14 @@ export const dispatchClaude = async (deps: Deps, args: string[]): Promise<Dispat
 
       await reconcileListeners(listeners, picked.name, synced)
 
-      // A funnel.json profile has no stable uuid (only a name), so it can't key
-      // the PID file or a resumable session — `resume` would be silently ignored.
-      // The type now forbids passing it without a profileId, making that explicit.
       const exitCode = await claude.launch({
         channel: picked.name,
         cwd,
         userArgs: parsed.userArgs,
         options: localProfile.options,
         env: localProfile.env,
+        profileId: localProfileId(localProfile.name),
+        resume: localProfile.resume ?? false,
       })
 
       return { stdout: null, stderr: null, exitCode }

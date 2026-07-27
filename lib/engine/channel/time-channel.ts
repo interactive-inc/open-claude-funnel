@@ -1,5 +1,5 @@
 import type { FlumeCatchupPolicy, FlumeTimeSourceState } from "@interactive-inc/flume"
-import { FlumeTimeSource } from "@interactive-inc/flume"
+import { FlumeTimeSource } from "@interactive-inc/flume/time"
 import { defineChannel, type Channel, type ChannelTransform } from "@/engine/channel/channel"
 
 type Options = {

@@ -15,6 +15,12 @@ type State = {
   lastOffset: number
   isStarted: boolean
   hasPendingReconnect: boolean
+  hasDeliveryFailure: boolean
+  messageQueue: Promise<void>
+}
+
+type ClosableSocket = {
+  close(): void
 }
 
 /**
@@ -28,6 +34,8 @@ export class FunnelChannelSubscriber {
     lastOffset: 0,
     isStarted: false,
     hasPendingReconnect: false,
+    hasDeliveryFailure: false,
+    messageQueue: Promise.resolve(),
   }
 
   constructor(private readonly props: Props) {
@@ -51,7 +59,7 @@ export class FunnelChannelSubscriber {
       process.stderr.write(`funnel: connected (${wsUrl})\n`)
     })
 
-    ws.addEventListener("message", (event) => this.handleMessage(event))
+    ws.addEventListener("message", (event) => this.enqueueMessage(event, ws))
 
     ws.addEventListener("close", () => {
       // A socket emits close once, but a stray double-start or an error+close
@@ -61,8 +69,11 @@ export class FunnelChannelSubscriber {
       this.state.hasPendingReconnect = true
       process.stderr.write(`funnel: disconnected, reconnecting in ${this.state.reconnectDelay}ms\n`)
       setTimeout(() => {
-        this.state.hasPendingReconnect = false
-        this.connect()
+        this.state.messageQueue.then(() => {
+          this.state.hasPendingReconnect = false
+          this.state.hasDeliveryFailure = false
+          this.connect()
+        })
       }, this.state.reconnectDelay)
       this.state.reconnectDelay = Math.min(this.state.reconnectDelay * 2, MAX_RECONNECT_DELAY)
     })
@@ -76,16 +87,28 @@ export class FunnelChannelSubscriber {
     })
   }
 
-  private async handleMessage(event: MessageEvent): Promise<void> {
+  private enqueueMessage(event: MessageEvent, socket?: ClosableSocket): void {
+    this.state.messageQueue = this.state.messageQueue.then(async () => {
+      if (this.state.hasDeliveryFailure) return
+
+      const delivered = await this.handleMessage(event)
+
+      if (delivered) return
+
+      // Do not acknowledge a later event past this gap. Closing the socket
+      // causes the gateway to replay from the last successfully delivered
+      // offset after reconnect.
+      this.state.hasDeliveryFailure = true
+      socket?.close()
+    })
+  }
+
+  private async handleMessage(event: MessageEvent): Promise<boolean> {
     try {
       const payload = JSON.parse(String(event.data))
       const eventType = payload.meta?.event_type ?? "unknown"
       const offset =
         typeof payload.offset === "number" ? payload.offset : null
-
-      if (offset !== null && offset > this.state.lastOffset) {
-        this.state.lastOffset = offset
-      }
 
       process.stderr.write(`funnel: received event (${eventType})\n`)
 
@@ -96,10 +119,18 @@ export class FunnelChannelSubscriber {
           meta: payload.meta,
         },
       })
+
+      if (offset !== null && offset > this.state.lastOffset) {
+        this.state.lastOffset = offset
+      }
+
+      return true
     } catch (error) {
       process.stderr.write(
         `funnel: error handling ws message (offset=${this.state.lastOffset}): ${errorMessageOf(error)}\n`,
       )
+
+      return false
     }
   }
 }

@@ -23,6 +23,10 @@ what funnel never writes to funnel.json:
 
     ~/.funnel/projects/<id>/settings.json   per-repo, set via CLI or TTY prompt
 
+  When a profile declares resume: true, its generated Claude session id lives
+  in ~/.funnel/projects/<id>/claude/local-sessions.json. The id is runtime
+  state and is never written to the committed funnel.json.
+
 how it is read:
 
   All CLI commands check for funnel.json in cwd. If found, FUNNEL_DIR is

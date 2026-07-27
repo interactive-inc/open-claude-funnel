@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname } from "node:path"
 import type { Server, ServerWebSocket } from "bun"
 import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
@@ -17,20 +17,19 @@ import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import type { FunnelClock } from "@/engine/time/clock"
+import { defaultEventDbPath } from "@/gateway/default-event-db-path"
 
 // Bind to loopback by default so the gateway is never reachable off-box. The
 // daemon honors FUNNEL_HOST to expose it deliberately; every privileged
 // endpoint still requires the bearer token regardless of the bind address.
 const DEFAULT_HOST = "127.0.0.1"
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"])
-const defaultDbPath = (): string => join(funnelTmpDir(), "events.db")
-
 /**
  * Where the gateway's durable replay log lives. The two ways to specify it are
  * mutually exclusive — modeled as a union so you can't pass both (the old shape
  * silently ignored `dbPath` when `eventLog` was also given).
  *
- * - omit both → SQLite at the default path (`<os.tmpdir()>/funnel/events.db`)
+ * - omit both → SQLite under `<tmpDir>/events/`, isolated by funnel dir + port
  * - `dbPath` → SQLite at a custom path (parent dir created on demand)
  * - `eventLog` → bring your own `FunnelEventLog` (e.g. `MemoryFunnelEventLog`)
  */
@@ -51,6 +50,8 @@ type Deps = GatewayEventStore & {
   selfPid?: number
   /** Funnel home dir, used to scope kill-competing to daemons rooted at the same dir. Defaults to FUNNEL_DIR. */
   dir?: string
+  /** Runtime directory used by the default replay database. Defaults to `funnelTmpDir()`. */
+  tmpDir?: string
   killCompetingSlack?: boolean
   /** Bearer token required for `/listeners*`, `/status`, and `/ws`. Empty string disables auth (tests only). */
   token?: string
@@ -124,12 +125,18 @@ export class FunnelGatewayServer {
     this.channels = deps.channels
     this.configuredPort = deps.port ?? resolveFunnelPort()
     this.configuredHostname = deps.hostname ?? DEFAULT_HOST
-    this.dbPath = deps.dbPath ?? defaultDbPath()
+    this.dir = deps.dir ?? FUNNEL_DIR
+    this.dbPath =
+      deps.dbPath ??
+      defaultEventDbPath({
+        tmpDir: deps.tmpDir ?? funnelTmpDir(),
+        funnelDir: this.dir,
+        port: this.configuredPort,
+      })
     this.process = deps.process
     this.logger = deps.logger
     this.onError = deps.onError ?? defaultOnError
     this.selfPid = deps.selfPid ?? globalThis.process.pid
-    this.dir = deps.dir ?? FUNNEL_DIR
     this.killCompetingSlack = deps.killCompetingSlack ?? true
     this.token = deps.token ?? ""
     this.allowInsecureHost = deps.allowInsecureHost ?? false

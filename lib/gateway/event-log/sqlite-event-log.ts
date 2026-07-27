@@ -117,7 +117,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
    * so this returns the full slice and lets the caller filter.
    */
   loadSince(since: number): ReplayableEvent[] {
-    const records = this.sink.query({ sinceSeq: since })
+    const records = this.sink.query({ sinceSeq: since, limit: Number.MAX_SAFE_INTEGER })
     const out: ReplayableEvent[] = []
     for (const record of records) {
       out.push({

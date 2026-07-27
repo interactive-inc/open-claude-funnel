@@ -67,7 +67,15 @@ describe("FunnelGateway", () => {
     const sleep = async (ms: number): Promise<void> => {
       clock.advance(ms)
     }
-    const gateway = new FunnelGateway({ fs, process: runner, clock, sleep })
+    const gateway = new FunnelGateway({
+      fs,
+      process: runner,
+      clock,
+      sleep,
+      dir: "/scoped/funnel",
+      tmpDir: "/scoped/tmp",
+      port: 18_888,
+    })
 
     await gateway.start({ caffeinate: false })
 
@@ -79,5 +87,10 @@ describe("FunnelGateway", () => {
     expect(detach.command).not.toContain("nohup")
     expect(detach.options.stdoutFile).toBeTruthy()
     expect(detach.options.stderrFile).toBeTruthy()
+    expect(detach.options.env).toEqual({
+      FUNNEL_DIR: "/scoped/funnel",
+      FUNNEL_PORT: "18888",
+      FUNNEL_TMP_DIR: "/scoped/tmp",
+    })
   })
 })

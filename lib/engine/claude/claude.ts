@@ -31,19 +31,18 @@ type LaunchCommon = {
 /**
  * A launch carries one of two targets, distinguished by `profileId`.
  *
- * - **profile launch** — has a stable `profileId` (uuid). Enforces singleton-ness
- *   via the PID file and may opt into `resume` to reuse the profile's session.
+ * - **profile launch** — has a stable `profileId` (a global uuid or a
+ *   deterministic repo-local id). Enforces singleton-ness via the PID file and
+ *   may opt into `resume` to reuse the profile's session.
  * - **profile-less launch** — raw `--channel`. Never enforces singleton-ness and
  *   always starts a fresh session, so `resume` is meaningless and disallowed.
  *
- * Modeling these as a union (rather than two independent optional fields) makes
- * `resume` without a `profileId` a compile error — previously it was silently
- * ignored, which masked real bugs (a profile resume that never took effect).
+ * Modeling these as a union makes `resume` without a profile id a compile error.
  */
 type LaunchTarget =
   | {
-      /** Stable id of the launching profile (uuid). Keys the singleton PID file
-       *  and the resumable session. */
+      /** Stable id of the launching profile. Keys the singleton PID file and
+       *  the resumable session. */
       profileId: string
       /** Inject `--session-id`/`--resume` for this profile (opt-in, default false).
        *  The persisted session is owned by the profile (by id). */

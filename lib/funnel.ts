@@ -8,6 +8,8 @@ import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelClaude } from "@/engine/claude/claude"
 import { FunnelFileProcessGuard } from "@/engine/claude/file-process-guard"
+import { FunnelFileSessionStore } from "@/engine/claude/file-session-store"
+import { FunnelRoutedSessionStore } from "@/engine/claude/routed-session-store"
 import { FunnelDiagnostics } from "@/services/diagnostics/funnel-diagnostics"
 import { FunnelDoctor } from "@/services/doctor/funnel-doctor"
 import { FunnelDocs } from "@/engine/docs/funnel-docs"
@@ -257,11 +259,15 @@ export class Funnel {
       channels: this.channels,
       prompter: props.tokenPrompter ?? new NodeFunnelTokenPrompter(),
     })
+    const sessions = new FunnelRoutedSessionStore({
+      global: this.profiles,
+      local: new FunnelFileSessionStore({ fs, dir }),
+    })
     this.claude = new FunnelClaude({
       channels: this.channels,
       mcp,
       gateway: this.gateway,
-      sessions: this.profiles,
+      sessions,
       guard: new FunnelFileProcessGuard({ fs, process, dir }),
       process,
       logger: this.logger,
@@ -342,6 +348,7 @@ export class Funnel {
       logger: this.logger,
       onError: this.onError,
       dir: this.paths.dir,
+      tmpDir: this.paths.tmpDir,
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
       allowInsecureHost: options.allowInsecureHost,
@@ -373,7 +380,13 @@ export class Funnel {
       ? ["caffeinate", "-is", "bun", gatewayScript]
       : ["bun", gatewayScript]
 
-    return this.process.attach(command)
+    return this.process.attach(command, {
+      env: {
+        FUNNEL_DIR: this.paths.dir,
+        FUNNEL_PORT: String(this.gateway.getPort()),
+        FUNNEL_TMP_DIR: this.paths.tmpDir,
+      },
+    })
   }
 
   gatewayClient(): ReturnType<typeof hc<GatewayApp>> {

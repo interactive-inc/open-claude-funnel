@@ -53,6 +53,28 @@ describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
     store.close()
   })
 
+  it("loadSince returns the complete backlog beyond the sink default page size", () => {
+    const store = new SqliteFunnelEventLog({ path: ":memory:" })
+
+    for (const offset of Array.from({ length: 1_205 }, (_, index) => index + 1)) {
+      store.record({
+        content: `event-${offset}`,
+        channelId: "c1",
+        connectorId: "k1",
+        meta: null,
+        offset,
+      })
+    }
+
+    const replay = store.loadSince(0)
+
+    expect(replay).toHaveLength(1_205)
+    expect(replay[1_000]?.offset).toBe(1_001)
+    expect(replay.at(-1)?.offset).toBe(1_205)
+
+    store.close()
+  })
+
   it("loadForChannel filters by channel and optionally connector", () => {
     const store = new SqliteFunnelEventLog({ path: ":memory:" })
 

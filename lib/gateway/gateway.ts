@@ -87,7 +87,11 @@ export class FunnelGateway {
     this.process.detach(command, {
       // Scope the spawned daemon to this gateway's dir so a funnel.json launch
       // (dir = <repo>/.funnel) keeps the daemon off ~/.funnel entirely.
-      env: { FUNNEL_DIR: this.dir },
+      env: {
+        FUNNEL_DIR: this.dir,
+        FUNNEL_PORT: String(this.port),
+        FUNNEL_TMP_DIR: this.tmpDir,
+      },
       stdoutFile: this.gatewayLog,
       stderrFile: this.gatewayLog,
     })

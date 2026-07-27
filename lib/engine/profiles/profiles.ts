@@ -1,10 +1,9 @@
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { FunnelFileSystem } from "@/engine/fs/file-system"
 import { NodeFunnelFileSystem } from "@/engine/fs/node-file-system"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import type { ProfileConfig } from "@/engine/settings/settings-schema"
+import { sessionFileExists } from "@/engine/claude/session-file-exists"
 
 type Deps = {
   store: FunnelSettingsReader
@@ -157,19 +156,7 @@ export class FunnelProfiles {
    * bad resume.
    */
   sessionFileExists(cwd: string, sessionId: string, env: Record<string, string>): boolean {
-    const configDir =
-      env.CLAUDE_CONFIG_DIR ??
-      globalThis.process.env.CLAUDE_CONFIG_DIR ??
-      join(homedir(), ".claude")
-    const projectSlug = cwd.replace(/\//g, "-")
-    const path = join(configDir, "projects", projectSlug, `${sessionId}.jsonl`)
-
-    if (!this.fs.existsSync(path)) return false
-
-    // An empty / whitespace-only jsonl is a corrupt session that claude rejects
-    // with "No conversation found"; treat it as missing so the launch resolves a
-    // fresh session instead of a doomed --resume.
-    return this.fs.readFileSync(path).trim().length > 0
+    return sessionFileExists({ fs: this.fs, cwd, sessionId, env })
   }
 
   update(name: string, fields: Partial<Omit<ProfileConfig, "name">>): void {

@@ -283,4 +283,41 @@ describe("dispatchClaude — argv parsing", () => {
     expect(attach?.options.env?.ANTHROPIC_MODEL).toEqual("claude-sonnet-4-6")
     expect(attach?.options.env?.FUNNEL_ONLY).toEqual("yes")
   })
+
+  test("--profile <name> resumes the session owned by a funnel.json profile", async () => {
+    const setup = buildSetup({
+      files: {
+        "/repo/funnel.json": JSON.stringify({
+          channels: [{ name: "ops" }],
+          profiles: [
+            {
+              name: "dev",
+              channel: "ops",
+              resume: true,
+              env: { CLAUDE_CONFIG_DIR: "/claude-config" },
+            },
+          ],
+        }),
+      },
+    })
+
+    await dispatchClaude({ ...setup.deps, cwd: "/repo" }, ["--profile", "dev"])
+
+    const firstCommand = lastAttach(setup.process)?.command ?? []
+    const sessionFlagIndex = firstCommand.indexOf("--session-id")
+    const sessionId = firstCommand[sessionFlagIndex + 1]
+
+    expect(sessionFlagIndex).toBeGreaterThanOrEqual(0)
+    expect(sessionId).toBeDefined()
+
+    if (!sessionId) throw new Error("missing generated session id")
+
+    setup.fs.writeFileSync(`/claude-config/projects/-repo/${sessionId}.jsonl`, "{}\n")
+
+    await dispatchClaude({ ...setup.deps, cwd: "/repo" }, ["--profile", "dev"])
+
+    expect(lastAttach(setup.process)?.command).toEqual(
+      expect.arrayContaining(["--resume", sessionId]),
+    )
+  })
 })
