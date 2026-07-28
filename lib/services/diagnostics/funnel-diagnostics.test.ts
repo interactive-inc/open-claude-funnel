@@ -1,15 +1,17 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { rmSync } from "node:fs"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
+import type { ConnectorConnectionStatus } from "@/engine/diagnostic-log/diagnostic-log"
 import { FunnelDiagnostics } from "@/services/diagnostics/funnel-diagnostics"
 import type { ChannelConfig } from "@/engine/settings/settings-schema"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 
 let dir = ""
+let diagnosticLog: SqliteConnectorDiagnosticLog
 const originalFetch = globalThis.fetch
 
 const channel: ChannelConfig = {
@@ -36,17 +38,12 @@ const buildDiagnostics = () =>
     publisher: {
       publish: async () => ({ state: "ok", offset: 1 }),
     },
+    diagnosticLog,
     tmpDir: dir,
   })
 
 const seedProcessed = (payload: Record<string, unknown>, eventId: string): void => {
-  const log = new SqliteConnectorDiagnosticLog({
-    rawPath: join(dir, "connector-raw.db"),
-    processedPath: join(dir, "connector-processed.db"),
-    connectionPath: join(dir, "connector-connection.db"),
-  })
-
-  log.recordProcessed({
+  diagnosticLog.recordProcessed({
     eventId,
     type: "slack",
     connectorId: "co-1",
@@ -54,25 +51,29 @@ const seedProcessed = (payload: Record<string, unknown>, eventId: string): void 
     outcome: "emitted",
     payload: JSON.stringify(payload),
   })
-  log.recordRaw({
+  diagnosticLog.recordRaw({
     eventId,
     type: "slack",
     connectorId: "co-1",
     channelId: "ch-1",
     payload: JSON.stringify(payload),
   })
-  log.recordConnection({
+  diagnosticLog.recordConnection({
     type: "slack",
     connectorId: "co-1",
     channelId: "ch-1",
     status: "connected",
     detail: "",
   })
-  log.close()
 }
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "funnel-diagnostics-"))
+  diagnosticLog = new SqliteConnectorDiagnosticLog({
+    rawPath: join(dir, "custom-raw.db"),
+    processedPath: join(dir, "custom-processed.db"),
+    connectionPath: join(dir, "custom-connection.db"),
+  })
   globalThis.fetch = (async () =>
     Response.json({
       pid: 123,
@@ -94,24 +95,18 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  diagnosticLog.close()
   rmSync(dir, { recursive: true, force: true })
 })
 
-const seedConnection = (status: string, detail: string): void => {
-  const log = new SqliteConnectorDiagnosticLog({
-    rawPath: join(dir, "connector-raw.db"),
-    processedPath: join(dir, "connector-processed.db"),
-    connectionPath: join(dir, "connector-connection.db"),
-  })
-
-  log.recordConnection({
+const seedConnection = (status: ConnectorConnectionStatus, detail: string): void => {
+  diagnosticLog.recordConnection({
     type: "slack",
     connectorId: "co-1",
     channelId: "ch-1",
-    status: status as "auth-failed" | "error" | "connected" | "disconnected" | "started" | "stopped",
+    status,
     detail,
   })
-  log.close()
 }
 
 describe.skipIf(!isBun)("FunnelDiagnostics", () => {
@@ -166,6 +161,7 @@ describe.skipIf(!isBun)("FunnelDiagnostics", () => {
       gateway: { getStatus: () => ({ running: true, pid: 123, port: 4567 }) },
       gatewayToken: { read: () => null },
       publisher: { publish: async () => ({ state: "ok", offset: 1 }) },
+      diagnosticLog,
       tmpDir: dir,
     })
 
@@ -223,5 +219,14 @@ describe.skipIf(!isBun)("FunnelDiagnostics", () => {
     expect(all.length).toBe(1)
     expect(filtered.length).toBe(1)
     expect(missing.length).toBe(0)
+  })
+
+  test("reads the injected log even when its files do not use tmpDir defaults", async () => {
+    seedProcessed({ type: "message", text: "custom paths" }, "ev-custom")
+
+    const events = await buildDiagnostics().recentEvents("ops")
+
+    expect(events).toHaveLength(1)
+    expect(events[0]?.eventId).toBe("ev-custom")
   })
 })

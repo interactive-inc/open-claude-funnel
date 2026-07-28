@@ -6,6 +6,10 @@ import type { FunnelLogEntry } from "@/logger/funnel-log-entry"
 import type { FunnelLogPrimarySink, FunnelLogSink } from "@/logger/funnel-log-sink"
 
 type IndexValues<I extends ReadonlyArray<string>> = Record<I[number], string | null>
+type IndexPrefixes<I extends ReadonlyArray<string>> = Partial<Record<I[number], string>>
+type IndexSets<I extends ReadonlyArray<string>> = Partial<
+  Record<I[number], ReadonlyArray<string | null>>
+>
 
 /**
  * Constructor props. The shape narrows on `I`: when no indexes are
@@ -38,10 +42,16 @@ type Props<E, I extends ReadonlyArray<string>> = I extends readonly []
 type QueryFilter<I extends ReadonlyArray<string>> = {
   /** Return only records with seq strictly greater than this. */
   sinceSeq?: number
+  /** Match one sequence number exactly instead of using `sinceSeq`. */
+  seq?: number
   /** Filter by the top-level `event.type` discriminator. */
   type?: string
   /** Filter by indexed columns. Keys are constrained to the declared `indexes`. */
   where?: Partial<IndexValues<I>>
+  /** Prefix-match indexed text columns. */
+  wherePrefix?: IndexPrefixes<I>
+  /** Match any value in a set for indexed columns. */
+  whereIn?: IndexSets<I>
   /** Maximum rows returned. Default 1000. */
   limit?: number
   /**
@@ -266,8 +276,16 @@ export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = read
   }
 
   query(props: QueryFilter<I> = {}): FunnelLogEntry<E>[] {
-    const conditions: string[] = ["seq > ?"]
-    const params: SQLQueryBindings[] = [props.sinceSeq ?? 0]
+    const conditions: string[] = []
+    const params: SQLQueryBindings[] = []
+
+    if (props.seq !== undefined) {
+      conditions.push("seq = ?")
+      params.push(props.seq)
+    } else {
+      conditions.push("seq > ?")
+      params.push(props.sinceSeq ?? 0)
+    }
 
     if (typeof props.type === "string") {
       conditions.push("type = ?")
@@ -276,6 +294,14 @@ export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = read
 
     if (props.where) {
       this.appendWhereConditions(props.where, conditions, params)
+    }
+
+    if (props.wherePrefix) {
+      this.appendPrefixConditions(props.wherePrefix, conditions, params)
+    }
+
+    if (props.whereIn) {
+      this.appendSetConditions(props.whereIn, conditions, params)
     }
 
     const limit = props.limit ?? 1000
@@ -326,9 +352,8 @@ export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = read
     conditions: string[],
     params: SQLQueryBindings[],
   ): void {
-    const widened = where as unknown as Partial<Record<string, string | null>>
-    for (const col of this.indexes) {
-      const value = widened[col]
+    for (const col of this.indexKeys()) {
+      const value = where[col]
       if (value === undefined) continue
       if (value === null) {
         conditions.push(`${col} IS NULL`)
@@ -336,6 +361,48 @@ export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = read
         conditions.push(`${col} = ?`)
         params.push(value)
       }
+    }
+  }
+
+  private appendPrefixConditions(
+    prefixes: IndexPrefixes<I>,
+    conditions: string[],
+    params: SQLQueryBindings[],
+  ): void {
+    for (const col of this.indexKeys()) {
+      const value = prefixes[col]
+      if (value === undefined) continue
+
+      conditions.push(`${col} LIKE ? ESCAPE '\\'`)
+      params.push(`${escapeLike(value)}%`)
+    }
+  }
+
+  private appendSetConditions(
+    sets: IndexSets<I>,
+    conditions: string[],
+    params: SQLQueryBindings[],
+  ): void {
+    for (const col of this.indexKeys()) {
+      const values = sets[col]
+      if (values === undefined) continue
+      if (values.length === 0) {
+        conditions.push("1 = 0")
+        continue
+      }
+
+      const nonNull = values.filter((value): value is string => value !== null)
+      const hasNull = nonNull.length !== values.length
+      const alternatives: string[] = []
+
+      if (nonNull.length > 0) {
+        alternatives.push(`${col} IN (${nonNull.map(() => "?").join(", ")})`)
+        params.push(...nonNull)
+      }
+
+      if (hasNull) alternatives.push(`${col} IS NULL`)
+
+      conditions.push(`(${alternatives.join(" OR ")})`)
     }
   }
 
@@ -350,6 +417,10 @@ export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = read
     }
 
     this.maybeTrimBytes()
+  }
+
+  private indexKeys(): ReadonlyArray<I[number]> {
+    return this.indexes
   }
 
   /**
@@ -435,6 +506,10 @@ export class FunnelLogSqliteSink<E, const I extends ReadonlyArray<string> = read
       apply()
     }
   }
+}
+
+function escapeLike(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")
 }
 
 function validateIndexNames(names: ReadonlyArray<string>): void {

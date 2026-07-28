@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { z } from "zod"
 import { FunnelChannels } from "@/engine/channels/channels"
 import { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
@@ -39,7 +39,9 @@ const buildChannels = (): FunnelChannels => {
 }
 
 const listEntries = (channels: FunnelChannels, connectorName: string) =>
-  z.array(scheduleEntrySchema).parse(channels.connectorOp("ops", connectorName, "listEntries", undefined))
+  z
+    .array(scheduleEntrySchema)
+    .parse(channels.connectorOp("ops", connectorName, "listEntries", undefined))
 
 describe("FunnelChannels", () => {
   test("add assigns a stable id and persists the channel", () => {
@@ -138,6 +140,54 @@ describe("FunnelChannels", () => {
     channels.connectorOp("ops", "cron", "removeEntry", { id: entry.id })
 
     expect(listEntries(channels, "cron")).toHaveLength(0)
+  })
+
+  test("schedule connector supports a native once entry", () => {
+    const channels = buildChannels()
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", { type: "schedule", name: "cron" })
+
+    const entry = scheduleEntrySchema.parse(
+      channels.connectorOp("ops", "cron", "addEntry", {
+        id: "release",
+        runAt: "2026-08-01T09:00:00+09:00",
+        prompt: "release",
+      }),
+    )
+
+    expect(entry.kind).toBe("once")
+    if (entry.kind === "once") {
+      expect(entry.runAt).toBe("2026-08-01T09:00:00+09:00")
+    }
+    expect(entry.createdAt).toBeDefined()
+  })
+
+  test("schedule connector rejects invalid cron and duplicate entry ids", () => {
+    const channels = buildChannels()
+    channels.add({ name: "ops" })
+    channels.addConnector("ops", { type: "schedule", name: "cron" })
+
+    expect(() =>
+      channels.connectorOp("ops", "cron", "addEntry", {
+        id: "bad",
+        cron: "60 * * * *",
+        prompt: "never",
+      }),
+    ).toThrow(/out of range/)
+
+    channels.connectorOp("ops", "cron", "addEntry", {
+      id: "same",
+      cron: "* * * * *",
+      prompt: "first",
+    })
+
+    expect(() =>
+      channels.connectorOp("ops", "cron", "addEntry", {
+        id: "same",
+        cron: "* * * * *",
+        prompt: "second",
+      }),
+    ).toThrow(/already exists/)
   })
 
   test("updateConnector rebuilds a slack token slot, dropping the stale literal on switch to env ref", () => {

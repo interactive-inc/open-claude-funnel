@@ -116,9 +116,13 @@ cron 起動を足す（schedule コネクタを宣言したうえで、エント
 bunx fnl channels ops connectors add daily --type=schedule
 bunx fnl channels ops connectors daily schedules add morning \
     --cron="0 9 * * *" --prompt="morning standup"
+bunx fnl channels ops connectors daily schedules add release \
+    --run-at="2026-08-01T09:00:00+09:00" --prompt="release check"
 ```
 
-tick ごとにプロンプトがチャネルへ発火する。9 時にデーモンが落ちていても、次回起動時に逃した枠を catch-up する（`meta.catchup = "true"`、最大 24 時間）。
+cron は一致する tick ごと、一回実行は `run-at` 以降の最初の tick でプロンプトを発火する。発火済みの一回実行は state に記録されるため、設定削除の hook が失敗しても再発火しない。デーモン停止中に逃した枠は次回起動時に catch-up する（`meta.catchup = "true"`。cron の探索は最大 24 時間）。
+
+cron は標準の 5 フィールド規則に従う。day-of-month と day-of-week を両方限定した場合は OR、日曜は `0` と `7` の両方を受け付ける。不正な式は登録時に拒否される。
 
 `funnel.json` を持つリポジトリは自分自身にスコープされる。初回起動時に funnel は `funnel.json` の先頭へ不変の `id`(uuid) を書き戻し、以降このリポジトリの funnel state を `~/.funnel/projects/<id>/` 配下に隔離する。グローバルの `~/.funnel` には一切触らない（イベントログと一時ファイルだけが `/tmp/funnel/` で共有）。このスコープはリポジトリ内で実行する全 CLI コマンドに効く。
 

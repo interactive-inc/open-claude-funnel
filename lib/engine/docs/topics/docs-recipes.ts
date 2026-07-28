@@ -30,6 +30,11 @@ export const docsRecipes = `funnel docs recipes — common task playbooks
   fnl channels daily connectors cron schedules add morning \\
     --cron="0 9 * * *" --prompt="summarize yesterday's PRs"
 
+— schedule a one-shot prompt —
+
+  fnl channels daily connectors cron schedules add release \\
+    --run-at="2026-08-01T09:00:00+09:00" --prompt="run the release check"
+
 — diagnose "events stopped arriving" —
 
   fnl debug --all --json

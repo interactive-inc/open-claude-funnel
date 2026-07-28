@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
 import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
@@ -8,8 +8,9 @@ import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runne
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { MemoryFunnelTokenPrompter } from "@/engine/token-prompter/memory-token-prompter"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
-const buildFunnel = (): Funnel =>
+const buildFunnel = (diagnosticLog?: MemoryConnectorDiagnosticLog): Funnel =>
   new Funnel({
     store: new MockFunnelSettingsReader(),
     fs: new MemoryFunnelFileSystem(),
@@ -19,6 +20,7 @@ const buildFunnel = (): Funnel =>
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
     tokenPrompter: new MemoryFunnelTokenPrompter(),
     connectors: builtinConnectors(),
+    diagnosticLog,
   })
 
 describe("Funnel facade", () => {
@@ -70,5 +72,23 @@ describe("Funnel facade", () => {
     expect(funnel.profiles).toBeDefined()
     expect(funnel.localConfig).toBeDefined()
     expect(funnel.localConfigSync).toBeDefined()
+  })
+
+  test("diagnostics reads the same log instance injected into listeners", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const funnel = buildFunnel(diagnosticLog)
+    const channel = funnel.channels.add({ name: "ops" })
+    diagnosticLog.recordProcessed({
+      eventId: "event-1",
+      type: "schedule",
+      connectorId: null,
+      channelId: channel.id,
+      outcome: "emitted",
+      payload: "hello",
+    })
+
+    const events = await funnel.diagnostics.recentEvents("ops")
+
+    expect(events.map((event) => event.eventId)).toEqual(["event-1"])
   })
 })

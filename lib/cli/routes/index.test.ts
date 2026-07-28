@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { routes } from "@/cli/routes"
 import { Funnel } from "@/funnel"
 import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
+import { scheduleEntrySchema } from "@/engine/connectors/schedule-connector-schema"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
@@ -174,6 +175,48 @@ describe("CLI routes: connectors", () => {
 
     expect(res.status).toBe(200)
     expect(env.funnel.channels.get("ops")?.connectors).toHaveLength(0)
+  })
+
+  test("POST .../schedules/add accepts a native one-shot entry", async () => {
+    const env = buildEnv()
+    env.funnel.channels.add({ name: "ops" })
+    env.funnel.channels.addConnector("ops", { type: "schedule", name: "cron" })
+    const query = new URLSearchParams({
+      "run-at": "2026-08-01T09:00:00+09:00",
+      prompt: "release",
+    })
+
+    const res = await request(
+      env,
+      "POST",
+      `/channels/ops/connectors/cron/schedules/add/release?${query.toString()}`,
+    )
+    const entries = scheduleEntrySchema
+      .array()
+      .parse(env.funnel.channels.connectorOp("ops", "cron", "listEntries", undefined))
+
+    expect(res.status).toBe(200)
+    expect(entries[0]?.kind).toBe("once")
+  })
+
+  test("POST .../schedules/add rejects invalid and ambiguous schedules", async () => {
+    const env = buildEnv()
+    env.funnel.channels.add({ name: "ops" })
+    env.funnel.channels.addConnector("ops", { type: "schedule", name: "cron" })
+
+    const invalid = await request(
+      env,
+      "POST",
+      "/channels/ops/connectors/cron/schedules/add/bad?cron=60%20*%20*%20*%20*&prompt=no",
+    )
+    const ambiguous = await request(
+      env,
+      "POST",
+      "/channels/ops/connectors/cron/schedules/add/both?cron=*%20*%20*%20*%20*&run-at=2026-08-01T00%3A00%3A00Z&prompt=no",
+    )
+
+    expect(invalid.status).toBe(400)
+    expect(ambiguous.status).toBe(400)
   })
 })
 

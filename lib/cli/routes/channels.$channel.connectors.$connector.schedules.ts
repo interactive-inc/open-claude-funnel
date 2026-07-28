@@ -10,7 +10,7 @@ usage: funnel channels <ch> connectors <conn> schedules [subcommand]
 
 subcommands:
   (none) / list schedule entries
-  add <id> --cron=... --prompt=... [--enabled=true] [--catchup-policy=latest|all|skip] / add entry
+  add <id> (--cron=... | --run-at=...) --prompt=... [--enabled=true] [--catchup-policy=latest|all|skip] / add entry
   remove <id> / remove entry`
 
 export const channelsConnectorsSchedulesGroupHandler = factory.createHandlers(
@@ -26,7 +26,13 @@ export const channelsConnectorsSchedulesGroupHandler = factory.createHandlers(
     if (entries.length === 0) return c.text("no schedule entries")
 
     return c.text(
-      entries.map((e) => `${e.id}\t${e.cron}\t${e.enabled ? "on" : "off"}\t${e.prompt}`).join("\n"),
+      entries
+        .map((entry) => {
+          const schedule = entry.kind === "cron" ? entry.cron : `once:${entry.runAt}`
+
+          return `${entry.id}\t${schedule}\t${entry.enabled ? "on" : "off"}\t${entry.prompt}`
+        })
+        .join("\n"),
     )
   },
 )

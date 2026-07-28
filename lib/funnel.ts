@@ -87,9 +87,10 @@ type Props = {
   connectors?: ConnectorDescriptor[]
   /**
    * Diagnostic log of inbound connector traffic (raw events before filtering
-   * and the processor's verdict after). Threaded into listeners that record
-   * it. Only the gateway daemon injects a `SqliteConnectorDiagnosticLog`; everywhere
-   * else this stays absent and recording is a no-op.
+   * and the processor's verdict after). The same instance is threaded into
+   * listeners for writes and `funnel.diagnostics` for reads, so custom storage
+   * paths remain opaque to the service layer. Omit it to disable event
+   * diagnostics for this facade.
    */
   diagnosticLog?: ConnectorDiagnosticLog
   /**
@@ -180,6 +181,7 @@ export class Funnel {
   private readonly clock: FunnelClock
   private readonly http: FunnelHttpClient
   private readonly onError: OnFunnelError
+  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
 
   constructor(props: Props = {}) {
     const dir = props.dir ?? resolveFunnelDir()
@@ -197,6 +199,7 @@ export class Funnel {
     this.clock = clock
     this.http = http
     this.onError = props.onError ?? noopOnError
+    this.diagnosticLog = props.diagnosticLog
 
     const store =
       props.store ??
@@ -213,7 +216,7 @@ export class Funnel {
       http,
       clock,
       logger: this.logger,
-      diagnosticLog: props.diagnosticLog,
+      diagnosticLog: this.diagnosticLog,
       signal: props.signal,
       dir,
     })
@@ -279,6 +282,7 @@ export class Funnel {
       gatewayToken: this.gatewayToken,
       channels: this.channels,
       publisher: this.publisher,
+      diagnosticLog: this.diagnosticLog,
       tmpDir,
     })
 
@@ -353,6 +357,7 @@ export class Funnel {
       token: options.token ?? this.gatewayToken.ensure(),
       allowInsecureHost: options.allowInsecureHost,
       extraRoutes: options.extraRoutes,
+      diagnosticLog: this.diagnosticLog,
     })
   }
 

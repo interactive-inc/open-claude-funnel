@@ -18,6 +18,7 @@ import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import type { FunnelClock } from "@/engine/time/clock"
 import { defaultEventDbPath } from "@/gateway/default-event-db-path"
+import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 
 // Bind to loopback by default so the gateway is never reachable off-box. The
 // daemon honors FUNNEL_HOST to expose it deliberately; every privileged
@@ -69,6 +70,8 @@ type Deps = GatewayEventStore & {
    * `/channels`, `/health` are mounted after and take precedence on conflict.
    */
   extraRoutes?: Hono<Env>
+  /** Read-side diagnostic source exposed to the built-in debug route. */
+  diagnosticLog?: ConnectorDiagnosticLog
 }
 
 type WsData = {
@@ -117,6 +120,7 @@ export class FunnelGatewayServer {
   private readonly nowMs: () => number
   private readonly extraRoutes: Hono<Env> | null
   private readonly ownsEventLog: boolean
+  private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
   private startedAt: number | null = null
   private server: Server<WsData> | null = null
   private disposed = false
@@ -141,6 +145,7 @@ export class FunnelGatewayServer {
     this.token = deps.token ?? ""
     this.allowInsecureHost = deps.allowInsecureHost ?? false
     this.extraRoutes = deps.extraRoutes ?? null
+    this.diagnosticLog = deps.diagnosticLog
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
     if (deps.eventLog) {
@@ -413,6 +418,7 @@ export class FunnelGatewayServer {
         channels: this.channels,
         uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
         emit: (input) => this.emit(input),
+        diagnosticLog: this.diagnosticLog,
       })
 
       return next()

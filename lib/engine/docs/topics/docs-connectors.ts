@@ -8,7 +8,7 @@ types:
   slack      Socket Mode listener + REST adapter
   gh         GitHub polling listener + REST adapter
   discord    Discord listener + REST adapter
-  schedule   cron-style tick listener (no adapter — schedule does not send out)
+  schedule   cron + one-shot tick listener (no adapter — schedule does not send out)
 
 per-type parts:
 
@@ -29,8 +29,8 @@ operations (all nested under a channel):
   fnl channels <ch> connectors <name> request …      proxy an HTTP call to the
                                                      adapter (e.g. send a Slack
                                                      message via Claude path)
-  fnl channels <ch> connectors <name> schedules …    manage cron entries on a
-                                                     schedule connector
+  fnl channels <ch> connectors <name> schedules …    manage cron / one-shot
+                                                     schedule entries
 
 tokens:
 

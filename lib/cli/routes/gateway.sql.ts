@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs"
-import { join } from "node:path"
 import { z } from "zod"
 import { factory } from "@/cli/factory"
 import { helpGuard } from "@/cli/router/help-guard"
@@ -7,6 +6,7 @@ import { zValidator } from "@/cli/router/validator"
 import { renderYaml } from "@/engine/yaml/yaml-render"
 import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 import { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
+import { connectorDiagnosticLogPaths } from "@/engine/diagnostic-log/diagnostic-log-paths"
 
 export const PRESETS: Record<string, string> = {
   recent: "SELECT seq, ts, type, outcome FROM processed ORDER BY seq DESC LIMIT 20",
@@ -134,9 +134,7 @@ export const gatewaySqlHandler = factory.createHandlers(
     if (!sql) return c.text(sqlHelp)
 
     const tmpDir = funnelTmpDir()
-    const rawPath = join(tmpDir, "connector-raw.db")
-    const processedPath = join(tmpDir, "connector-processed.db")
-    const connectionPath = join(tmpDir, "connector-connection.db")
+    const { rawPath, processedPath, connectionPath } = connectorDiagnosticLogPaths(tmpDir)
 
     if (!existsSync(rawPath) || !existsSync(processedPath) || !existsSync(connectionPath)) {
       return c.text("no diagnostic store yet (the gateway has not initialized it)")

@@ -12,6 +12,9 @@ import { FunnelLocalConfig } from "@/services/local-config/local-config"
 import { FunnelLocalConfigWriter } from "@/services/local-config/local-config-writer"
 import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { Funnel } from "@/funnel"
+import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
+import { connectorDiagnosticLogPaths } from "@/engine/diagnostic-log/diagnostic-log-paths"
+import { funnelTmpDir } from "@/engine/settings/tmp-dir"
 
 // A `funnel` CLI launch defaults to a distinct gateway port so it never
 // collides with a gateway hosted programmatically on 9742 (e.g. another app
@@ -40,9 +43,15 @@ const repoDir = resolveRepoDir(
 
 if (repoDir) process.env.FUNNEL_DIR = repoDir
 
+const diagnosticDir = funnelTmpDir()
+const diagnosticLog = new SqliteConnectorDiagnosticLog({
+  ...connectorDiagnosticLogPaths(diagnosticDir),
+})
+
 const funnel = new Funnel({
   logger: new NodeFunnelLogger(),
   connectors: builtinConnectors(),
+  diagnosticLog,
 })
 const { claude, profiles, localConfig, localConfigSync } = funnel
 

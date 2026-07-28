@@ -126,18 +126,25 @@ export type ConnectorQuery = {
   type?: string
   connectorId?: string | null
   channelId?: string | null
+  /** Match one table-local sequence number exactly. */
+  seq?: number
   /** Cap on returned rows. The most recent matching rows are returned, oldest first. */
   limit?: number
 }
 
-export type ConnectorRawQuery = ConnectorQuery
+export type ConnectorRawQuery = ConnectorQuery & {
+  eventId?: string
+}
 
 export type ConnectorProcessedQuery = ConnectorQuery & {
+  eventId?: string
   outcome?: string
+  outcomePrefix?: string
 }
 
 export type ConnectorConnectionQuery = ConnectorQuery & {
   status?: ConnectorConnectionStatus
+  statuses?: ReadonlyArray<ConnectorConnectionStatus>
 }
 
 /**

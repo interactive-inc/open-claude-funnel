@@ -4,6 +4,7 @@ import type { ConnectorDescriptor } from "@/engine/connectors/connector-descript
 import {
   scheduleConnectorSchema,
   scheduleEntrySchema,
+  scheduleEntryInputSchema,
 } from "@/engine/connectors/schedule-connector-schema"
 import { FunnelScheduleListener, type ScheduleOnFired } from "@/engine/connectors/schedule-listener"
 import { FunnelScheduleStateStore } from "@/engine/connectors/schedule-state-store"
@@ -12,14 +13,6 @@ export type ScheduleConnectorOptions = {
   /** Invoked after a schedule entry fires successfully — e.g. to drop one-shot entries. */
   onFired?: ScheduleOnFired
 }
-
-const addEntryArgsSchema = z.object({
-  cron: z.string(),
-  prompt: z.string(),
-  id: z.string().optional(),
-  enabled: z.boolean().optional(),
-  catchupPolicy: scheduleEntrySchema.shape.catchupPolicy.optional(),
-})
 
 const removeEntryArgsSchema = z.object({ id: z.string() })
 
@@ -30,9 +23,7 @@ const removeEntryArgsSchema = z.object({ id: z.string() })
  * (listEntries / addEntry / removeEntry) and reached through
  * `funnel.channels.connectorOp(...)`.
  */
-export const scheduleConnector = (
-  options: ScheduleConnectorOptions = {},
-): ConnectorDescriptor => ({
+export const scheduleConnector = (options: ScheduleConnectorOptions = {}): ConnectorDescriptor => ({
   type: "schedule",
   toolExposed: false,
   createListener(config, deps) {
@@ -81,11 +72,20 @@ export const scheduleConnector = (
     },
     addEntry(props) {
       const parsed = scheduleConnectorSchema.parse(props.config)
-      const args = addEntryArgsSchema.parse(props.args)
+      const args = scheduleEntryInputSchema.parse(props.args)
+      const id = args.id ?? props.context.generateId()
+
+      if (parsed.entries.some((entry) => entry.id === id)) {
+        throw new Error(`schedule entry "${id}" already exists`)
+      }
+
       const entry = scheduleEntrySchema.parse({
-        id: args.id ?? props.context.generateId(),
-        cron: args.cron,
+        id,
+        ...("cron" in args
+          ? { kind: "cron", cron: args.cron }
+          : { kind: "once", runAt: args.runAt }),
         prompt: args.prompt,
+        createdAt: props.context.now,
         ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
         ...(args.catchupPolicy !== undefined ? { catchupPolicy: args.catchupPolicy } : {}),
       })

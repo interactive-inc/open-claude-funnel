@@ -1,4 +1,9 @@
 import type { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
+import type {
+  StoredConnectionEvent,
+  StoredProcessedEvent,
+  StoredRawEvent,
+} from "@/engine/diagnostic-log/diagnostic-log"
 
 export type DiagnosticEvent = {
   seq: number | null
@@ -82,6 +87,38 @@ export const toDiagnosticConnectionError = (
   type: stringOr(row.type, "?"),
   status: stringOr(row.status, "?"),
   detail: stringOrNull(row.detail),
+})
+
+export const diagnosticEventOfProcessed = (event: StoredProcessedEvent): DiagnosticEvent => ({
+  seq: event.seq,
+  ts: event.ts,
+  type: event.type,
+  outcome: event.outcome,
+  eventId: event.eventId,
+  payload: stringOrNull(event.payload),
+  payloadParsed: parsePayloadObject(stringOrNull(event.payload)),
+  preview: previewOf(event.payload),
+})
+
+export const diagnosticEventOfRaw = (event: StoredRawEvent): DiagnosticEvent => ({
+  seq: event.seq,
+  ts: event.ts,
+  type: event.type,
+  outcome: "",
+  eventId: event.eventId,
+  payload: stringOrNull(event.payload),
+  payloadParsed: parsePayloadObject(stringOrNull(event.payload)),
+  preview: previewOf(event.payload),
+})
+
+export const diagnosticConnectionEventOf = (
+  event: StoredConnectionEvent,
+): DiagnosticConnectionError => ({
+  seq: event.seq,
+  ts: event.ts,
+  type: event.type,
+  status: event.status,
+  detail: stringOrNull(event.detail),
 })
 
 export const queryRows = (
