@@ -193,7 +193,7 @@ export class FunnelGatewayServer {
 
   async start(): Promise<void> {
     if (this.disposed) {
-      // A second start() after stop() would silently no-op once the eventLog
+      // A second start() after stop() would silently no-op once `eventLog`
       // was closed, leaving the caller with a dead facade. Surface it loudly
       // so the host knows to construct a fresh instance.
       throw new Error("FunnelGatewayServer is single-use: construct a new instance to start again")

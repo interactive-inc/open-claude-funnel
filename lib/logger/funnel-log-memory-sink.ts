@@ -1,1 +1,1 @@
-export { MemoryEventJournal as FunnelLogMemorySink } from "@/event-journal/memory-event-journal"
+export { MemoryEventLog as FunnelLogMemorySink } from "@/event-log/memory-event-log"

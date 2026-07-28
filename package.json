@@ -102,10 +102,10 @@
       "import": "./dist/connectors/schedule.js",
       "default": "./dist/connectors/schedule.js"
     },
-    "./event-journal": {
-      "types": "./dist/event-journal.d.ts",
-      "import": "./dist/event-journal.js",
-      "default": "./dist/event-journal.js"
+    "./event-log": {
+      "types": "./dist/event-log.d.ts",
+      "import": "./dist/event-log.js",
+      "default": "./dist/event-log.js"
     },
     "./logger": {
       "types": "./dist/logger.d.ts",

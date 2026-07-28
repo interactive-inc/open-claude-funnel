@@ -26,7 +26,7 @@ export default defineConfig({
       "connectors/discord": "lib/engine/connectors/discord.ts",
       "connectors/gh": "lib/engine/connectors/gh.ts",
       "connectors/schedule": "lib/engine/connectors/schedule.ts",
-      "event-journal": "lib/event-journal.ts",
+      "event-log": "lib/event-log.ts",
       logger: "lib/logger.ts",
       channel: "lib/channel.ts",
     },

@@ -6,7 +6,7 @@ import {
   FunnelEventLog,
   type FunnelEventRecord,
 } from "@/gateway/event-log/event-log"
-import { SqliteEventJournal } from "@/event-journal/sqlite-event-journal"
+import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 
 const MAX_CONTENT_CHARS = 2000
 
@@ -51,7 +51,7 @@ type Props = {
  * (`getMaxSeq()` at startup) correct without per-event coordination.
  */
 export class SqliteFunnelEventLog extends FunnelEventLog {
-  private readonly sink: SqliteEventJournal<FunnelEvent, ["channel_id", "connector_id"]>
+  private readonly sink: SqliteEventLog<FunnelEvent, ["channel_id", "connector_id"]>
   private readonly now: () => number
   private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError | undefined
@@ -61,7 +61,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     this.now = props.now ?? (() => Date.now())
     this.logger = props.logger
     this.onError = props.onError
-    this.sink = new SqliteEventJournal<FunnelEvent, ["channel_id", "connector_id"]>({
+    this.sink = new SqliteEventLog<FunnelEvent, ["channel_id", "connector_id"]>({
       path: props.path,
       indexes: ["channel_id", "connector_id"],
       extractIndexes: (event) => ({

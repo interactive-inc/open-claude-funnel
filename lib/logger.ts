@@ -1,7 +1,7 @@
 // Compatibility logger sub-entry plus the Funnel-specific text diagnostic log.
 //
-// New consumers should import the generic structured journal from
-// "@interactive-inc/claude-funnel/event-journal". FunnelLog remains here as a
+// New consumers should import the generic structured event log from
+// "@interactive-inc/claude-funnel/event-log". FunnelLog remains here as a
 // compatibility name for existing consumers.
 // FunnelTextLog is a levelled diagnostic logger with pluggable writers.
 // Neither depends on funnel domain types — any app can use them by supplying

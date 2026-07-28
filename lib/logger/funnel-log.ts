@@ -1,18 +1,14 @@
-import type { EventJournalRecord } from "@/event-journal/event-journal-record"
-import {
-  EventJournal,
-  type EventJournalProps,
-  type EventJournalValidator,
-} from "@/event-journal/event-journal"
+import type { EventLogEntry } from "@/event-log/event-log-entry"
+import { EventLog, type EventLogProps, type EventLogValidator } from "@/event-log/event-log"
 
-export type FunnelLogValidator<E> = EventJournalValidator<E>
+export type FunnelLogValidator<E> = EventLogValidator<E>
 
-export class FunnelLog<E> extends EventJournal<E> {
-  constructor(props: EventJournalProps<E>) {
+export class FunnelLog<E> extends EventLog<E> {
+  constructor(props: EventLogProps<E>) {
     super(props)
   }
 
-  emit(event: E): EventJournalRecord<E> | Error {
+  emit(event: E): EventLogEntry<E> | Error {
     return this.append(event)
   }
 }

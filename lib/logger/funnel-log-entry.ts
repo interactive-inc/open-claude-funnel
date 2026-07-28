@@ -1,1 +1,1 @@
-export type { EventJournalRecord as FunnelLogEntry } from "@/event-journal/event-journal-record"
+export type { EventLogEntry as FunnelLogEntry } from "@/event-log/event-log-entry"

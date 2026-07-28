@@ -1,1 +1,1 @@
-export { SqliteEventJournal as FunnelLogSqliteSink } from "@/event-journal/sqlite-event-journal"
+export { SqliteEventLog as FunnelLogSqliteSink } from "@/event-log/sqlite-event-log"

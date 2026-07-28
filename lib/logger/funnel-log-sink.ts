@@ -1,4 +1,4 @@
 export type {
-  EventJournalRelay as FunnelLogSink,
-  EventJournalStore as FunnelLogPrimarySink,
-} from "@/event-journal/event-journal-store"
+  EventLogRelay as FunnelLogSink,
+  EventLogStore as FunnelLogPrimarySink,
+} from "@/event-log/event-log-store"

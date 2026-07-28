@@ -432,11 +432,11 @@ import {
 } from "@interactive-inc/claude-funnel/channel"
 ```
 
-汎用のstructured event journalは製品APIから独立したサブエントリです。
+汎用のstructured event logは製品APIから独立したサブエントリです。
 新しいコードではこちらを使います。
 
 ```ts
-import { EventJournal, MemoryEventJournal } from "@interactive-inc/claude-funnel/event-journal"
+import { EventLog, MemoryEventLog } from "@interactive-inc/claude-funnel/event-log"
 ```
 
 既存の `@interactive-inc/claude-funnel/logger` と `FunnelLog` 系は互換性のため
