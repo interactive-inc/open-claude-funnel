@@ -29,23 +29,20 @@ examples:
   funnel profiles cto as-default
   funnel profiles cto run`
 
-export const profilesGroupHandler = factory.createHandlers(
-  helpGuard(groupHelp),
-  (c) => {
-    const { profiles } = c.env
-    const profileList = profiles.list()
+export const profilesGroupHandler = factory.createHandlers(helpGuard(groupHelp), (c) => {
+  const { profiles } = c.env
+  const profileList = profiles.list()
 
-    return c.text(
-      renderYaml({
-        profiles: profileList.map((profile, index) => ({
-          name: profile.name,
-          default: index === 0,
-          path: profile.path,
-          channelId: profile.channelId,
-          options: profile.options,
-          resume: profile.resume,
-        })),
-      }),
-    )
-  },
-)
+  return c.text(
+    renderYaml({
+      profiles: profileList.map((profile, index) => ({
+        name: profile.name,
+        default: index === 0,
+        path: profile.path,
+        channelId: profile.channelId,
+        options: profile.options,
+        resume: profile.resume,
+      })),
+    }),
+  )
+})

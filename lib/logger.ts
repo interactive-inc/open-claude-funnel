@@ -1,6 +1,8 @@
-// Logger sub-entry: generic, reusable event log and text diagnostic log.
+// Compatibility logger sub-entry plus the Funnel-specific text diagnostic log.
 //
-// FunnelLog<E> is a validated event bus backed by SQLite (or memory for tests).
+// New consumers should import the generic structured journal from
+// "@interactive-inc/claude-funnel/event-journal". FunnelLog remains here as a
+// compatibility name for existing consumers.
 // FunnelTextLog is a levelled diagnostic logger with pluggable writers.
 // Neither depends on funnel domain types — any app can use them by supplying
 // its own event schema and writer.

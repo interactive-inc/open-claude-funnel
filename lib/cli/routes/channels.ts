@@ -35,25 +35,22 @@ examples:
   funnel channels prod-inbox connectors add prod-slack --type=slack --bot-token=xoxb-... --app-token=xapp-...
   funnel channels prod-inbox`
 
-export const channelsGroupHandler = factory.createHandlers(
-  helpGuard(groupHelp),
-  (c) => {
-    const funnel = c.env.funnel
-    const channels = funnel.channels.list()
+export const channelsGroupHandler = factory.createHandlers(helpGuard(groupHelp), (c) => {
+  const funnel = c.env.funnel
+  const channels = funnel.channels.list()
 
-    return c.text(
-      renderYaml({
-        channels: channels.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          delivery: ch.delivery,
-          connectors: ch.connectors.map((conn) => ({
-            id: conn.id,
-            name: conn.name,
-            type: conn.type,
-          })),
+  return c.text(
+    renderYaml({
+      channels: channels.map((ch) => ({
+        id: ch.id,
+        name: ch.name,
+        delivery: ch.delivery,
+        connectors: ch.connectors.map((conn) => ({
+          id: conn.id,
+          name: conn.name,
+          type: conn.type,
         })),
-      }),
-    )
-  },
-)
+      })),
+    }),
+  )
+})

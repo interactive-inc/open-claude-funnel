@@ -399,9 +399,7 @@ describe.skipIf(!isBun)("SqliteConnectorDiagnosticLog forward-compat", () => {
       status: "quantum-entangled",
       detail: "",
     })
-    writer
-      .prepare("INSERT INTO logs (ts, type, event) VALUES (?, ?, ?)")
-      .run(1, "slack", event)
+    writer.prepare("INSERT INTO logs (ts, type, event) VALUES (?, ?, ?)").run(1, "slack", event)
     writer.close()
 
     const reopened = new SqliteConnectorDiagnosticLog({ rawPath, processedPath, connectionPath })

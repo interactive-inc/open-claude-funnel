@@ -26,16 +26,23 @@ describe("FunnelConnectorRegistry diagnosticLog wiring", () => {
   // through the real Flume-backed listener. A capture descriptor isolates
   // exactly what the registry passes — useful when the test is about the
   // registry seam itself, not about Flume's connect path.
-  const captureDescriptor = (recorded: { deps?: { diagnosticLog?: unknown; channelId?: string; signal?: AbortSignal } }) => ({
+  const captureDescriptor = (recorded: {
+    deps?: { diagnosticLog?: unknown; channelId?: string; signal?: AbortSignal }
+  }) => ({
     type: "slack",
     toolExposed: true,
-    createListener(_config: unknown, deps: { diagnosticLog?: unknown; channelId: string; signal?: AbortSignal }) {
+    createListener(
+      _config: unknown,
+      deps: { diagnosticLog?: unknown; channelId: string; signal?: AbortSignal },
+    ) {
       recorded.deps = deps
       return {
         start: async () => {},
         stop: async () => {},
         isAlive: () => true,
-      } as unknown as ReturnType<typeof slackConnector>["createListener"] extends (...args: unknown[]) => infer R
+      } as unknown as ReturnType<typeof slackConnector>["createListener"] extends (
+        ...args: unknown[]
+      ) => infer R
         ? R
         : never
     },
@@ -88,7 +95,9 @@ describe("FunnelConnectorRegistry diagnosticLog wiring", () => {
   test("throws for a connector type whose descriptor was not registered", () => {
     const registry = new FunnelConnectorRegistry({ descriptors: [] })
 
-    expect(() => registry.createListener("ch-uuid-1", slackConfig)).toThrow(/unknown connector type/)
+    expect(() => registry.createListener("ch-uuid-1", slackConfig)).toThrow(
+      /unknown connector type/,
+    )
   })
 })
 
@@ -143,10 +152,14 @@ describe("FunnelConnectorRegistry → FlumeSlackSource integration", () => {
     globalThis.fetch = (async (url: string | URL) => {
       const target = String(url)
       if (target === "https://slack.com/api/auth.test") {
-        return new Response(JSON.stringify({ ok: true, user_id: "U", bot_id: "B" }), { status: 200 })
+        return new Response(JSON.stringify({ ok: true, user_id: "U", bot_id: "B" }), {
+          status: 200,
+        })
       }
       if (target === "https://slack.com/api/apps.connections.open") {
-        return new Response(JSON.stringify({ ok: true, url: "wss://slack.example/ws" }), { status: 200 })
+        return new Response(JSON.stringify({ ok: true, url: "wss://slack.example/ws" }), {
+          status: 200,
+        })
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }) as unknown as typeof fetch
@@ -171,9 +184,7 @@ describe("FunnelConnectorRegistry → FlumeSlackSource integration", () => {
     // source flips status to "connected" and our listener records the row.
     await new Promise((resolve) => setTimeout(resolve, 5))
 
-    const statuses = diagnosticLog
-      .queryConnection({ type: "slack" })
-      .map((row) => row.status)
+    const statuses = diagnosticLog.queryConnection({ type: "slack" }).map((row) => row.status)
 
     expect(statuses).toContain("started")
     expect(statuses).toContain("connected")

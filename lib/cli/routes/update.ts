@@ -14,16 +14,13 @@ the host (npm / bun / yarn install in the host's own way).`
 
 const PACKAGE = "@interactive-inc/claude-funnel"
 
-export const updateHandler = factory.createHandlers(
-  helpGuard(updateHelp),
-  async (c) => {
-    const runner = new NodeFunnelProcessRunner()
-    const exitCode = await runner.attach(["bun", "i", "-g", PACKAGE])
+export const updateHandler = factory.createHandlers(helpGuard(updateHelp), async (c) => {
+  const runner = new NodeFunnelProcessRunner()
+  const exitCode = await runner.attach(["bun", "i", "-g", PACKAGE])
 
-    if (exitCode !== 0) {
-      throw new HTTPException(500, { message: `update failed (exit ${exitCode})` })
-    }
+  if (exitCode !== 0) {
+    throw new HTTPException(500, { message: `update failed (exit ${exitCode})` })
+  }
 
-    return c.text(`updated ${PACKAGE}`)
-  },
-)
+  return c.text(`updated ${PACKAGE}`)
+})

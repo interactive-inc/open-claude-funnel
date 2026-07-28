@@ -419,11 +419,28 @@ import { FunnelLocalConfig } from "@interactive-inc/claude-funnel/local-config"
 
 // コネクタの descriptor とスキーマ（Slack / Discord / GitHub / Schedule）
 // descriptor（slackConnector 等）を new Funnel({ connectors: [...] }) に渡す
-import { slackConnector, slackConnectorSchema } from "@interactive-inc/claude-funnel/connectors/slack"
+import {
+  slackConnector,
+  slackConnectorSchema,
+} from "@interactive-inc/claude-funnel/connectors/slack"
 
 // Channel manifest（flume sources を broadcaster に流す宣言的 channel。ConnectorDescriptor 系とは独立）
-import { FunnelChannelSupervisor, timeChannel, defineChannel } from "@interactive-inc/claude-funnel/channel"
+import {
+  FunnelChannelSupervisor,
+  timeChannel,
+  defineChannel,
+} from "@interactive-inc/claude-funnel/channel"
 ```
+
+汎用のstructured event journalは製品APIから独立したサブエントリです。
+新しいコードではこちらを使います。
+
+```ts
+import { EventJournal, MemoryEventJournal } from "@interactive-inc/claude-funnel/event-journal"
+```
+
+既存の `@interactive-inc/claude-funnel/logger` と `FunnelLog` 系は互換性のため
+維持しています。text diagnostic logも引き続きloggerサブエントリにあります。
 
 ### テスト用のサンドボックス
 

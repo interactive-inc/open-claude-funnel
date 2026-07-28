@@ -178,7 +178,10 @@ export class FunnelChannelSupervisor {
     this.registered.set(channel.id, { channel, runtime, abortController })
   }
 
-  private async buildRuntime(channel: Channel, signal: AbortSignal): Promise<ChannelRuntime | Error> {
+  private async buildRuntime(
+    channel: Channel,
+    signal: AbortSignal,
+  ): Promise<ChannelRuntime | Error> {
     const channelDir = join(this.props.dir, "channels", channel.id)
 
     try {

@@ -39,7 +39,9 @@ const buildChannels = (): FunnelChannels => {
 }
 
 const listEntries = (channels: FunnelChannels, connectorName: string) =>
-  z.array(scheduleEntrySchema).parse(channels.connectorOp("ops", connectorName, "listEntries", undefined))
+  z
+    .array(scheduleEntrySchema)
+    .parse(channels.connectorOp("ops", connectorName, "listEntries", undefined))
 
 describe("FunnelChannels", () => {
   test("add assigns a stable id and persists the channel", () => {

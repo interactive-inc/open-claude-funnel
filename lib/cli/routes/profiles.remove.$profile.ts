@@ -7,8 +7,7 @@ export const profilesRemoveHandler = factory.createHandlers(
   zValidator("query", z.object({})),
   (c) => {
     const param = c.req.valid("param")
-    const funnel = c.env.funnel
-    const { profiles, claude } = c.env
+    const profiles = c.env.profiles
 
     profiles.remove(param.profile)
 

@@ -266,9 +266,17 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 
 `funnel.ts` が全 Service を束ねる Facade。constructor で全依存を eager に組み立て `Object.freeze(this)` で本物のイミュータブルを保証する。公開フィールドは `channels` / `gateway` / `gatewayToken` / `publisher` / `listeners` / `claude` / `profiles` / `localConfig` / `localConfigSync` / `paths`。`buildClaude()` のような工場メソッドはなく、`new Funnel(props)` した瞬間に全フィールドが確定する。`bin.ts` が `package.json` の `bin` エントリ。`index.ts` が公開 API の re-export。
 
-### lib/logger
+### lib/event-journal と lib/logger
 
-汎用 LeucoLogger 系。gateway の `SqliteFunnelEventLog` が SQLite sink として利用。
+`lib/event-journal/` はschema検証、monotonic seq、primary store、relay、subscriberを
+持つ汎用structured journal。Leucoにも同じsourceをコピーして各packageが所有する。
+変更時は両directoryを同期して `diff -ru` で一致を確認する。公開サブエントリは
+`@interactive-inc/claude-funnel/event-journal`。
+
+`lib/logger/` の `FunnelLog` 系は既存consumer向けcompatibility wrapper。
+新規consumerは中立名のEventJournal APIを使う。`FunnelTextLog` はFunnel固有の
+human diagnostic logなのでlogger側に残す。gatewayの `SqliteFunnelEventLog` も
+共通のSQLite journal storeを内部利用する。
 
 ## Storage 規約
 
@@ -337,6 +345,7 @@ funnel 側のセーフティネットとして、`resolveFunnelDir()` は外部�
 - logger だけは例外で **optional・default インスタンスを作らない**。`logger?: FunnelLogger` を DI で受け、内部は `this.logger?.info(...)` の optional chaining で呼ぶ（未注入なら sliently no-op）。これでテストは何も注入せず勝手に静か（実 FS に触れない）になり、`?? new NodeFunnelLogger()` の結線を全クラスから排除できる。本物の file sink は production 入口（`lib/cli/index.ts` / `lib/gateway/daemon.ts`）で `new Funnel({ logger: new NodeFunnelLogger() })` として一度だけ注入する。エラーを host に晒す経路は logger ではなく `OnFunnelError`（DI 維持・テストで assert する seam）— 2 つを混ぜない
 - 公開 API は `lib/index.ts` で `export * from`。他モジュールから参照されない module-internal な型は元ファイル側で `export` を外す
 - サブエントリ（`@interactive-inc/claude-funnel/<name>`）を追加するには三点同時更新が必要。`lib/<name>.ts` の re-export ファイル、`vite.config.ts` の `pack.entry`、`package.json` の `exports`。どれか欠けると build は通っても import が解決できない
+- `lib/event-journal/` はLeuco側の同名directoryとbyte単位で同期する。product固有処理や名前はcompatibility wrapperかconsumer側へ置き、共通sourceへ混ぜない
 
 ### ドキュメントの所在
 

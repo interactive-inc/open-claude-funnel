@@ -163,7 +163,8 @@ describe("FunnelListenerRegistry", () => {
       channels: {
         listAllConnectors: () => [badView, view],
         createListener: (_ch: string, name: string) => {
-          if (name === "bad-slack") return { config: badConfig, channelId: "ch-1", listener: failingListener }
+          if (name === "bad-slack")
+            return { config: badConfig, channelId: "ch-1", listener: failingListener }
           return { config, channelId: "ch-1", listener: goodListener }
         },
       },

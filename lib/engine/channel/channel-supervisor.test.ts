@@ -119,9 +119,7 @@ describe("FunnelChannelSupervisor", () => {
     const { received, supervisor } = freshSupervisor()
 
     const source = new StubSource()
-    supervisor.register(
-      defineChannel({ id: "default", build: () => ({ sources: [source] }) }),
-    )
+    supervisor.register(defineChannel({ id: "default", build: () => ({ sources: [source] }) }))
 
     await supervisor.start()
     source.pushEvent?.({

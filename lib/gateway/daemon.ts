@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { builtinConnectors } from "@/engine/connectors/builtin-connectors"
 import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"

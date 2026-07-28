@@ -49,9 +49,7 @@ export function timeChannel(options: Options): Channel {
     build: (ctx) => {
       const source = new FlumeTimeSource({
         cron: options.cron,
-        statePersister: persist
-          ? ctx.statePersister<FlumeTimeSourceState>("time")
-          : undefined,
+        statePersister: persist ? ctx.statePersister<FlumeTimeSourceState>("time") : undefined,
         catchupPolicy: persist ? catchupPolicy : { mode: "off" },
       })
 

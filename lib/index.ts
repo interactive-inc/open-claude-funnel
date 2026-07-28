@@ -9,7 +9,8 @@
 //   "@interactive-inc/claude-funnel/recovery"      self-healing primitives
 //   "@interactive-inc/claude-funnel/doctor"        one-shot diagnose + safe fixes
 //   "@interactive-inc/claude-funnel/docs"          embedded documentation
-//   "@interactive-inc/claude-funnel/logger"        generic event log + human diagnostic log
+//   "@interactive-inc/claude-funnel/event-journal" generic structured event journal
+//   "@interactive-inc/claude-funnel/logger"        compatibility log names + diagnostic log
 //   "@interactive-inc/claude-funnel/connectors/<type>"  per-type connector descriptor (slack | discord | gh | schedule)
 
 // Facade

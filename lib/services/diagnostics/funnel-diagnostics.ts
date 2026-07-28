@@ -301,7 +301,8 @@ const diagnoseSlackEventSubscriptionGap = (
 
   return {
     status: "warn",
-    message: "Slack is only delivering app_mention events; unmentioned thread replies may not arrive",
+    message:
+      "Slack is only delivering app_mention events; unmentioned thread replies may not arrive",
     nextActions: [
       "Add Slack bot events: message.channels, message.groups, message.im, message.mpim; reinstall the app; then restart the gateway",
     ],
@@ -634,8 +635,7 @@ export class FunnelDiagnostics {
       }
     }
 
-    const connectorId =
-      channel.connectors?.find((c) => c.name === connectorName)?.id ?? null
+    const connectorId = channel.connectors?.find((c) => c.name === connectorName)?.id ?? null
     if (!connectorId) return null
 
     return {

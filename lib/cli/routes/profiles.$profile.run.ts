@@ -19,7 +19,6 @@ export const profilesLaunchHandler = factory.createHandlers(
   zValidator("query", z.object({}).loose()),
   async (c) => {
     const param = c.req.valid("param")
-    const funnel = c.env.funnel
     const { profiles, claude } = c.env
     const profile = profiles.get(param.profile)
 

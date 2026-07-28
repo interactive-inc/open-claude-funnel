@@ -41,9 +41,7 @@ export const resolveFlumeDeps = (
  * debug level and routing them to info would drown the operator log in
  * heartbeats.
  */
-export const flumeLogHandler = (
-  logger: FunnelLogger | undefined,
-): FlumeLogHandler | undefined => {
+export const flumeLogHandler = (logger: FunnelLogger | undefined): FlumeLogHandler | undefined => {
   if (!logger) return undefined
 
   return (log: FlumeLog) => {
@@ -67,7 +65,7 @@ export const flumeLogHandler = (
 }
 
 const buildMeta = (log: FlumeLog): Record<string, unknown> | undefined => {
-  const meta: Record<string, unknown> = { ...(log.detail ?? {}) }
+  const meta: Record<string, unknown> = { ...log.detail }
 
   if (log.error) {
     meta.error = log.error.message

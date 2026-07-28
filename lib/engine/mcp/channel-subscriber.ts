@@ -107,8 +107,7 @@ export class FunnelChannelSubscriber {
     try {
       const payload = JSON.parse(String(event.data))
       const eventType = payload.meta?.event_type ?? "unknown"
-      const offset =
-        typeof payload.offset === "number" ? payload.offset : null
+      const offset = typeof payload.offset === "number" ? payload.offset : null
 
       process.stderr.write(`funnel: received event (${eventType})\n`)
 

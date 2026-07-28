@@ -69,7 +69,8 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
     this.env = deps.env ?? process.env
     this.flumeDeps = deps.flumeDeps ?? {}
     this.signal = deps.signal
-    this.eventTypes = deps.eventTypes === "all" ? "all" : new Set(deps.eventTypes ?? DEFAULT_EVENT_TYPES)
+    this.eventTypes =
+      deps.eventTypes === "all" ? "all" : new Set(deps.eventTypes ?? DEFAULT_EVENT_TYPES)
   }
 
   async start(notify: NotifyFn): Promise<void> {
@@ -164,7 +165,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
     const guildId = event.meta.guild_id ?? null
     const mentions = Array.isArray(data.mentions)
       ? data.mentions
-          .map((m) => (isRecord(m) ? readString(m, "id") ?? "" : ""))
+          .map((m) => (isRecord(m) ? (readString(m, "id") ?? "") : ""))
           .filter((id) => id !== "")
       : []
 

@@ -218,7 +218,11 @@ export class FunnelChannels {
    * rebuilds the config from `fields` (e.g. Slack/Discord token slots are rebuilt
    * so a slot can move between a literal and an env reference cleanly).
    */
-  updateConnector(channelName: string, connectorName: string, fields: Record<string, unknown>): void {
+  updateConnector(
+    channelName: string,
+    connectorName: string,
+    fields: Record<string, unknown>,
+  ): void {
     this.store.update((settings) => {
       const channel = this.requireChannel(settings, channelName)
       const connector = channel.connectors.find((c) => c.name === connectorName)

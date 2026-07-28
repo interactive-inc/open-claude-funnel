@@ -79,12 +79,20 @@ export type ConnectorOperation = (props: {
  */
 export type ConnectorDescriptor = {
   type: string
-  createListener: (config: BaseConnectorConfig, deps: ConnectorListenerDeps) => FunnelConnectorListener
-  createAdapter: ((config: BaseConnectorConfig, deps: ConnectorAdapterDeps) => FunnelConnectorAdapter) | null
+  createListener: (
+    config: BaseConnectorConfig,
+    deps: ConnectorListenerDeps,
+  ) => FunnelConnectorListener
+  createAdapter:
+    | ((config: BaseConnectorConfig, deps: ConnectorAdapterDeps) => FunnelConnectorAdapter)
+    | null
   /** Whether the MCP channel server exposes this type as a callable tool. */
   toolExposed: boolean
   secretTokens: (config: BaseConnectorConfig) => string[]
-  buildConfig: (input: Record<string, unknown>, context: ConnectorBuildContext) => BaseConnectorConfig
+  buildConfig: (
+    input: Record<string, unknown>,
+    context: ConnectorBuildContext,
+  ) => BaseConnectorConfig
   applyUpdate: (
     config: BaseConnectorConfig,
     fields: Record<string, unknown>,

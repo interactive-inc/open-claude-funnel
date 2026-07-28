@@ -108,7 +108,13 @@ const seedConnection = (status: string, detail: string): void => {
     type: "slack",
     connectorId: "co-1",
     channelId: "ch-1",
-    status: status as "auth-failed" | "error" | "connected" | "disconnected" | "started" | "stopped",
+    status: status as
+      | "auth-failed"
+      | "error"
+      | "connected"
+      | "disconnected"
+      | "started"
+      | "stopped",
     detail,
   })
   log.close()

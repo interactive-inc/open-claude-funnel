@@ -72,11 +72,7 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
     }
   }
 
-  async postMessage(props: {
-    channel: string
-    text: string
-    threadTs?: string
-  }): Promise<unknown> {
+  async postMessage(props: { channel: string; text: string; threadTs?: string }): Promise<unknown> {
     return this.call({
       method: "post",
       path: "chat.postMessage",
@@ -88,11 +84,7 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
     })
   }
 
-  async addReaction(props: {
-    channel: string
-    timestamp: string
-    name: string
-  }): Promise<unknown> {
+  async addReaction(props: { channel: string; timestamp: string; name: string }): Promise<unknown> {
     return this.call({
       method: "post",
       path: "reactions.add",

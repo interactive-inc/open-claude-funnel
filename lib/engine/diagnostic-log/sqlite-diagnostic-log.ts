@@ -1,5 +1,6 @@
 import { chmodSync } from "node:fs"
-import type { FunnelLogEntry } from "@/logger/funnel-log-entry"
+import type { EventJournalRecord } from "@/event-journal/event-journal-record"
+import { SqliteEventJournal } from "@/event-journal/sqlite-event-journal"
 import { FunnelLogger } from "@/engine/logger/logger"
 import {
   type ConnectorConnectionEvent,
@@ -19,7 +20,6 @@ import {
   type StoredProcessedEvent,
   type StoredRawEvent,
 } from "@/engine/diagnostic-log/diagnostic-log"
-import { FunnelLogSqliteSink } from "@/logger/funnel-log-sqlite-sink"
 
 /**
  * Cap on a raw payload kept verbatim. The point of the raw table is to see
@@ -73,9 +73,9 @@ type WhereClause = { connector_id?: string | null; channel_id?: string | null }
  * therefore stays valid JSON.
  */
 export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
-  private readonly raw: FunnelLogSqliteSink<ConnectorRawEvent, RawIndexes>
-  private readonly processed: FunnelLogSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>
-  private readonly connection: FunnelLogSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>
+  private readonly raw: SqliteEventJournal<ConnectorRawEvent, RawIndexes>
+  private readonly processed: SqliteEventJournal<ConnectorProcessedEvent, ProcessedIndexes>
+  private readonly connection: SqliteEventJournal<ConnectorConnectionEvent, ConnectionIndexes>
   private readonly now: () => number
   private readonly logger: FunnelLogger | undefined
 
@@ -95,7 +95,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       ...ageCap,
       ...(rawMax !== undefined ? { maxRows: rawMax } : {}),
     }
-    this.raw = new FunnelLogSqliteSink<ConnectorRawEvent, RawIndexes>({
+    this.raw = new SqliteEventJournal<ConnectorRawEvent, RawIndexes>({
       path: props.rawPath,
       indexes: ["event_id", "connector_id", "channel_id"],
       extractIndexes: (event) => ({
@@ -105,7 +105,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       }),
       ...rawCap,
     })
-    this.processed = new FunnelLogSqliteSink<ConnectorProcessedEvent, ProcessedIndexes>({
+    this.processed = new SqliteEventJournal<ConnectorProcessedEvent, ProcessedIndexes>({
       path: props.processedPath,
       indexes: ["event_id", "connector_id", "channel_id", "outcome"],
       extractIndexes: (event) => ({
@@ -116,7 +116,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       }),
       ...verdictCap,
     })
-    this.connection = new FunnelLogSqliteSink<ConnectorConnectionEvent, ConnectionIndexes>({
+    this.connection = new SqliteEventJournal<ConnectorConnectionEvent, ConnectionIndexes>({
       path: props.connectionPath,
       indexes: ["connector_id", "channel_id", "status"],
       extractIndexes: (event) => ({
@@ -173,7 +173,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   // A diagnostic store that swallows its own write failures is the one thing
   // it must not do: surface the error so a disk-full or locked WAL is visible.
-  private report(table: string, result: FunnelLogEntry<unknown> | Error): void {
+  private report(table: string, result: EventJournalRecord<unknown> | Error): void {
     if (result instanceof Error) {
       this.logger?.error("diagnostic log insert failed", { table, error: result.message })
     }

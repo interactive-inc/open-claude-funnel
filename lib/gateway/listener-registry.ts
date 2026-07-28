@@ -338,7 +338,7 @@ export class FunnelListenerRegistry {
     this.stopHealthCheck()
     this.pendingRetry.clear()
 
-    for (const [, entry] of [...this.running.entries()]) {
+    for (const [, entry] of this.running.entries()) {
       await this.stop(entry.channelName, entry.config.name)
     }
   }
@@ -410,7 +410,7 @@ export class FunnelListenerRegistry {
       // parallel form keeps the worst-case restart time at one backoff.
       const dead: Array<{ channelName: string; connectorName: string; type: string }> = []
 
-      for (const [key, entry] of [...this.running.entries()]) {
+      for (const [key, entry] of this.running.entries()) {
         if (entry.listener.isAlive()) {
           this.failureCounts.delete(key)
           continue
@@ -437,13 +437,17 @@ export class FunnelListenerRegistry {
         connectorName: string
       }> = []
 
-      for (const [key, pending] of [...this.pendingRetry.entries()]) {
+      for (const [key, pending] of this.pendingRetry.entries()) {
         if (this.running.has(key)) {
           this.pendingRetry.delete(key)
           continue
         }
 
-        retries.push({ key, channelName: pending.channelName, connectorName: pending.connectorName })
+        retries.push({
+          key,
+          channelName: pending.channelName,
+          connectorName: pending.connectorName,
+        })
       }
 
       await Promise.all(retries.map((retry) => this.attemptRetry(retry)))

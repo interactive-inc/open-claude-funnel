@@ -116,7 +116,4 @@ export const renderGatewayStatus = async (c: Context<Env>) => {
   )
 }
 
-export const gatewayGroupHandler = factory.createHandlers(
-  helpGuard(groupHelp),
-  renderGatewayStatus,
-)
+export const gatewayGroupHandler = factory.createHandlers(helpGuard(groupHelp), renderGatewayStatus)

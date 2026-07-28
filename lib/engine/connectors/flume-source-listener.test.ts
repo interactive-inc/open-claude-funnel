@@ -20,8 +20,6 @@ type FakeHooks = {
   disconnectError?: Error
 }
 
-type SetStatusFn = (status: FlumeStatus, detail?: string) => void
-
 class FakeFlumeSource extends FlumeSource {
   readonly name = "slack"
   capturedCtx: FlumeSourceStartContext | null = null
@@ -125,9 +123,7 @@ describe("FunnelFlumeSourceListener", () => {
     listener.emitStatus("disconnected", "remote close")
     expect(listener.isAlive()).toBe(false)
 
-    const statuses = log
-      .queryConnection({ type: "slack" })
-      .map((row) => row.status)
+    const statuses = log.queryConnection({ type: "slack" }).map((row) => row.status)
 
     expect(statuses).toEqual(["connected", "connected", "disconnected"])
   })
@@ -211,9 +207,7 @@ describe("FunnelFlumeSourceListener", () => {
     // lower-overhead reconnect finish instead of stop+start+auth.test.
     expect(listener.isAlive()).toBe(true)
 
-    const statuses = log
-      .queryConnection({ type: "slack" })
-      .map((row) => row.status)
+    const statuses = log.queryConnection({ type: "slack" }).map((row) => row.status)
 
     // No "reconnecting" row — only the prior connected.
     expect(statuses).toEqual(["connected"])
@@ -296,8 +290,6 @@ describe("FunnelFlumeSourceListener", () => {
     // or in flume's reconnect wiring would break this test instead of the
     // production listeners.
     let connectCount = 0
-    let lastSetStatus: SetStatusFn | null = null
-
     class ReconnectingFakeSource extends FlumeSource {
       readonly name = "slack"
       private retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -306,7 +298,6 @@ describe("FunnelFlumeSourceListener", () => {
       protected override async connect(ctx: FlumeSourceStartContext): Promise<Error | null> {
         connectCount += 1
         this.ctxRef = ctx
-        lastSetStatus = (status, detail) => this.setStatus(status, detail)
         this.setStatus("connected")
         return null
       }
@@ -366,9 +357,7 @@ describe("FunnelFlumeSourceListener", () => {
     expect(connectCount).toBe(2)
     expect(listener.isAlive()).toBe(true)
 
-    const statuses = log
-      .queryConnection({ type: "slack" })
-      .map((row) => row.status)
+    const statuses = log.queryConnection({ type: "slack" }).map((row) => row.status)
 
     // connected → disconnected → connected — the reconnect-success cycle
     // surfaces both rows so the operator can see the gap and the recovery.

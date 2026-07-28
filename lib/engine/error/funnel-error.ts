@@ -60,10 +60,7 @@ export class FunnelConnectorTypeMismatchError extends FunnelError {
     readonly actual: string,
     options?: { cause?: unknown },
   ) {
-    super(
-      `connector ${connector} type mismatch: expected ${expected}, got ${actual}`,
-      options,
-    )
+    super(`connector ${connector} type mismatch: expected ${expected}, got ${actual}`, options)
   }
 }
 
@@ -99,9 +96,6 @@ export class FunnelTokenCollisionError extends FunnelError {
     readonly connector: string,
     options?: { cause?: unknown },
   ) {
-    super(
-      `${connector}: both literal token and tokenEnv reference are set — pick one`,
-      options,
-    )
+    super(`${connector}: both literal token and tokenEnv reference are set — pick one`, options)
   }
 }

@@ -30,9 +30,7 @@ const removeEntryArgsSchema = z.object({ id: z.string() })
  * (listEntries / addEntry / removeEntry) and reached through
  * `funnel.channels.connectorOp(...)`.
  */
-export const scheduleConnector = (
-  options: ScheduleConnectorOptions = {},
-): ConnectorDescriptor => ({
+export const scheduleConnector = (options: ScheduleConnectorOptions = {}): ConnectorDescriptor => ({
   type: "schedule",
   toolExposed: false,
   createListener(config, deps) {

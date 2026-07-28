@@ -10,7 +10,6 @@ output / valid YAML
 
 programmable / funnel.gateway.getStatus()`
 
-export const gatewayStatusHandler = factory.createHandlers(
-  helpGuard(statusHelp),
-  async (c) => renderGatewayStatus(c),
+export const gatewayStatusHandler = factory.createHandlers(helpGuard(statusHelp), async (c) =>
+  renderGatewayStatus(c),
 )

@@ -21,11 +21,8 @@ can validate and autocomplete the config:
 programmable: import { funnelJsonSchema } from "@interactive-inc/claude-funnel/local-config"
               funnelJsonSchema()  // returns the same object as the CLI prints`
 
-export const schemaHandler = factory.createHandlers(
-  helpGuard(schemaHelp),
-  async (c) => {
-    const schema = funnelJsonSchema()
+export const schemaHandler = factory.createHandlers(helpGuard(schemaHelp), async (c) => {
+  const schema = funnelJsonSchema()
 
-    return c.text(`${JSON.stringify(schema, null, 2)}\n`)
-  },
-)
+  return c.text(`${JSON.stringify(schema, null, 2)}\n`)
+})

@@ -19,14 +19,11 @@ examples:
   funnel docs architecture
   funnel docs debugging`
 
-export const docsIndexHandler = factory.createHandlers(
-  helpGuard(docsHelp),
-  async (c) => {
-    const docs = c.env.funnel.docs
+export const docsIndexHandler = factory.createHandlers(helpGuard(docsHelp), async (c) => {
+  const docs = c.env.funnel.docs
 
-    return c.text(renderYaml({ topics: docs.list() }))
-  },
-)
+  return c.text(renderYaml({ topics: docs.list() }))
+})
 
 export const docsTopicHandler = factory.createHandlers(
   zValidator("param", z.object({ topic: z.string() })),

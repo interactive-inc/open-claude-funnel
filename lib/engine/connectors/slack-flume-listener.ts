@@ -46,9 +46,7 @@ export type SlackPreprocessEvent = (
  * Hosts that need a typed payload should parse it with their own zod schema
  * scoped to the interaction types they care about.
  */
-export type SlackInteractiveHandler = (
-  payload: Record<string, unknown>,
-) => void | Promise<void>
+export type SlackInteractiveHandler = (payload: Record<string, unknown>) => void | Promise<void>
 
 type Deps = {
   config: SlackConnectorConfig
@@ -332,11 +330,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       // round-trip to slack.com/api/reactions.add does not gate the next
       // event's notify. Notify ordering is the contract; reactions are not.
       void this.postReaction(meta).catch((error: unknown) => {
-        this.diagnostics.recordProcessed(
-          eventId,
-          "emitted:reaction-failed",
-          errorMessageOf(error),
-        )
+        this.diagnostics.recordProcessed(eventId, "emitted:reaction-failed", errorMessageOf(error))
         this.logger?.warn("slack reaction failed", { error: errorMessageOf(error) })
       })
     }

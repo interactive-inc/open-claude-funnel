@@ -258,7 +258,6 @@ export class FunnelBroadcaster {
     this.latestOffset += 1
     const event: ReplayableEvent = { content, meta, offset: this.latestOffset }
     const payload = JSON.stringify(event)
-    const connector = meta?.connector
 
     this.eventsBroadcast += 1
     this.lastBroadcastAt = this.now()

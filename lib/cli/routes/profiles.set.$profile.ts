@@ -23,7 +23,7 @@ export const profilesSetHandler = factory.createHandlers(
     const param = c.req.valid("param")
     const query = c.req.valid("query")
     const funnel = c.env.funnel
-    const { profiles, claude } = c.env
+    const profiles = c.env.profiles
 
     const channel = query.channel !== undefined ? funnel.channels.get(query.channel) : null
 

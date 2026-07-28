@@ -15,11 +15,21 @@ class TrackableEventLog extends FunnelEventLog {
   closeCalled = false
   private readonly inner = new MemoryFunnelEventLog()
 
-  record(record: FunnelEventRecord): void { this.inner.record(record) }
-  loadSince(since: number): ReplayableEvent[] { return this.inner.loadSince(since) }
-  findMaxOffset(): number { return this.inner.findMaxOffset() }
-  clear(): void { this.inner.clear() }
-  close(): void { this.closeCalled = true }
+  record(record: FunnelEventRecord): void {
+    this.inner.record(record)
+  }
+  loadSince(since: number): ReplayableEvent[] {
+    return this.inner.loadSince(since)
+  }
+  findMaxOffset(): number {
+    return this.inner.findMaxOffset()
+  }
+  clear(): void {
+    this.inner.clear()
+  }
+  close(): void {
+    this.closeCalled = true
+  }
 }
 
 const startServer = async (token: string) => {

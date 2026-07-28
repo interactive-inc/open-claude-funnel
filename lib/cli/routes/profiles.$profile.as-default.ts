@@ -14,8 +14,7 @@ export const profilesAsDefaultHandler = factory.createHandlers(
   helpGuard(asDefaultHelp),
   (c) => {
     const param = c.req.valid("param")
-    const funnel = c.env.funnel
-    const { profiles, claude } = c.env
+    const profiles = c.env.profiles
 
     profiles.asDefault(param.profile)
 

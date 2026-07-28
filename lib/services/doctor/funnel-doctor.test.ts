@@ -15,7 +15,9 @@ const baseChannel = (
   channelId: "ch-1",
   gateway: { running: true, pid: 1, port: 9742, uptimeMs: 1000, statusError: null },
   configuredConnectors: 1,
-  listeners: [{ name: "slack", type: "slack", alive: true, events: 0, errors: 0, lastEventAt: null }],
+  listeners: [
+    { name: "slack", type: "slack", alive: true, events: 0, errors: 0, lastEventAt: null },
+  ],
   claudeClients: 1,
   recentEvents: [],
   connectionErrors: [],
@@ -48,7 +50,11 @@ const buildDiagnostics = (reports: DiagnoseAllReport[]): FunnelDiagnostics => {
   } as unknown as FunnelDiagnostics
 }
 
-const okResult: RecoveryResult = { ok: true, actions: [{ kind: "listener:restarted", channel: "ops", connector: "slack" }], message: "" }
+const okResult: RecoveryResult = {
+  ok: true,
+  actions: [{ kind: "listener:restarted", channel: "ops", connector: "slack" }],
+  message: "",
+}
 
 describe("FunnelDoctor", () => {
   test("aggressive mode skips gateway restart when the safe pass already fixed everything", async () => {
@@ -63,7 +69,20 @@ describe("FunnelDoctor", () => {
     const doctor = new FunnelDoctor({
       diagnostics: buildDiagnostics([
         // before: one error
-        report([baseChannel("error", { listeners: [{ name: "slack", type: "slack", alive: false, events: 0, errors: 1, lastEventAt: null }] })]),
+        report([
+          baseChannel("error", {
+            listeners: [
+              {
+                name: "slack",
+                type: "slack",
+                alive: false,
+                events: 0,
+                errors: 1,
+                lastEventAt: null,
+              },
+            ],
+          }),
+        ]),
         // mid (between safe and aggressive): all fixed
         report([baseChannel("ok")]),
         // after
@@ -95,8 +114,34 @@ describe("FunnelDoctor", () => {
 
     const doctor = new FunnelDoctor({
       diagnostics: buildDiagnostics([
-        report([baseChannel("error", { listeners: [{ name: "slack", type: "slack", alive: false, events: 0, errors: 5, lastEventAt: null }] })]),
-        report([baseChannel("error", { listeners: [{ name: "slack", type: "slack", alive: false, events: 0, errors: 5, lastEventAt: null }] })]),
+        report([
+          baseChannel("error", {
+            listeners: [
+              {
+                name: "slack",
+                type: "slack",
+                alive: false,
+                events: 0,
+                errors: 5,
+                lastEventAt: null,
+              },
+            ],
+          }),
+        ]),
+        report([
+          baseChannel("error", {
+            listeners: [
+              {
+                name: "slack",
+                type: "slack",
+                alive: false,
+                events: 0,
+                errors: 5,
+                lastEventAt: null,
+              },
+            ],
+          }),
+        ]),
         report([baseChannel("ok")]),
       ]),
       recovery,
