@@ -141,6 +141,17 @@ describe.skipIf(!isBun)("FunnelDiagnostics", () => {
     expect(report?.diagnosis.rootCause).toBe("invalid_auth")
   })
 
+  test("does not diagnose a historical auth failure after the connector reconnects", async () => {
+    seedConnection("auth-failed", "temporary auth failure")
+    seedProcessed({ type: "message", text: "recovered" }, "ev-recovered")
+
+    const report = await buildDiagnostics().diagnose("ops")
+
+    expect(report?.connectionErrors.map((event) => event.status)).toContain("auth-failed")
+    expect(report?.diagnosis.status).toBe("ok")
+    expect(report?.diagnosis.message).toBe("everything looks healthy")
+  })
+
   test("detects the race where settings has more connectors than the supervisor", async () => {
     // The gateway status mock returns 1 listener; add a second connector to
     // settings to simulate the race.

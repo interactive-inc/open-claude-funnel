@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import type { ConnectorDiagnosticLog, ConnectorQuery } from "@/engine/diagnostic-log/diagnostic-log"
+import type {
+  ConnectorDiagnosticLog,
+  ConnectorQuery,
+  StoredConnectionEvent,
+} from "@/engine/diagnostic-log/diagnostic-log"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import { loopbackFetch } from "@/engine/http/loopback-fetch"
@@ -145,11 +149,34 @@ const connectorOf = (channel: ChannelConfig, connectorId: string | null): string
 }
 
 const FLAPPING_ERROR_THRESHOLD = 3
+const CONNECTION_DIAGNOSIS_WINDOW = 100
+
+const connectionKeyOf = (event: StoredConnectionEvent): string =>
+  `${event.type}\u0000${event.connectorId ?? ""}`
+
+const unresolvedConnectionFailures = (
+  timeline: StoredConnectionEvent[],
+): StoredConnectionEvent[] => {
+  const lastConnectedIndex = new Map<string, number>()
+
+  timeline.forEach((event, index) => {
+    if (event.status === "connected") {
+      lastConnectedIndex.set(connectionKeyOf(event), index)
+    }
+  })
+
+  return timeline.filter((event, index) => {
+    if (event.status !== "auth-failed" && event.status !== "error") return false
+
+    return (lastConnectedIndex.get(connectionKeyOf(event)) ?? -1) < index
+  })
+}
 
 const buildDiagnosis = (
   report: Omit<ChannelDiagnosis, "diagnosis">,
+  unresolvedErrors: DiagnosticConnectionError[] = report.connectionErrors,
 ): ChannelDiagnosis["diagnosis"] => {
-  const latestError = report.connectionErrors[report.connectionErrors.length - 1] ?? null
+  const latestError = unresolvedErrors[unresolvedErrors.length - 1] ?? null
   const rootCause = latestError?.detail ?? null
   const channel = report.channel
 
@@ -200,7 +227,7 @@ const buildDiagnosis = (
   // Token rejected / Slack auth.test failed / GH token expired — all surface
   // here as 'auth-failed' rows. Surface them ahead of the generic "dead
   // listener" branch so the fix path can name the connector and credential.
-  const authFailed = report.connectionErrors.filter((e) => e.status === "auth-failed")
+  const authFailed = unresolvedErrors.filter((e) => e.status === "auth-failed")
   if (authFailed.length > 0) {
     const detail = authFailed[authFailed.length - 1]?.detail ?? null
     return {
@@ -650,27 +677,33 @@ export class FunnelDiagnostics {
       ).length
     }
 
+    let unresolvedErrors: DiagnosticConnectionError[] = []
+
     if (this.props.diagnosticLog) {
       const evRows = this.queryLog((log) =>
         log.queryProcessed({ channelId: target.id, limit: eventLimit }),
       )
       baseReport.recentEvents = evRows.map(diagnosticEventOfProcessed)
 
-      // Load auth-failed / error rows unconditionally: a listener that auth-
-      // fails and the supervisor never restarted still shows as alive=false
-      // here, but a listener that auth-failed during a token rotation while
-      // some events succeed earlier will show alive=true with errors=0 — and
-      // the diagnosis still needs to surface the auth-failed signal.
-      const errRows = this.queryLog((log) =>
+      // Read one ordered lifecycle window so a later connected row can
+      // resolve an earlier auth/network failure for the same connector.
+      // Querying only failure statuses loses that recovery information and
+      // makes doctor report a stale credential error forever.
+      const connectionRows = this.queryLog((log) =>
         log.queryConnection({
           channelId: target.id,
-          statuses: ["auth-failed", "error"],
-          limit: 3,
+          limit: CONNECTION_DIAGNOSIS_WINDOW,
         }),
       )
+      const errRows = connectionRows
+        .filter((row) => row.status === "auth-failed" || row.status === "error")
+        .slice(-3)
       baseReport.connectionErrors = errRows.map(diagnosticConnectionEventOf)
+      unresolvedErrors = unresolvedConnectionFailures(connectionRows).map(
+        diagnosticConnectionEventOf,
+      )
     }
 
-    return { ...baseReport, diagnosis: buildDiagnosis(baseReport) }
+    return { ...baseReport, diagnosis: buildDiagnosis(baseReport, unresolvedErrors) }
   }
 }

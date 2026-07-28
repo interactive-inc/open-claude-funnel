@@ -230,7 +230,11 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       })
       text = await res.text()
     } catch (error) {
-      this.diagnostics.recordConnection("auth-failed", errorMessageOf(error))
+      // A transport failure says nothing about whether the credential is
+      // valid. Keep auth-failed for an actual auth.test rejection so doctor
+      // does not tell operators to rotate a healthy token after a transient
+      // network outage.
+      this.diagnostics.recordConnection("error", errorMessageOf(error))
       throw error
     }
 

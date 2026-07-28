@@ -192,6 +192,32 @@ describe("FunnelConnectorRegistry → FlumeSlackSource integration", () => {
 
     await listener.stop()
   })
+
+  test("auth.test transport failures are connection errors, not credential rejections", async () => {
+    globalThis.fetch = (async (url: string | URL) => {
+      if (String(url) === "https://slack.com/api/auth.test") {
+        throw new Error("socket connection closed")
+      }
+
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    const registry = new FunnelConnectorRegistry({
+      descriptors: [slackConnector()],
+      diagnosticLog,
+    })
+
+    const listener = registry.createListener("ch-uuid-1", slackConfig)
+
+    await expect(listener.start(async () => {})).rejects.toThrow("socket connection closed")
+
+    const statuses = diagnosticLog
+      .queryConnection({ type: "slack" })
+      .map((row) => row.status)
+
+    expect(statuses).toContain("error")
+    expect(statuses).not.toContain("auth-failed")
+  })
 })
 
 describe("FunnelConnectorRegistry adapter dispatch", () => {
