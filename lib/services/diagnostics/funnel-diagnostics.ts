@@ -215,15 +215,6 @@ const buildDiagnosis = (
     }
   }
 
-  if (report.configuredConnectors === 0) {
-    return {
-      status: "warn",
-      message: "no connectors configured on this channel",
-      nextActions: [`fnl channels ${channel} connectors add <name> --type=slack ...`],
-      rootCause: null,
-    }
-  }
-
   // Token rejected / Slack auth.test failed / GH token expired — all surface
   // here as 'auth-failed' rows. Surface them ahead of the generic "dead
   // listener" branch so the fix path can name the connector and credential.
@@ -241,7 +232,10 @@ const buildDiagnosis = (
     }
   }
 
-  const allDead = report.listeners.every((l) => !l.alive)
+  // A connectorless channel is still a valid internal publisher / WebSocket
+  // channel, so an empty listener list is not "all dead". Connector-backed
+  // channels still require every configured listener to be present above.
+  const allDead = report.listeners.length > 0 && report.listeners.every((l) => !l.alive)
   const someDead = report.listeners.some((l) => !l.alive)
 
   if (allDead) {

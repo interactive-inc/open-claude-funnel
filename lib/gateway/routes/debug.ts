@@ -43,16 +43,7 @@ const buildChannelDiagnosis = (
   const latestError = channel.connectionErrors[channel.connectionErrors.length - 1] ?? null
   const rootCause = latestError?.detail ?? null
 
-  if (channel.connectors.length === 0) {
-    return {
-      status: "warn",
-      message: "no connectors configured on this channel",
-      nextActions: [`fnl channels ${channel.name} connectors add <name> --type=slack ...`],
-      rootCause: null,
-    }
-  }
-
-  if (!channel.listener) {
+  if (channel.connectors.length > 0 && !channel.listener) {
     return {
       status: "error",
       message: "no listener running for this channel",
@@ -61,7 +52,7 @@ const buildChannelDiagnosis = (
     }
   }
 
-  if (!channel.listener.alive) {
+  if (channel.listener && !channel.listener.alive) {
     return {
       status: "error",
       message: "listener is dead",
@@ -79,7 +70,7 @@ const buildChannelDiagnosis = (
     }
   }
 
-  if (channel.listener.errors > 0) {
+  if (channel.listener && channel.listener.errors > 0) {
     return {
       status: "warn",
       message: "listener has errors",

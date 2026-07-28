@@ -183,6 +183,70 @@ describe.skipIf(!isBun)("FunnelDiagnostics", () => {
     expect(report?.configuredConnectors).toBe(2)
   })
 
+  test("does not require a listener for a connectorless channel with a connected Claude", async () => {
+    const internalChannel: ChannelConfig = {
+      id: "ch-internal",
+      name: "internal",
+      delivery: "fanout",
+      connectors: [],
+    }
+    globalThis.fetch = (async () =>
+      Response.json({
+        pid: 123,
+        uptimeMs: 1000,
+        clients: [{ channel: "ch-internal", channelName: "internal", connectors: [] }],
+        listeners: [],
+      })) as unknown as typeof fetch
+    const diagnostics = new FunnelDiagnostics({
+      channels: { list: () => [internalChannel] },
+      gateway: { getStatus: () => ({ running: true, pid: 123, port: 4567 }) },
+      gatewayToken: { read: () => null },
+      publisher: { publish: async () => ({ state: "ok", offset: 1 }) },
+      diagnosticLog,
+      tmpDir: dir,
+    })
+
+    const report = await diagnostics.diagnoseAll()
+
+    expect(report.summary).toEqual({
+      total: 1,
+      ok: 1,
+      warn: 0,
+      error: 0,
+      criticalChannels: [],
+      warnChannels: [],
+      suggestedActions: [],
+    })
+    expect(report.channels[0]?.diagnosis).toEqual({
+      status: "ok",
+      message: "everything looks healthy",
+      nextActions: [],
+      rootCause: null,
+    })
+  })
+
+  test("still reports gateway failure for a connectorless channel", async () => {
+    const internalChannel: ChannelConfig = {
+      id: "ch-internal",
+      name: "internal",
+      delivery: "fanout",
+      connectors: [],
+    }
+    const diagnostics = new FunnelDiagnostics({
+      channels: { list: () => [internalChannel] },
+      gateway: { getStatus: () => ({ running: false, pid: null, port: 4567 }) },
+      gatewayToken: { read: () => null },
+      publisher: { publish: async () => ({ state: "ok", offset: 1 }) },
+      diagnosticLog,
+      tmpDir: dir,
+    })
+
+    const report = await diagnostics.diagnose("internal")
+
+    expect(report?.diagnosis.status).toBe("error")
+    expect(report?.diagnosis.message).toBe("gateway is not running")
+  })
+
   test("flags flapping listeners (errors >= threshold) without restarting them", async () => {
     seedProcessed({ type: "message" }, "ev-1")
 

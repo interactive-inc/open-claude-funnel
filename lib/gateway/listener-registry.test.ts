@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
@@ -39,6 +39,26 @@ const buildRegistry = (listener: FakeListener) => ({
 })
 
 describe("FunnelListenerRegistry", () => {
+  test("startAll does not create a listener for channels without connectors", async () => {
+    let createListenerCalls = 0
+    const supervisor = new FunnelListenerRegistry({
+      channels: {
+        listAllConnectors: () => [],
+        createListener: () => {
+          createListenerCalls += 1
+          return null
+        },
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+    })
+
+    await supervisor.startAll()
+
+    expect(createListenerCalls).toBe(0)
+    expect(supervisor.list()).toEqual([])
+  })
+
   test("startAll boots every connector and list reflects channel/connector identity", async () => {
     const listener = new FakeListener()
     const supervisor = new FunnelListenerRegistry({

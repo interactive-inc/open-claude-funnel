@@ -171,6 +171,8 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
     expect(res.status).toBe(200)
     expect(body).toContain("custom payload")
+    expect(body).toContain('"message":"no Claude connected to this channel"')
+    expect(body).not.toContain("no connectors configured")
   })
 
   test("/health stays open without a token", async () => {
