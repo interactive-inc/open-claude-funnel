@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { matchCron } from "@/engine/connectors/match-cron"
 
 describe("matchCron", () => {
@@ -36,11 +36,32 @@ describe("matchCron", () => {
     expect(matchCron("0 9 * * 1-5", new Date(2026, 3, 25, 9, 0))).toBe(false)
   })
 
+  test("uses standard day-of-month OR day-of-week semantics", () => {
+    // Wednesday matches although this is not the first day of the month.
+    expect(matchCron("0 9 1 * 3", new Date(2026, 3, 22, 9, 0))).toBe(true)
+    // The first day matches although this is a Friday, not Wednesday.
+    expect(matchCron("0 9 1 * 3", new Date(2026, 4, 1, 9, 0))).toBe(true)
+    expect(matchCron("0 9 1 * 3", new Date(2026, 3, 23, 9, 0))).toBe(false)
+  })
+
+  test("accepts both 0 and 7 for Sunday", () => {
+    const sunday = new Date(2026, 3, 26, 9, 0)
+
+    expect(matchCron("0 9 * * 0", sunday)).toBe(true)
+    expect(matchCron("0 9 * * 7", sunday)).toBe(true)
+  })
+
   test("invalid arity throws", () => {
     expect(() => matchCron("* * *", new Date())).toThrow(/5 fields/)
   })
 
   test("out-of-range throws", () => {
     expect(() => matchCron("60 * * * *", new Date())).toThrow(/out of range/)
+  })
+
+  test("malformed lists and steps throw", () => {
+    expect(() => matchCron("1,,2 * * * *", new Date())).toThrow(/empty/)
+    expect(() => matchCron("1/ * * * *", new Date())).toThrow(/step/)
+    expect(() => matchCron("1/2/3 * * * *", new Date())).toThrow(/step/)
   })
 })

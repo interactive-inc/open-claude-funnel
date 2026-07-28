@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs"
-import { join } from "node:path"
 import { factory } from "@/gateway/factory"
-import { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
-import { funnelTmpDir } from "@/engine/settings/tmp-dir"
+import {
+  diagnosticConnectionEventOf,
+  diagnosticEventOfProcessed,
+} from "@/services/diagnostics/diagnostic-event"
 
 type RecentEvent = {
   seq: number | null
@@ -35,24 +35,6 @@ type ChannelDebug = {
     nextActions: string[]
     rootCause: string | null
   }
-}
-
-const extractPreview = (payload: unknown): string | null => {
-  if (typeof payload !== "string" || payload.length === 0) return null
-
-  try {
-    const parsed = JSON.parse(payload) as unknown
-
-    if (parsed !== null && typeof parsed === "object" && "text" in parsed) {
-      const text = String((parsed as Record<string, unknown>).text)
-
-      return text.length > 80 ? `${text.slice(0, 80)}…` : text
-    }
-  } catch {
-    return payload.length > 80 ? `${payload.slice(0, 80)}…` : payload
-  }
-
-  return payload.length > 80 ? `${payload.slice(0, 80)}…` : payload
 }
 
 const buildChannelDiagnosis = (
@@ -123,13 +105,6 @@ export const debugHandler = factory.createHandlers(async (c) => {
   const gatewayClients = deps.broadcaster.listChannels()
   const metrics = deps.broadcaster.getMetrics()
 
-  const tmpDir = funnelTmpDir()
-  const rawPath = join(tmpDir, "connector-raw.db")
-  const processedPath = join(tmpDir, "connector-processed.db")
-  const connectionPath = join(tmpDir, "connector-connection.db")
-
-  const hasStore = existsSync(rawPath) && existsSync(processedPath) && existsSync(connectionPath)
-
   const channels: ChannelDebug[] = targetChannels.map((ch) => {
     const listenerEntry = gatewayListeners.find((l) => l.channelName === ch.name) ?? null
 
@@ -146,84 +121,34 @@ export const debugHandler = factory.createHandlers(async (c) => {
       (cl) => cl.channel === ch.id || cl.channel === ch.name,
     ).length
 
-    const recentEvents: RecentEvent[] = []
-    const connectionErrors: ConnectionError[] = []
+    const recentEvents: RecentEvent[] = (() => {
+      if (!deps.diagnosticLog) return []
 
-    if (hasStore) {
-      const reader = new ConnectorDiagnosticSqlReader({ rawPath, processedPath, connectionPath })
+      try {
+        return deps.diagnosticLog
+          .queryProcessed({ channelId: ch.id, limit: 10 })
+          .map(diagnosticEventOfProcessed)
+      } catch {
+        return []
+      }
+    })()
 
-      const rows = (() => {
-        try {
-          return reader.query(
-            "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT 10",
-            [ch.id],
-          )
-        } finally {
-          reader.close()
-        }
-      })()
+    const needsConnErrors = (listener && (!listener.alive || listener.errors > 0)) || !listener
+    const connectionErrors: ConnectionError[] = (() => {
+      if (!needsConnErrors || !deps.diagnosticLog) return []
 
-      if (!(rows instanceof Error)) {
-        for (const row of [...rows].reverse()) {
-          const rawPayload = typeof row.payload === "string" ? row.payload : null
-          let payloadParsed: Record<string, unknown> | null = null
-
-          if (rawPayload) {
-            try {
-              const parsed = JSON.parse(rawPayload) as unknown
-
-              if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-                payloadParsed = parsed as Record<string, unknown>
-              }
-            } catch {
-              payloadParsed = null
-            }
-          }
-
-          recentEvents.push({
-            seq: typeof row.seq === "number" ? row.seq : null,
-            ts: typeof row.ts === "number" ? row.ts : null,
-            type: typeof row.type === "string" ? row.type : "?",
-            outcome: typeof row.outcome === "string" ? row.outcome : "?",
-            payload: rawPayload,
-            payloadParsed,
-            preview: extractPreview(row.payload),
+      try {
+        return deps.diagnosticLog
+          .queryConnection({
+            channelId: ch.id,
+            statuses: ["auth-failed", "error"],
+            limit: 3,
           })
-        }
+          .map(diagnosticConnectionEventOf)
+      } catch {
+        return []
       }
-
-      const needsConnErrors = (listener && (!listener.alive || listener.errors > 0)) || !listener
-
-      if (needsConnErrors) {
-        const errReader = new ConnectorDiagnosticSqlReader({
-          rawPath,
-          processedPath,
-          connectionPath,
-        })
-
-        const errRows = (() => {
-          try {
-            return errReader.query(
-              "SELECT ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 3",
-              [ch.id],
-            )
-          } finally {
-            errReader.close()
-          }
-        })()
-
-        if (!(errRows instanceof Error)) {
-          for (const row of [...errRows].reverse()) {
-            connectionErrors.push({
-              ts: typeof row.ts === "number" ? row.ts : null,
-              type: typeof row.type === "string" ? row.type : "?",
-              status: typeof row.status === "string" ? row.status : "?",
-              detail: typeof row.detail === "string" && row.detail.length > 0 ? row.detail : null,
-            })
-          }
-        }
-      }
-    }
+    })()
 
     const base = {
       id: ch.id,

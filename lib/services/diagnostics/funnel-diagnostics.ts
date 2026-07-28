@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import type { ConnectorDiagnosticLog, ConnectorQuery } from "@/engine/diagnostic-log/diagnostic-log"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { gatewayLoopbackUrl } from "@/engine/http/gateway-base-url"
 import { loopbackFetch } from "@/engine/http/loopback-fetch"
@@ -9,11 +10,10 @@ import type {
   DiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event"
 import {
-  queryRows,
-  toDiagnosticConnectionError,
-  toDiagnosticEvent,
+  diagnosticConnectionEventOf,
+  diagnosticEventOfProcessed,
+  diagnosticEventOfRaw,
 } from "@/services/diagnostics/diagnostic-event"
-import { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
 
 /** Narrow channel registry — only `list()` is needed. */
 export type DiagnosticsChannelSource = {
@@ -45,6 +45,7 @@ type Props = {
   gatewayToken: DiagnosticsTokenReader
   channels: DiagnosticsChannelSource
   publisher: DiagnosticsPublisher
+  diagnosticLog?: ConnectorDiagnosticLog
   tmpDir: string
 }
 
@@ -310,8 +311,6 @@ const diagnoseSlackEventSubscriptionGap = (
   }
 }
 
-type StorePaths = { rawPath: string; processedPath: string; connectionPath: string }
-
 /**
  * Programmable diagnostics surface — used by both the CLI (fnl debug …) and
  * the MCP tools (fnl_debug, fnl_recent_events, …). Pure read-side, no
@@ -331,18 +330,14 @@ export class FunnelDiagnostics {
     if (!target) return null
 
     const gatewayProbe = await this.fetchGatewayStatus()
-    const store = this.resolveStore()
-
-    return this.buildChannelDiagnosis(target, gatewayProbe, store, 5)
+    return this.buildChannelDiagnosis(target, gatewayProbe, 5)
   }
 
   async diagnoseAll(): Promise<DiagnoseAllReport> {
     const channels = this.props.channels.list()
     const gatewayProbe = await this.fetchGatewayStatus()
-    const store = this.resolveStore()
-
     const reports = await Promise.all(
-      channels.map((ch) => this.buildChannelDiagnosis(ch, gatewayProbe, store, 5)),
+      channels.map((ch) => this.buildChannelDiagnosis(ch, gatewayProbe, 5)),
     )
 
     const errorChannels = reports
@@ -371,17 +366,13 @@ export class FunnelDiagnostics {
     options: { connector?: string; limit?: number } = {},
   ): Promise<DiagnosticEvent[]> {
     const limit = options.limit ?? 20
-    const ids = this.resolveScope(channelName, options.connector)
+    const scope = this.resolveScope(channelName, options.connector)
 
-    if (ids === null) return []
+    if (scope === null) return []
 
-    const reader = new ConnectorDiagnosticSqlReader(ids.store)
-    const sql = `SELECT seq, ts, type, outcome, payload, event_id FROM processed ${ids.whereClause} ORDER BY seq DESC LIMIT ?`
-    const rows = queryRows(reader, sql, [...ids.params, limit])
-
-    if (rows instanceof Error) return []
-
-    return rows.reverse().map(toDiagnosticEvent)
+    return this.queryLog((log) => log.queryProcessed({ ...scope, limit })).map(
+      diagnosticEventOfProcessed,
+    )
   }
 
   async droppedEvents(
@@ -389,21 +380,13 @@ export class FunnelDiagnostics {
     options: { connector?: string; limit?: number } = {},
   ): Promise<DiagnosticEvent[]> {
     const limit = options.limit ?? 20
-    const ids = this.resolveScope(channelName, options.connector)
+    const scope = this.resolveScope(channelName, options.connector)
 
-    if (ids === null) return []
+    if (scope === null) return []
 
-    const where = ids.whereClause
-      ? `${ids.whereClause} AND outcome LIKE 'skip:%'`
-      : "WHERE outcome LIKE 'skip:%'"
-
-    const reader = new ConnectorDiagnosticSqlReader(ids.store)
-    const sql = `SELECT seq, ts, type, outcome, payload, event_id FROM processed ${where} ORDER BY seq DESC LIMIT ?`
-    const rows = queryRows(reader, sql, [...ids.params, limit])
-
-    if (rows instanceof Error) return []
-
-    return rows.reverse().map(toDiagnosticEvent)
+    return this.queryLog((log) =>
+      log.queryProcessed({ ...scope, outcomePrefix: "skip:", limit }),
+    ).map(diagnosticEventOfProcessed)
   }
 
   /**
@@ -417,18 +400,11 @@ export class FunnelDiagnostics {
     options: { connector?: string; limit?: number } = {},
   ): Promise<DiagnosticEvent[]> {
     const limit = options.limit ?? 20
-    const ids = this.resolveScope(channelName, options.connector)
+    const scope = this.resolveScope(channelName, options.connector)
 
-    if (ids === null) return []
+    if (scope === null) return []
 
-    const reader = new ConnectorDiagnosticSqlReader(ids.store)
-    // raw rows have no `outcome`; default it so toDiagnosticEvent stays uniform.
-    const sql = `SELECT seq, ts, type, '' AS outcome, payload, event_id FROM raw ${ids.whereClause} ORDER BY seq DESC LIMIT ?`
-    const rows = queryRows(reader, sql, [...ids.params, limit])
-
-    if (rows instanceof Error) return []
-
-    return rows.reverse().map(toDiagnosticEvent)
+    return this.queryLog((log) => log.queryRaw({ ...scope, limit })).map(diagnosticEventOfRaw)
   }
 
   async connectionErrors(
@@ -436,21 +412,13 @@ export class FunnelDiagnostics {
     options: { connector?: string; limit?: number } = {},
   ): Promise<DiagnosticConnectionError[]> {
     const limit = options.limit ?? 20
-    const ids = this.resolveScope(channelName, options.connector)
+    const scope = this.resolveScope(channelName, options.connector)
 
-    if (ids === null) return []
+    if (scope === null) return []
 
-    const where = ids.whereClause
-      ? `${ids.whereClause} AND status IN ('auth-failed','error')`
-      : "WHERE status IN ('auth-failed','error')"
-
-    const reader = new ConnectorDiagnosticSqlReader(ids.store)
-    const sql = `SELECT seq, ts, type, status, detail FROM connection ${where} ORDER BY seq DESC LIMIT ?`
-    const rows = queryRows(reader, sql, [...ids.params, limit])
-
-    if (rows instanceof Error) return []
-
-    return rows.reverse().map(toDiagnosticConnectionError)
+    return this.queryLog((log) =>
+      log.queryConnection({ ...scope, statuses: ["auth-failed", "error"], limit }),
+    ).map(diagnosticConnectionEventOf)
   }
 
   /**
@@ -465,17 +433,13 @@ export class FunnelDiagnostics {
     options: { connector?: string; limit?: number } = {},
   ): Promise<DiagnosticConnectionError[]> {
     const limit = options.limit ?? 20
-    const ids = this.resolveScope(channelName, options.connector)
+    const scope = this.resolveScope(channelName, options.connector)
 
-    if (ids === null) return []
+    if (scope === null) return []
 
-    const reader = new ConnectorDiagnosticSqlReader(ids.store)
-    const sql = `SELECT seq, ts, type, status, detail FROM connection ${ids.whereClause} ORDER BY seq DESC LIMIT ?`
-    const rows = queryRows(reader, sql, [...ids.params, limit])
-
-    if (rows instanceof Error) return []
-
-    return rows.reverse().map(toDiagnosticConnectionError)
+    return this.queryLog((log) => log.queryConnection({ ...scope, limit })).map(
+      diagnosticConnectionEventOf,
+    )
   }
 
   /**
@@ -521,23 +485,17 @@ export class FunnelDiagnostics {
 
     if (!channel) return { state: "not-found" }
 
-    const store = this.resolveStore()
+    if (!this.props.diagnosticLog) {
+      return { state: "error", reason: "no diagnostic log configured" }
+    }
 
-    if (!store) return { state: "error", reason: "no diagnostic store yet" }
-
-    const reader = new ConnectorDiagnosticSqlReader(store)
-    const rows =
-      seq !== undefined
-        ? queryRows(
-            reader,
-            "SELECT seq, event_id, type, payload, connector_id, channel_id FROM processed WHERE channel_id = ? AND seq = ? LIMIT 1",
-            [channel.id, seq],
-          )
-        : queryRows(
-            reader,
-            "SELECT seq, event_id, type, payload, connector_id, channel_id FROM processed WHERE channel_id = ? AND outcome LIKE 'emitted%' ORDER BY seq DESC LIMIT 1",
-            [channel.id],
-          )
+    const rows = this.queryLogResult((log) =>
+      log.queryProcessed({
+        channelId: channel.id,
+        ...(seq !== undefined ? { seq } : { outcomePrefix: "emitted" }),
+        limit: 1,
+      }),
+    )
 
     if (rows instanceof Error) return { state: "error", reason: rows.message }
 
@@ -545,25 +503,15 @@ export class FunnelDiagnostics {
 
     if (!firstRow) return { state: "not-found" }
 
-    const replaySeq = typeof firstRow.seq === "number" ? firstRow.seq : null
-    const eventId = typeof firstRow.event_id === "string" ? firstRow.event_id : null
-    const connectorId = typeof firstRow.connector_id === "string" ? firstRow.connector_id : null
-
-    let content = typeof firstRow.payload === "string" ? firstRow.payload : null
-
-    if ((!content || content.length === 0) && eventId) {
-      const rawRows = queryRows(
-        new ConnectorDiagnosticSqlReader(store),
-        "SELECT payload FROM raw WHERE event_id = ? LIMIT 1",
-        [eventId],
-      )
-
-      const rawRow = rawRows instanceof Error ? null : rawRows[0]
-
-      if (rawRow) {
-        content = typeof rawRow.payload === "string" ? rawRow.payload : null
-      }
-    }
+    const replaySeq = firstRow.seq
+    const eventId = firstRow.eventId
+    const connectorId = firstRow.connectorId
+    const processedContent = firstRow.payload.length > 0 ? firstRow.payload : null
+    const rawContent =
+      processedContent === null
+        ? (this.queryLog((log) => log.queryRaw({ eventId, limit: 1 }))[0]?.payload ?? null)
+        : null
+    const content = processedContent ?? rawContent
 
     if (!content) return { state: "error", reason: "event has no payload to replay" }
 
@@ -584,43 +532,16 @@ export class FunnelDiagnostics {
     }
   }
 
-  resolveStore(): StorePaths | null {
-    const tmpDir = this.props.tmpDir
-    const rawPath = join(tmpDir, "connector-raw.db")
-    const processedPath = join(tmpDir, "connector-processed.db")
-    const connectionPath = join(tmpDir, "connector-connection.db")
-
-    if (!existsSync(rawPath) || !existsSync(processedPath) || !existsSync(connectionPath)) {
-      return null
-    }
-
-    return { rawPath, processedPath, connectionPath }
-  }
-
-  private resolveChannelId(channelName: string | null): string | null {
-    if (!channelName) return null
-    const channels = this.props.channels.list()
-    return channels.find((ch) => ch.name === channelName)?.id ?? null
-  }
-
   /**
-   * Resolves a (channel, connector) filter into the SQL where-clause + the
-   * positional params, or returns `null` when the requested scope cannot be
-   * resolved (channel not found, connector not found in that channel, no
-   * store on disk yet). Centralises the channel/connector → id mapping so
-   * each read method does not redo the lookup.
+   * Resolves human-facing channel/connector names into the stable ids stored
+   * by the diagnostic log. Connector names are only unique inside a channel.
    */
   private resolveScope(
     channelName: string | null,
     connectorName: string | undefined,
-  ): { store: StorePaths; whereClause: string; params: (string | number)[] } | null {
-    const store = this.resolveStore()
-    if (!store) return null
-
+  ): Pick<ConnectorQuery, "channelId" | "connectorId"> | null {
     if (!channelName) {
-      // No channel implies no connector filter either — connector names are
-      // only unique within a channel.
-      return { store, whereClause: "", params: [] }
+      return {}
     }
 
     const channels = this.props.channels.list()
@@ -628,20 +549,28 @@ export class FunnelDiagnostics {
     if (!channel) return null
 
     if (!connectorName) {
-      return {
-        store,
-        whereClause: "WHERE channel_id = ?",
-        params: [channel.id],
-      }
+      return { channelId: channel.id }
     }
 
     const connectorId = channel.connectors?.find((c) => c.name === connectorName)?.id ?? null
     if (!connectorId) return null
 
-    return {
-      store,
-      whereClause: "WHERE channel_id = ? AND connector_id = ?",
-      params: [channel.id, connectorId],
+    return { channelId: channel.id, connectorId }
+  }
+
+  private queryLog<T>(query: (log: ConnectorDiagnosticLog) => T[]): T[] {
+    const result = this.queryLogResult(query)
+    return result instanceof Error ? [] : result
+  }
+
+  private queryLogResult<T>(query: (log: ConnectorDiagnosticLog) => T[]): T[] | Error {
+    const log = this.props.diagnosticLog
+    if (!log) return new Error("no diagnostic log configured")
+
+    try {
+      return query(log)
+    } catch (error) {
+      return new Error(errorMessageOf(error))
     }
   }
 
@@ -681,7 +610,6 @@ export class FunnelDiagnostics {
   private async buildChannelDiagnosis(
     target: ChannelConfig,
     gatewayProbe: { body: GatewayStatusResponse | null; error: string | null },
-    store: StorePaths | null,
     eventLimit: number,
   ): Promise<ChannelDiagnosis> {
     const gatewayStatus = this.props.gateway.getStatus()
@@ -722,31 +650,25 @@ export class FunnelDiagnostics {
       ).length
     }
 
-    if (store) {
-      const evRows = queryRows(
-        new ConnectorDiagnosticSqlReader(store),
-        "SELECT seq, ts, type, outcome, payload FROM processed WHERE channel_id = ? ORDER BY seq DESC LIMIT ?",
-        [target.id, eventLimit],
+    if (this.props.diagnosticLog) {
+      const evRows = this.queryLog((log) =>
+        log.queryProcessed({ channelId: target.id, limit: eventLimit }),
       )
-
-      if (!(evRows instanceof Error)) {
-        baseReport.recentEvents = evRows.reverse().map(toDiagnosticEvent)
-      }
+      baseReport.recentEvents = evRows.map(diagnosticEventOfProcessed)
 
       // Load auth-failed / error rows unconditionally: a listener that auth-
       // fails and the supervisor never restarted still shows as alive=false
       // here, but a listener that auth-failed during a token rotation while
       // some events succeed earlier will show alive=true with errors=0 — and
       // the diagnosis still needs to surface the auth-failed signal.
-      const errRows = queryRows(
-        new ConnectorDiagnosticSqlReader(store),
-        "SELECT ts, type, status, detail FROM connection WHERE channel_id = ? AND status IN ('auth-failed','error') ORDER BY seq DESC LIMIT 3",
-        [target.id],
+      const errRows = this.queryLog((log) =>
+        log.queryConnection({
+          channelId: target.id,
+          statuses: ["auth-failed", "error"],
+          limit: 3,
+        }),
       )
-
-      if (!(errRows instanceof Error)) {
-        baseReport.connectionErrors = errRows.reverse().map(toDiagnosticConnectionError)
-      }
+      baseReport.connectionErrors = errRows.map(diagnosticConnectionEventOf)
     }
 
     return { ...baseReport, diagnosis: buildDiagnosis(baseReport) }

@@ -1,6 +1,7 @@
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { FunnelBroadcaster } from "@/gateway/broadcaster"
 import type { FunnelListenerRegistry } from "@/gateway/listener-registry"
+import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 
 export type GatewayEmitInput = {
   channel: string
@@ -19,4 +20,5 @@ export type GatewayRouteDeps = {
   channels: FunnelChannels
   uptimeMs: () => number
   emit: (input: GatewayEmitInput) => { offset: number }
+  diagnosticLog?: ConnectorDiagnosticLog
 }

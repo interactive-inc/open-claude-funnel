@@ -180,10 +180,14 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
+    const where: WhereClause & { event_id?: string } = buildWhere(query)
+    if (query.eventId !== undefined) where.event_id = query.eventId
+
     const records = this.raw.query({
       ...(query.type !== undefined ? { type: query.type } : {}),
+      ...(query.seq !== undefined ? { seq: query.seq } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
-      where: buildWhere(query),
+      where,
       order: "desc",
     })
 
@@ -199,13 +203,18 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[] {
-    const where: WhereClause & { outcome?: string } = buildWhere(query)
+    const where: WhereClause & { event_id?: string; outcome?: string } = buildWhere(query)
+    if (query.eventId !== undefined) where.event_id = query.eventId
     if (query.outcome !== undefined) where.outcome = query.outcome
 
     const records = this.processed.query({
       ...(query.type !== undefined ? { type: query.type } : {}),
+      ...(query.seq !== undefined ? { seq: query.seq } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
       where,
+      ...(query.outcomePrefix !== undefined
+        ? { wherePrefix: { outcome: query.outcomePrefix } }
+        : {}),
       order: "desc",
     })
 
@@ -227,8 +236,10 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
     const records = this.connection.query({
       ...(query.type !== undefined ? { type: query.type } : {}),
+      ...(query.seq !== undefined ? { seq: query.seq } : {}),
       ...(query.limit !== undefined ? { limit: query.limit } : {}),
       where,
+      ...(query.statuses !== undefined ? { whereIn: { status: query.statuses } } : {}),
       order: "desc",
     })
 

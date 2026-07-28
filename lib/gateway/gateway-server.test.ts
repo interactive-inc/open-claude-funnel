@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "bun:test"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 import { Hono } from "hono"
@@ -10,6 +10,7 @@ import type { Env } from "@/gateway/factory"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 import type { ReplayableEvent } from "@/gateway/broadcaster"
 import { FunnelEventLog, type FunnelEventRecord } from "@/gateway/event-log/event-log"
+import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
 class TrackableEventLog extends FunnelEventLog {
   closeCalled = false
@@ -133,6 +134,43 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
     })
 
     expect(res.status).toBe(401)
+  })
+
+  test("/debug reads the diagnostic log injected by the embedding host", async () => {
+    const diagnosticLog = new MemoryConnectorDiagnosticLog()
+    const funnel = new Funnel({
+      fs: new MemoryFunnelFileSystem(),
+      logger: new NoopFunnelLogger(),
+      dir: "/custom/funnel",
+      tmpDir: "/custom/runtime",
+      diagnosticLog,
+    })
+    const channel = funnel.channels.add({ name: "ops" })
+    diagnosticLog.recordProcessed({
+      eventId: "custom-event",
+      type: "schedule",
+      connectorId: null,
+      channelId: channel.id,
+      outcome: "emitted",
+      payload: "custom payload",
+    })
+    const server = funnel.gatewayServer({
+      port: 0,
+      killCompetingSlack: false,
+      token: "debug-token",
+      eventLog: new MemoryFunnelEventLog(),
+    })
+    active = { server }
+
+    await server.start()
+
+    const res = await fetch(`http://localhost:${server.port}/debug`, {
+      headers: { authorization: "Bearer debug-token" },
+    })
+    const body = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(body).toContain("custom payload")
   })
 
   test("/health stays open without a token", async () => {

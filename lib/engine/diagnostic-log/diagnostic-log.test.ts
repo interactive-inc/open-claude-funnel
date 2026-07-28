@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -132,6 +132,34 @@ for (const impl of implementations) {
       log.close()
     })
 
+    test("filters event rows by event id and sequence", () => {
+      const log = impl.build()
+
+      log.recordRaw(raw({ eventId: "ev-1" }))
+      log.recordRaw(raw({ eventId: "ev-2" }))
+      log.recordProcessed(processed({ eventId: "ev-1" }))
+      log.recordProcessed(processed({ eventId: "ev-2" }))
+
+      expect(log.queryRaw({ eventId: "ev-2" }).map((row) => row.eventId)).toEqual(["ev-2"])
+      expect(log.queryProcessed({ seq: 1 }).map((row) => row.eventId)).toEqual(["ev-1"])
+
+      log.close()
+    })
+
+    test("filters processed rows by outcome prefix before applying limit", () => {
+      const log = impl.build()
+
+      log.recordProcessed(processed({ eventId: "drop-old", outcome: "skip:dedup" }))
+      log.recordProcessed(processed({ eventId: "sent", outcome: "emitted" }))
+      log.recordProcessed(processed({ eventId: "drop-new", outcome: "skip:bot" }))
+
+      const rows = log.queryProcessed({ outcomePrefix: "skip:", limit: 1 })
+
+      expect(rows.map((row) => row.eventId)).toEqual(["drop-new"])
+
+      log.close()
+    })
+
     test("filters by connector and channel id", () => {
       const log = impl.build()
 
@@ -186,6 +214,23 @@ for (const impl of implementations) {
       const failures = log.queryConnection({ status: "auth-failed" })
       expect(failures).toHaveLength(1)
       expect(failures[0]?.detail).toBe("invalid_auth")
+
+      log.close()
+    })
+
+    test("filters connection rows by a status set before applying limit", () => {
+      const log = impl.build()
+
+      log.recordConnection(connection({ status: "auth-failed", detail: "bad token" }))
+      log.recordConnection(connection({ status: "connected" }))
+      log.recordConnection(connection({ status: "error", detail: "socket" }))
+
+      const failures = log.queryConnection({
+        statuses: ["auth-failed", "error"],
+        limit: 2,
+      })
+
+      expect(failures.map((row) => row.status)).toEqual(["auth-failed", "error"])
 
       log.close()
     })

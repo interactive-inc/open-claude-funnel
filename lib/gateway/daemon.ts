@@ -10,6 +10,7 @@ import { NodeFunnelLogger } from "@/engine/logger/node-logger"
 import { buildServiceRoutes } from "@/gateway/service-routes"
 import { isAddressInUseError } from "@/gateway/is-address-in-use-error"
 import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
+import { connectorDiagnosticLogPaths } from "@/engine/diagnostic-log/diagnostic-log-paths"
 
 // Raw rows can each hold up to ~256 KiB, so they get a tight cap (~5k rows ≈
 // 1.3 GiB worst case); the small verdict/lifecycle rows get a looser one.
@@ -87,9 +88,7 @@ const tmpDir = funnelTmpDir()
 mkdirSync(tmpDir, { recursive: true })
 
 const diagnosticLog = new SqliteConnectorDiagnosticLog({
-  rawPath: join(tmpDir, "connector-raw.db"),
-  processedPath: join(tmpDir, "connector-processed.db"),
-  connectionPath: join(tmpDir, "connector-connection.db"),
+  ...connectorDiagnosticLogPaths(tmpDir),
   rawMaxRows: RAW_MAX_ROWS,
   maxRows: VERDICT_MAX_ROWS,
   maxAgeMs: DIAGNOSTIC_MAX_AGE_MS,

@@ -45,7 +45,12 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
-    const matched = this.raws.filter((event) => matches(event, query))
+    const matched = this.raws.filter((event) => {
+      if (!matches(event, query)) return false
+      if (query.eventId !== undefined && event.eventId !== query.eventId) return false
+
+      return true
+    })
 
     return takeRecent(matched, query.limit)
   }
@@ -53,7 +58,11 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[] {
     const matched = this.processeds.filter((event) => {
       if (!matches(event, query)) return false
+      if (query.eventId !== undefined && event.eventId !== query.eventId) return false
       if (query.outcome !== undefined && event.outcome !== query.outcome) return false
+      if (query.outcomePrefix !== undefined && !event.outcome.startsWith(query.outcomePrefix)) {
+        return false
+      }
 
       return true
     })
@@ -65,6 +74,7 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     const matched = this.connections.filter((event) => {
       if (!matches(event, query)) return false
       if (query.status !== undefined && event.status !== query.status) return false
+      if (query.statuses !== undefined && !query.statuses.includes(event.status)) return false
 
       return true
     })
@@ -88,6 +98,7 @@ const matches = (
   if (query.type !== undefined && event.type !== query.type) return false
   if (query.connectorId !== undefined && event.connectorId !== query.connectorId) return false
   if (query.channelId !== undefined && event.channelId !== query.channelId) return false
+  if ("seq" in event && query.seq !== undefined && event.seq !== query.seq) return false
 
   return true
 }

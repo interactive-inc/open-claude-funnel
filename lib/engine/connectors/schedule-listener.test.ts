@@ -1,6 +1,7 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { FunnelScheduleListener } from "@/engine/connectors/schedule-listener"
 import type {
+  CronScheduleEntry,
   ScheduleConnectorConfig,
   ScheduleEntry,
 } from "@/engine/connectors/schedule-connector-schema"
@@ -9,10 +10,23 @@ import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
-const buildEntry = (overrides: Partial<ScheduleEntry> = {}): ScheduleEntry => ({
+const buildEntry = (overrides: Partial<CronScheduleEntry> = {}): CronScheduleEntry => ({
   id: "e1",
+  kind: "cron",
   cron: "* * * * *",
   prompt: "do it",
+  enabled: true,
+  catchupPolicy: "latest",
+  ...overrides,
+})
+
+const buildOnceEntry = (
+  overrides: Partial<Extract<ScheduleEntry, { kind: "once" }>> = {},
+): Extract<ScheduleEntry, { kind: "once" }> => ({
+  id: "once-1",
+  kind: "once",
+  runAt: "2026-01-01T09:00:30.000Z",
+  prompt: "do it once",
   enabled: true,
   catchupPolicy: "latest",
   ...overrides,
@@ -215,6 +229,102 @@ describe("FunnelScheduleListener", () => {
     })
 
     expect(sent2).toHaveLength(0)
+  })
+
+  test("catches up from entry creation time on the first daemon tick", async () => {
+    const config = buildConfig([
+      buildEntry({
+        cron: "0 9 * * *",
+        createdAt: "2026-01-01T08:30:00.000Z",
+      }),
+    ])
+    const { listener, sent } = buildListener(config, new Date("2026-01-01T10:00:00.000Z"))
+
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.meta?.fired_at).toBe("2026-01-01T09:00:00.000Z")
+    expect(sent[0]?.meta?.catchup).toBe("true")
+  })
+
+  test("fires a native once entry no earlier than runAt and never repeats it", async () => {
+    const fs = new MemoryFunnelFileSystem()
+    const path = "/funnel/state.json"
+    const config = buildConfig([buildOnceEntry()])
+    const clock = { now: new Date("2026-01-01T09:00:00.000Z") }
+    const listener = new FunnelScheduleListener({
+      config,
+      lastFiredStore: new FunnelScheduleStateStore({ path, fs }),
+      now: () => clock.now,
+    })
+    const sent: Array<{ content: string; meta?: Record<string, string> }> = []
+
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+    expect(sent).toHaveLength(0)
+
+    clock.now = new Date("2026-01-01T09:01:00.000Z")
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.content).toBe("do it once")
+    expect(sent[0]?.meta?.schedule_kind).toBe("once")
+    expect(sent[0]?.meta?.run_at).toBe("2026-01-01T09:00:30.000Z")
+    expect(sent[0]?.meta?.fired_at).toBe("2026-01-01T09:00:30.000Z")
+
+    const reloaded = new FunnelScheduleListener({
+      config,
+      lastFiredStore: new FunnelScheduleStateStore({ path, fs }),
+      now: () => clock.now,
+    })
+
+    await reloaded.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+    expect(sent).toHaveLength(1)
+  })
+
+  test("a missed once entry with skip policy is consumed without firing", async () => {
+    const config = buildConfig([
+      buildOnceEntry({
+        runAt: "2026-01-01T09:00:00.000Z",
+        catchupPolicy: "skip",
+      }),
+    ])
+    const { listener, sent } = buildListener(config, new Date("2026-01-01T09:02:00.000Z"))
+
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+    await listener.tick(async (content, meta) => {
+      sent.push({ content, meta })
+    })
+
+    expect(sent).toHaveLength(0)
+  })
+
+  test("prunes state for entries removed from the connector", async () => {
+    const fs = new MemoryFunnelFileSystem()
+    const path = "/funnel/state.json"
+    const store = new FunnelScheduleStateStore({ path, fs })
+    store.save(new Map([["removed", new Date("2026-01-01T00:00:00.000Z")]]))
+    const listener = new FunnelScheduleListener({
+      config: buildConfig([]),
+      lastFiredStore: store,
+      now: () => new Date("2026-01-01T01:00:00.000Z"),
+    })
+
+    await listener.tick(async () => {})
+
+    expect(store.load().has("removed")).toBe(false)
   })
 })
 

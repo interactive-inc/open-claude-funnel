@@ -6,6 +6,7 @@ import { FunnelConnectorDiagnosticsRecorder } from "@/engine/connectors/connecto
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type {
+  CronScheduleEntry,
   ScheduleConnectorConfig,
   ScheduleEntry,
 } from "@/engine/connectors/schedule-connector-schema"
@@ -126,17 +127,17 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   async tick(notify: NotifyFn): Promise<void> {
     const now = this.truncateToMinute(this.now())
     const state = this.lastFiredStore.load()
-    let changed = false
+    const changes = [this.pruneRemovedEntries(state)]
 
     for (const entry of this.config.entries) {
       if (!entry.enabled) continue
 
       const fired = await this.fireEntry(entry, now, state, notify)
 
-      if (fired) changed = true
+      changes.push(fired)
     }
 
-    if (changed) this.lastFiredStore.save(state)
+    if (changes.includes(true)) this.lastFiredStore.save(state)
   }
 
   private async fireEntry(
@@ -145,8 +146,45 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     state: Map<string, Date>,
     notify: NotifyFn,
   ): Promise<boolean> {
+    if (entry.kind === "once") {
+      return this.fireOnceEntry(entry, now, state, notify)
+    }
+
+    return this.fireCronEntry(entry, now, state, notify)
+  }
+
+  private async fireOnceEntry(
+    entry: Extract<ScheduleEntry, { kind: "once" }>,
+    now: Date,
+    state: Map<string, Date>,
+    notify: NotifyFn,
+  ): Promise<boolean> {
+    if (state.has(entry.id)) return false
+
+    const runAt = new Date(entry.runAt)
+    if (now.getTime() < runAt.getTime()) return false
+
+    const lateness = now.getTime() - runAt.getTime()
+
+    if (entry.catchupPolicy === "skip" && lateness >= 60_000) {
+      state.set(entry.id, runAt)
+      return true
+    }
+
+    await this.notifyOne(entry, runAt, notify, lateness > 0)
+    state.set(entry.id, runAt)
+    return true
+  }
+
+  private async fireCronEntry(
+    entry: CronScheduleEntry,
+    now: Date,
+    state: Map<string, Date>,
+    notify: NotifyFn,
+  ): Promise<boolean> {
     const lastFired = state.get(entry.id)
-    const searchFrom = lastFired ? new Date(lastFired.getTime() + 60_000) : now
+    const createdAt = entry.createdAt ? this.truncateToMinute(new Date(entry.createdAt)) : now
+    const searchFrom = lastFired ? new Date(lastFired.getTime() + 60_000) : createdAt
 
     if (searchFrom.getTime() > now.getTime()) return false
 
@@ -166,7 +204,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     if (entry.catchupPolicy === "all") {
       const matches = this.findAllMatches(entry.cron, searchFrom, now, entry.id)
 
-      if (matches.length === 0) return false
+      if (matches.length === 0) return this.seedSearchWatermark(entry.id, lastFired, now, state)
 
       for (const match of matches) {
         await this.notifyOne(entry, match, notify, match.getTime() !== now.getTime())
@@ -178,10 +216,22 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     const match = this.findMostRecentMatch(entry.cron, searchFrom, now, entry.id)
 
-    if (!match) return false
+    if (!match) return this.seedSearchWatermark(entry.id, lastFired, now, state)
 
     await this.notifyOne(entry, match, notify, match.getTime() !== now.getTime())
     state.set(entry.id, match)
+    return true
+  }
+
+  private seedSearchWatermark(
+    entryId: string,
+    lastFired: Date | undefined,
+    now: Date,
+    state: Map<string, Date>,
+  ): boolean {
+    if (lastFired !== undefined) return false
+
+    state.set(entryId, now)
     return true
   }
 
@@ -194,9 +244,15 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     const meta: Record<string, string> = {
       event_type: "schedule",
       schedule_id: entry.id,
-      cron: entry.cron,
+      schedule_kind: entry.kind,
       fired_at: firedAt.toISOString(),
       catchup_policy: entry.catchupPolicy,
+    }
+
+    if (entry.kind === "cron") {
+      meta.cron = entry.cron
+    } else {
+      meta.run_at = entry.runAt
     }
 
     if (catchup) meta.catchup = "true"
@@ -209,7 +265,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       eventId,
       JSON.stringify({
         schedule_id: entry.id,
-        cron: entry.cron,
+        kind: entry.kind,
+        ...(entry.kind === "cron" ? { cron: entry.cron } : { run_at: entry.runAt }),
         prompt: entry.prompt,
         fired_at: firedAt.toISOString(),
         catchup,
@@ -281,7 +338,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     return matches
   }
 
-  private logInvalidCron(entry: Pick<ScheduleEntry, "id" | "cron">, error: unknown): void {
+  private logInvalidCron(entry: { id: string; cron: string }, error: unknown): void {
     const message = errorMessageOf(error)
 
     this.diagnostics.recordConnection(
@@ -300,5 +357,19 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     const copy = new Date(date.getTime())
     copy.setSeconds(0, 0)
     return copy
+  }
+
+  private pruneRemovedEntries(state: Map<string, Date>): boolean {
+    const configuredIds = new Set(this.config.entries.map((entry) => entry.id))
+    const removedIds: string[] = []
+
+    for (const id of state.keys()) {
+      if (configuredIds.has(id)) continue
+
+      state.delete(id)
+      removedIds.push(id)
+    }
+
+    return removedIds.length > 0
   }
 }
