@@ -283,7 +283,7 @@ export class FunnelListenerRegistry {
       // A throwing stop used to leave the entry behind, so the next start() saw
       // `running.has(key) === true` and returned "already running" without
       // reconstructing the listener — a dead listener got stuck in the registry
-      // and the supervisor's recoverDead loop spun forever without restarting.
+      // and the registry's recoverDead loop spun forever without restarting.
       this.running.delete(key)
       this.failureCounts.delete(key)
     }
@@ -480,7 +480,7 @@ export class FunnelListenerRegistry {
     }
 
     if (result.retriable === false) {
-      // Drop a non-retriable failure from the queue. The supervisor will
+      // Drop a non-retriable failure from the queue. The registry will
       // not poke it again until the operator calls restart() explicitly
       // (after rotating the token / fixing config).
       this.pendingRetry.delete(retry.key)

@@ -21,7 +21,7 @@ LocalConfig
 
 Gateway
   Long-lived Bun.serve daemon hosting WebSocket + internal HTTP + listener
-  supervisor + broadcaster. Required for any realtime flow.
+  listener registry + broadcaster. Required for any realtime flow.
   See: fnl docs gateway.
 
 Listener

@@ -72,7 +72,7 @@ Slack / Discord / GitHub connectors wrap @interactive-inc/flume 0.9. Each
 listener owns a single-source Flume FSM and reconnect is enabled by
 default (infinite attempts, 1s base / 30s max exponential backoff +
 jitter), so a wifi drop or upstream socket close auto-recovers without
-the supervisor intervening.
+the listener registry intervening.
 
    Source ctor                      Flume options (cross-cutting)
    -----------                      -----------------------------

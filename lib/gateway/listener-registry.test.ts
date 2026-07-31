@@ -41,7 +41,7 @@ const buildRegistry = (listener: FakeListener) => ({
 describe("FunnelListenerRegistry", () => {
   test("startAll does not create a listener for channels without connectors", async () => {
     let createListenerCalls = 0
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [],
         createListener: () => {
@@ -53,38 +53,38 @@ describe("FunnelListenerRegistry", () => {
       logger: new NoopFunnelLogger(),
     })
 
-    await supervisor.startAll()
+    await registry.startAll()
 
     expect(createListenerCalls).toBe(0)
-    expect(supervisor.list()).toEqual([])
+    expect(registry.list()).toEqual([])
   })
 
   test("startAll boots every connector and list reflects channel/connector identity", async () => {
     const listener = new FakeListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: buildRegistry(listener),
       notify: async () => {},
       logger: new NoopFunnelLogger(),
     })
 
-    await supervisor.startAll()
+    await registry.startAll()
 
-    const entries = supervisor.list()
+    const entries = registry.list()
 
     expect(entries).toHaveLength(1)
     expect(entries[0]?.channelName).toBe("ops")
     expect(entries[0]?.channelId).toBe("ch-1")
     expect(entries[0]?.name).toBe("cron")
-    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(registry.isRunning("ops", "cron")).toBe(true)
 
-    await supervisor.stopAll()
-    expect(supervisor.isRunning("ops", "cron")).toBe(false)
+    await registry.stopAll()
+    expect(registry.isRunning("ops", "cron")).toBe(false)
   })
 
   test("notify is forwarded with the channel and connector arguments", async () => {
     const listener = new FakeListener()
     const seen: { channel: string; connector: string; content: string }[] = []
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: buildRegistry(listener),
       notify: async (channel, connector, content) => {
         seen.push({ channel, connector, content })
@@ -92,7 +92,7 @@ describe("FunnelListenerRegistry", () => {
       logger: new NoopFunnelLogger(),
     })
 
-    await supervisor.start("ops", "cron")
+    await registry.start("ops", "cron")
     listener.alive = true
 
     const captured: NotifyFn[] = []
@@ -102,7 +102,7 @@ describe("FunnelListenerRegistry", () => {
       await origStart(notify)
     }
 
-    await supervisor.restart("ops", "cron")
+    await registry.restart("ops", "cron")
 
     if (!captured[0]) throw new Error("expected notify capture")
 
@@ -112,7 +112,7 @@ describe("FunnelListenerRegistry", () => {
   })
 
   test("start returns an error when the connector cannot be created", async () => {
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [],
         createListener: () => null,
@@ -121,7 +121,7 @@ describe("FunnelListenerRegistry", () => {
       logger: new NoopFunnelLogger(),
     })
 
-    const result = await supervisor.start("ops", "missing")
+    const result = await registry.start("ops", "missing")
 
     expect(result.ok).toBe(false)
     expect(result.reason).toMatch(/not found/)
@@ -140,7 +140,7 @@ describe("FunnelListenerRegistry", () => {
 
     const listener = new ThrowingStartListener()
     const captured: { error: Error; context?: Record<string, unknown> }[] = []
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -150,7 +150,7 @@ describe("FunnelListenerRegistry", () => {
       onError: (error, context) => captured.push({ error, context }),
     })
 
-    const result = await supervisor.start("ops", "cron")
+    const result = await registry.start("ops", "cron")
 
     expect(result.ok).toBe(false)
     expect(captured.length).toBe(1)
@@ -179,7 +179,7 @@ describe("FunnelListenerRegistry", () => {
     }
 
     const failingListener = new FailingListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [badView, view],
         createListener: (_ch: string, name: string) => {
@@ -192,12 +192,12 @@ describe("FunnelListenerRegistry", () => {
       logger: new NoopFunnelLogger(),
     })
 
-    await supervisor.startAll()
+    await registry.startAll()
 
-    expect(supervisor.isRunning("ops", "cron")).toBe(true)
-    expect(supervisor.isRunning("ops", "bad-slack")).toBe(false)
+    expect(registry.isRunning("ops", "cron")).toBe(true)
+    expect(registry.isRunning("ops", "bad-slack")).toBe(false)
 
-    await supervisor.stopAll()
+    await registry.stopAll()
   })
 
   test("start times out when listener.start() hangs", async () => {
@@ -212,7 +212,7 @@ describe("FunnelListenerRegistry", () => {
     }
 
     const listener = new HangingListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -223,7 +223,7 @@ describe("FunnelListenerRegistry", () => {
       sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
     })
 
-    const result = await supervisor.start("ops", "cron")
+    const result = await registry.start("ops", "cron")
 
     expect(result.ok).toBe(false)
     expect(result.reason).toMatch(/timed out/)
@@ -245,7 +245,7 @@ describe("FunnelListenerRegistry", () => {
     }
 
     const listener = new HangingListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -256,7 +256,7 @@ describe("FunnelListenerRegistry", () => {
       sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
     })
 
-    await supervisor.start("ops", "cron")
+    await registry.start("ops", "cron")
 
     expect(stopped).toBe(true)
   })
@@ -277,7 +277,7 @@ describe("FunnelListenerRegistry", () => {
     }
 
     const listener = new FailAndLeakListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -286,7 +286,7 @@ describe("FunnelListenerRegistry", () => {
       logger: new NoopFunnelLogger(),
     })
 
-    await supervisor.start("ops", "cron")
+    await registry.start("ops", "cron")
 
     expect(stopped).toBe(true)
   })
@@ -310,7 +310,7 @@ describe("FunnelListenerRegistry", () => {
     }
 
     const listener = new EventuallyGoodListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -321,17 +321,17 @@ describe("FunnelListenerRegistry", () => {
       sleep: (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 10))),
     })
 
-    await supervisor.startAll()
+    await registry.startAll()
 
-    expect(supervisor.isRunning("ops", "cron")).toBe(false)
+    expect(registry.isRunning("ops", "cron")).toBe(false)
     expect(startAttempts).toBe(1)
 
     await new Promise((r) => setTimeout(r, 100))
 
-    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(registry.isRunning("ops", "cron")).toBe(true)
     expect(startAttempts).toBe(2)
 
-    await supervisor.stopAll()
+    await registry.stopAll()
   })
 
   test("recoverDead really restarts the listener even when stop() throws", async () => {
@@ -360,7 +360,7 @@ describe("FunnelListenerRegistry", () => {
     }
 
     const listener = new FlakyStopListener()
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({ config, channelId: "ch-1", listener }),
@@ -371,15 +371,15 @@ describe("FunnelListenerRegistry", () => {
       healthCheckIntervalMs: 1,
     })
 
-    await supervisor.start("ops", "cron")
+    await registry.start("ops", "cron")
     expect(listener.startCalls).toBe(1)
 
     listener.alive = false
 
-    await supervisor.runHealthCheckForTest()
+    await registry.runHealthCheckForTest()
 
     expect(listener.startCalls).toBe(2)
-    expect(supervisor.isRunning("ops", "cron")).toBe(true)
+    expect(registry.isRunning("ops", "cron")).toBe(true)
   })
 
   test("FunnelAuthFailedError is not retried (token rotation needs operator action)", async () => {
@@ -397,7 +397,7 @@ describe("FunnelListenerRegistry", () => {
       }
     }
 
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [view],
         createListener: () => ({
@@ -412,18 +412,18 @@ describe("FunnelListenerRegistry", () => {
       sleep: async () => {},
     })
 
-    await supervisor.startAll()
+    await registry.startAll()
     expect(attempts).toBe(1)
 
     // Run two health-check passes — a retriable failure would queue a
     // retry per pass and bump attempts up; auth-failed must be dropped
     // from the queue so attempts stays at 1.
-    await supervisor.runHealthCheckForTest()
-    await supervisor.runHealthCheckForTest()
+    await registry.runHealthCheckForTest()
+    await registry.runHealthCheckForTest()
 
     expect(attempts).toBe(1)
 
-    await supervisor.stopAll()
+    await registry.stopAll()
   })
 
   test("recoverDead runs in parallel — a slow restart does not block sibling restarts", async () => {
@@ -451,7 +451,7 @@ describe("FunnelListenerRegistry", () => {
     const listenerA = new TrackedListener()
     const listenerB = new TrackedListener()
 
-    const supervisor = new FunnelListenerRegistry({
+    const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [
           { ...view, name: "a" },
@@ -472,7 +472,7 @@ describe("FunnelListenerRegistry", () => {
       sleep: (ms: number) => new Promise((r) => setTimeout(r, Math.min(ms, 5))),
     })
 
-    await supervisor.startAll()
+    await registry.startAll()
 
     // Wipe restart timings from the initial start
     restartTimes = []
@@ -480,12 +480,12 @@ describe("FunnelListenerRegistry", () => {
     listenerA.alive = false
     listenerB.alive = false
 
-    await supervisor.runHealthCheckForTest()
+    await registry.runHealthCheckForTest()
 
     expect(restartTimes).toHaveLength(2)
     const gap = Math.abs((restartTimes[1] ?? 0) - (restartTimes[0] ?? 0))
     expect(gap).toBeLessThan(10)
 
-    await supervisor.stopAll()
+    await registry.stopAll()
   })
 })

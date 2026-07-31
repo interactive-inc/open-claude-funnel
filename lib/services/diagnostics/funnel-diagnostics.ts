@@ -202,16 +202,16 @@ const buildDiagnosis = (
     }
   }
 
-  // Settings declare connectors but the supervisor has no listener for them
+  // Settings declare connectors but the listener registry has no entry for them
   // — a hot-reload race or a startup ordering bug. Distinct from "no
   // connectors configured" so the doctor knows to reconcile instead of asking
   // the operator to add one.
   if (report.configuredConnectors > report.listeners.length) {
     return {
       status: "error",
-      message: `${report.configuredConnectors} connector(s) configured but ${report.listeners.length} registered with supervisor`,
+      message: `${report.configuredConnectors} connector(s) configured but ${report.listeners.length} registered in listener registry`,
       nextActions: ["fnl gateway restart"],
-      rootCause: "supervisor missing listeners declared in settings.json",
+      rootCause: "listener registry missing listeners declared in settings.json",
     }
   }
 
@@ -256,7 +256,7 @@ const buildDiagnosis = (
     }
   }
 
-  // Listener is alive but accumulating errors — supervisor is restart-looping
+  // Listener is alive but accumulating errors — listener registry is restart-looping
   // with backoff. Calling restart again would interrupt the backoff and make
   // it worse, so the doctor's safe mode skips it (see funnel-doctor.ts).
   const flapping = report.listeners.filter((l) => l.errors >= FLAPPING_ERROR_THRESHOLD)

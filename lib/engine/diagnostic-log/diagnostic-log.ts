@@ -15,7 +15,7 @@ import { z } from "zod"
  *   error         start/stop threw, or Bolt surfaced an error frame — this is
  *                 also where an unsolicited socket drop shows up when Bolt
  *                 reports it (an `error` with no following `stopped` means the
- *                 supervisor recycled the listener, not a clean stop)
+ *                 listener registry recycled the listener, not a clean stop)
  *
  * A connection row is independent of any single inbound event, so it carries
  * no `eventId`. This is how "no notification arrived because the listener

@@ -9,7 +9,7 @@ import { renderYaml } from "@/engine/yaml/yaml-render"
 const groupHelp = `funnel gateway / manage the funnel daemon
 
 The gateway daemon hosts the WebSocket /ws (used by Claude MCP) and the
-listener supervisor that runs every connector. One daemon, one port (9743
+listener registry that runs every connector. One daemon, one port (9743
 for the CLI, 9742 for programmatic use), one PID file.
 
 usage / funnel gateway [subcommand]

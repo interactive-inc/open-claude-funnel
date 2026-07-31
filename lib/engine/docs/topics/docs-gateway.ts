@@ -7,10 +7,10 @@ Claude cannot send anything outbound.
 what runs inside:
 
   WebSocket /                   channel subscriptions (subprotocol auth)
-  HTTP /health /status          liveness and supervisor snapshot
+  HTTP /health /status          liveness and listener registry snapshot
   HTTP /listeners*              listener lifecycle
   HTTP /channels/<n>/call       outbound dispatch (Claude → adapter → external)
-  Listener Supervisor           starts / stops / restarts listeners with
+  Listener Registry             starts / stops / restarts listeners with
                                 exponential backoff (cap 60s)
   Broadcaster                   fans events out to WS clients and records
                                 offsets to the event log

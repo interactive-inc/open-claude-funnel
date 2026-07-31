@@ -113,8 +113,8 @@ const parse = (args: string[]): Parsed => {
 }
 
 /**
- * Brings the gateway's listener supervisor in sync with what `ensure()` just
- * wrote to settings.json. Without this, the supervisor keeps running the old
+ * Brings the gateway's listener registry in sync with what `ensure()` just
+ * wrote to settings.json. Without this, the registry keeps running the old
  * snapshot it loaded at daemon startup, so a freshly synced connector never
  * starts (and a stale one never stops) until `fnl gateway restart`. When the
  * daemon is offline every call returns `{ state: "offline" }` and the gateway

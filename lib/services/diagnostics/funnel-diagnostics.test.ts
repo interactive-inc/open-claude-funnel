@@ -152,7 +152,7 @@ describe.skipIf(!isBun)("FunnelDiagnostics", () => {
     expect(report?.diagnosis.message).toBe("everything looks healthy")
   })
 
-  test("detects the race where settings has more connectors than the supervisor", async () => {
+  test("detects the race where settings has more connectors than the listener registry", async () => {
     // The gateway status mock returns 1 listener; add a second connector to
     // settings to simulate the race.
     const raceChannel: ChannelConfig = {
@@ -179,7 +179,12 @@ describe.skipIf(!isBun)("FunnelDiagnostics", () => {
     const report = await diagnostics.diagnose("ops")
 
     expect(report?.diagnosis.status).toBe("error")
-    expect(report?.diagnosis.message).toContain("supervisor")
+    expect(report?.diagnosis.message).toBe(
+      "2 connector(s) configured but 1 registered in listener registry",
+    )
+    expect(report?.diagnosis.rootCause).toBe(
+      "listener registry missing listeners declared in settings.json",
+    )
     expect(report?.configuredConnectors).toBe(2)
   })
 

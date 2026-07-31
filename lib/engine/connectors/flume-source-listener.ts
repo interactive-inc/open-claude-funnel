@@ -35,7 +35,7 @@ type RunStartOptions = {
   /**
    * Optional AbortSignal forwarded to the underlying Flume. When aborted, the
    * Flume auto-closes every source and resolves to `FlumeClosed`. Use this to
-   * propagate a host-level shutdown (SIGTERM, supervisor stop, parent timeout)
+   * propagate a host-level shutdown (SIGTERM, listener registry stop, parent timeout)
    * down to the WebSocket layer without racing through `stop()`.
    */
   signal?: AbortSignal
@@ -85,7 +85,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
    * Flipped on by Flume's `reconnecting` status, off when the new socket
    * lands on `connected` or the source gives up with `disconnected`. Used by
    * `isAlive()` to treat a brief reconnect window as "still alive" so the
-   * supervisor does not preempt Flume's in-progress recovery with a heavier
+   * listener registry does not preempt Flume's in-progress recovery with a heavier
    * stop+start cycle (which would discard auth.test results and rebuild
    * every per-listener state).
    */
@@ -116,7 +116,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   /**
    * Assemble a single-source Flume, open it, and store the `FlumeRunning`
    * handle. Records `error` on any `Error` returned by `flume.open()` and
-   * rethrows so the supervisor sees the failure.
+   * rethrows so the listener registry sees the failure.
    *
    * The firehose handler routes:
    *   - `kind: "event"`   → subclass's typed `onEvent`
@@ -207,10 +207,10 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   override isAlive(): boolean {
     if (this.running === null) return false
 
-    // Treat an in-progress reconnect as still alive so the supervisor's
+    // Treat an in-progress reconnect as still alive so the listener registry's
     // 30s health check does not preempt Flume's internal retry. Flume's
     // reconnect default (infinite attempts, 1s base / 30s max backoff) is
-    // usually faster than the supervisor's stop+start+auth.test cycle, so
+    // usually faster than the listener registry's stop+start+auth.test cycle, so
     // letting it finish recovers Slack notifications sooner with less
     // diagnostic noise.
     return this.connected || this.reconnecting
@@ -221,7 +221,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
    * deliberately produces no row — Flume drives many transient reconnects per
    * minute on a flaky network, and the row would drown the more meaningful
    * `connected`/`disconnected` pair. The `reconnecting` flag still flips so
-   * `isAlive()` can surface it to the supervisor.
+   * `isAlive()` can surface it to the listener registry.
    */
   protected handleStatus(event: StatusEvent): void {
     if (event.status === "connected") {

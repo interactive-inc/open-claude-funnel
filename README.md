@@ -375,7 +375,7 @@ funnel.profiles.add({ name: "pm", path: "/repo", channelId: channel.id })
 
 ```ts
 const server = funnel.gatewayServer({ port: 9742 })
-await server.start() // Bun.serve (HTTP + WS) + listener supervisor
+await server.start() // Bun.serve (HTTP + WS) + listener registry
 const unsubscribe = server.onEvent(({ content, meta }) => {
   console.log(meta?.connector, content)
 })

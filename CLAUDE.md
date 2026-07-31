@@ -26,7 +26,7 @@ CLI とプログラマブル API (`new Funnel(...)`) を 1 つの core から共
 
 ### Channel manifest（`/channel` サブエントリ）
 
-上記の Channel（settings.json 上の transport 概念）と同名だが別系統の、プログラマブルな inbound 定義。`{ id, name?, build }` の宣言的 manifest を `FunnelChannelSupervisor` に register すると、`build(ctx)` が返す flume sources を 1 つの `FlumeConfluence` に挿し、event を optional な transform 経由で broadcaster に流す。ConnectorDescriptor 系（Listener Supervisor）とは独立に並走する段階的移行用 API。実体は `lib/engine/channel/`、公開は `@interactive-inc/claude-funnel/channel`。supervisor は gateway 具象でなく engine 側の narrow interface `ChannelBroadcastSink` に依存する（`FunnelBroadcaster` が構造的に満たす）。per-channel state は `ctx.statePersister<S>(filename)` が `<dir>/channels/<channelId>/<filename>.json` に書く。`timeChannel({ id, cron, transform })` が最初の具体 channel。
+上記の Channel（settings.json 上の transport 概念）と同名だが別系統の、プログラマブルな inbound 定義。`{ id, name?, build }` の宣言的 manifest を `FunnelChannelSupervisor` に register すると、`build(ctx)` が返す flume sources を 1 つの `FlumeConfluence` に挿し、event を optional な transform 経由で broadcaster に流す。ConnectorDescriptor 系（Listener Registry）とは独立に並走する段階的移行用 API。実体は `lib/engine/channel/`、公開は `@interactive-inc/claude-funnel/channel`。supervisor は gateway 具象でなく engine 側の narrow interface `ChannelBroadcastSink` に依存する（`FunnelBroadcaster` が構造的に満たす）。per-channel state は `ctx.statePersister<S>(filename)` が `<dir>/channels/<channelId>/<filename>.json` に書く。`timeChannel({ id, cron, transform })` が最初の具体 channel。
 
 ### Connector
 
@@ -52,9 +52,9 @@ ProfileSpec = { name, channel, options?, env?, resume? }
 
 `fnl claude` は global `--profile` が無ければ cwd の funnel.json を読み、`--channel <name>` で channels[] から選ぶ（無指定なら先頭）。funnel.json があるリポジトリは repo-scoped で、起動時に funnel.json トップへ `id`(uuid) を書き戻し（初回のみ、以降は読むだけ）、全 funnel state を `~/.funnel/projects/<id>/` に隔離する（グローバル `~/.funnel` には一切触らない。event store / tmp だけは `/tmp/funnel/` 共有）。この `id` 解決は `fnl claude` だけでなく全 CLI コマンドで効く（`cli/index.ts` が funnel 構築前に `FUNNEL_DIR` を立てるので routing / dispatchClaude / MCP / daemon が同じ root に揃う）。選択 channel の `connectors` は launch 時に `~/.funnel/projects/<id>/settings.json` の Channel に sync される（transport のみ）。profile は `--profile <name>` で名前指定して launch に渡す（channel は profile を選ばない — channel は transport のみ、profile が channel を bind する一方向。同じ channel に複数 profile を bind してよく、`name` で一意に解決する）。global profile への永続化はしない。funnel.json は token を持たない — connector の token は CLI で設定するか、未設定なら launch 時に TTY prompt で聞いて `<id>/settings.json` に保存する（carry over するので次回以降は聞かれない）。詳細は `lib/services/local-config/` を参照。
 
-### Listener Supervisor と Broadcaster
+### Listener Registry と Broadcaster
 
-gateway 内に常駐する 2 つの裏方。Supervisor は Listener の起動 / 停止 / 自動再起動を管理する registry。Broadcaster は notify を受け取って WS クライアントに fanout し、`FunnelEventLog`（永続 replay log の port）に offset を打って永続化する。EventLog は差し替え可能な port で、default は `SqliteFunnelEventLog`、test / 軽量 embedder 向けに `MemoryFunnelEventLog` がある（CLAUDE.md 末尾の Gateway 節参照）。
+gateway 内に常駐する 2 つの裏方。`FunnelListenerRegistry` は Listener の起動 / 停止 / 自動再起動を管理する。Broadcaster は notify を受け取って WS クライアントに fanout し、`FunnelEventLog`（永続 replay log の port）に offset を打って永続化する。EventLog は差し替え可能な port で、default は `SqliteFunnelEventLog`、test / 軽量 embedder 向けに `MemoryFunnelEventLog` がある（CLAUDE.md 末尾の Gateway 節参照）。
 
 ### Diagnostics と Recovery と Doctor と Docs サービス
 
@@ -158,7 +158,7 @@ graph TD
 
   subgraph gateway["ゲートウェイ層"]
     BC[Broadcaster]
-    LS[ListenerSupervisor]
+    LS[ListenerRegistry]
     GS[GatewayServer]
     GW[Gateway]
     CP[ChannelPublisher]
@@ -256,7 +256,7 @@ Slack / GitHub / Discord / Schedule の Connector 実装。engine の他モジ�
 
 ### lib/gateway
 
-`Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener supervisor、broadcaster、event log、フラットなルート群を抱える。CLI から listener 操作のために `http://127.0.0.1:9742` を叩くのは gateway 経由のみ。
+`Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener registry、broadcaster、event log、フラットなルート群を抱える。CLI から listener 操作のために `http://127.0.0.1:9742` を叩くのは gateway 経由のみ。
 
 ### lib/cli
 
@@ -365,7 +365,7 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
 
 - 同一 `Bun.serve` で WebSocket と内部管理 API（`/health` `/status` `/listeners*` `/channels/.../call`）をホストする
 - WebSocket クライアントは `?channel=<name>&id=<subscriberId>` で接続する。`id` は funnel の targeted delivery キーで、`meta.target=<id>` のイベントがそのクライアントだけに届く。`id` を省略した場合は channel 全体の fanout を受信する（tap=all は廃止済み）
-- listener は `start(notify)` / `stop()` / `isAlive()` を持ち、`FunnelListenerSupervisor` が registry を所有して 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う
+- listener は `start(notify)` / `stop()` / `isAlive()` を持ち、`FunnelListenerRegistry` が 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
 - connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` は engine（`FunnelChannels`）を直接叩いて connector を同期するため route 経由の hot-reload は走らない。`fnl claude` の dispatch が同期後に `reconcileListeners` で listener を取り込む（それ以外の経路は `fnl gateway restart` が必要）
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる

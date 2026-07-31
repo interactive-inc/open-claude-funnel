@@ -13,7 +13,7 @@ layers (dependency direction):
 
   engine      core domain (channels, profiles, settings, mcp, local-config)
   connectors  slack / gh / discord / schedule implementations
-  gateway     Bun.serve hosting WS + internal HTTP, listener supervisor,
+  gateway     Bun.serve hosting WS + internal HTTP, listener registry,
               broadcaster, event log (SQLite by default)
   cli         argv → internal HTTP requests → Hono routes
 

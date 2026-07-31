@@ -46,7 +46,7 @@ type Deps = GatewayEventStore & {
   process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
-  /** Host hook for surfacing internal exceptions (broadcaster / supervisor). Defaults to no-op. */
+  /** Host hook for surfacing internal exceptions (broadcaster / listener registry). Defaults to no-op. */
   onError?: OnFunnelError
   selfPid?: number
   /** Funnel home dir, used to scope kill-competing to daemons rooted at the same dir. Defaults to FUNNEL_DIR. */
@@ -522,7 +522,7 @@ export class FunnelGatewayServer {
    * Broadcast `content` to subscribers of `channel`, persisting the event in
    * the SQLite store and stamping `meta.channel{,Id}` / `meta.connector{,Id}`
    * when they resolve. Used by both the connector-listener path (via the
-   * supervisor's `notify` callback) and the public `/channels/:channel/publish`
+   * listener registry's `notify` callback) and the public `/channels/:channel/publish`
    * route. Returns the assigned event offset.
    *
    * Public SDK surface for hosts running this gateway in-process — the no-HTTP

@@ -68,7 +68,7 @@ export class FunnelDoctor {
     }
 
     // Skip restarting listeners that are merely flapping (high errors but
-    // still alive) — the supervisor's backoff is already throttling them and
+    // still alive) — the listener registry's backoff is already throttling them and
     // a manual restart would reset the backoff window. Only restart actually
     // dead listeners.
     const hasDeadListeners = before.channels.some((ch) => ch.listeners.some((l) => !l.alive))
