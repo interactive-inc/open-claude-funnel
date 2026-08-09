@@ -35,7 +35,10 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["type", "name"],
+                  "required": [
+                    "type",
+                    "name"
+                  ],
                   "additionalProperties": false
                 },
                 {
@@ -49,7 +52,10 @@
                       "type": "string"
                     }
                   },
-                  "required": ["type", "name"],
+                  "required": [
+                    "type",
+                    "name"
+                  ],
                   "additionalProperties": false
                 },
                 {
@@ -68,7 +74,10 @@
                       "maximum": 9007199254740991
                     }
                   },
-                  "required": ["type", "name"],
+                  "required": [
+                    "type",
+                    "name"
+                  ],
                   "additionalProperties": false
                 },
                 {
@@ -82,14 +91,19 @@
                       "type": "string"
                     }
                   },
-                  "required": ["type", "name"],
+                  "required": [
+                    "type",
+                    "name"
+                  ],
                   "additionalProperties": false
                 }
               ]
             }
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "additionalProperties": false
       }
     },
@@ -123,12 +137,17 @@
             "type": "boolean"
           }
         },
-        "required": ["name", "channel"],
+        "required": [
+          "name",
+          "channel"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["channels"],
+  "required": [
+    "channels"
+  ],
   "additionalProperties": false,
   "title": "Funnel per-repo launch config",
   "description": "Used by `fnl claude` to declare channels (transport: connectors to materialize into ~/.funnel/settings.json on launch) and profiles (launch recipe: options / env / resume) bound to those channels."
