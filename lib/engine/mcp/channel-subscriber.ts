@@ -52,6 +52,13 @@ export class FunnelChannelSubscriber {
   private connect(): void {
     const sinceQuery = this.state.lastOffset > 0 ? `&since=${this.state.lastOffset}` : ""
     const wsUrl = `${this.props.baseUrl}${sinceQuery}`
+
+    if (this.state.lastOffset > 0) {
+      process.stderr.write(
+        `funnel: reconnecting (delay=${this.state.reconnectDelay}ms lastOffset=${this.state.lastOffset})\n`,
+      )
+    }
+
     const ws = new WebSocket(wsUrl, this.props.protocols)
 
     ws.addEventListener("open", () => {
@@ -61,13 +68,19 @@ export class FunnelChannelSubscriber {
 
     ws.addEventListener("message", (event) => this.enqueueMessage(event, ws))
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (event) => {
+      const closeEvent = event as CloseEvent
+      const code = closeEvent.code
+      const reason = closeEvent.reason || "(none)"
+
       // A socket emits close once, but a stray double-start or an error+close
       // pair must never stack reconnect loops — one pending attempt at a time.
       if (this.state.hasPendingReconnect) return
 
       this.state.hasPendingReconnect = true
-      process.stderr.write(`funnel: disconnected, reconnecting in ${this.state.reconnectDelay}ms\n`)
+      process.stderr.write(
+        `funnel: disconnected (code=${code} reason=${reason}), reconnecting in ${this.state.reconnectDelay}ms\n`,
+      )
       setTimeout(() => {
         this.state.messageQueue.then(() => {
           this.state.hasPendingReconnect = false
