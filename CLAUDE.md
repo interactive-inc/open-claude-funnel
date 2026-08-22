@@ -87,9 +87,38 @@ Slack → SlackListener.start(notify) → notify(channel, connector, content, me
 gateway を立てる経路は 2 つあり、用途で使い分ける。
 
 - **daemon（別プロセス）** — `Funnel.gateway.start()` が `bun .../daemon.js` を spawn し、`~/.funnel/`（または scoped root）に PID を書く。`fnl claude` 起動時に自動で立ち上がるのもこれ。複数の Claude セッション・複数リポジトリが 1 つの gateway を共有し、プロセスを跨いで生き続ける。CLI は `Funnel.listeners` / `Funnel.publisher` が loopback HTTP（`gatewayLoopbackUrl(port)`）でこの daemon を叩く
-- **in-process（同一プロセス）** — `Funnel.gatewayServer(options).start()` が現在のプロセス内で `Bun.serve` + listeners を直接動かす。テスト・埋め込み・カスタムホスト向け。`onEvent(handler)` で全 event を in-process 観測できる（別プロセスの daemon は観測できない — その場合は WS クライアントを使う）
+- **in-process（同一プロセス）** — 現在のプロセス内で `Bun.serve` + listeners を直接動かす。テスト・埋め込み・カスタムホスト向け。`onEvent(handler)` で全 event を in-process 観測できる（別プロセスの daemon は観測できない — その場合は WS クライアントを使う）。listen socket を funnel が持つ `Funnel.gatewayServer(options).start()` と、ホストが持つ `Funnel.gatewayModule(options)` の 2 形態がある（次節）
 
 両者は排他ではない（埋め込みアプリが in-process gateway を 9742、CLI 起動が daemon を 9743 と別ポートで同居できる）。「永続・共有」が要るなら daemon、「このプロセス内で完結・観測したい」なら in-process。
+
+#### in-process をさらに 2 つに割る — gatewayServer か gatewayModule か
+
+in-process には「listen socket を誰が持つか」で 2 形態ある。gateway の中身（route 樹・WS upgrade・listener registry・broadcaster・event log）は `FunnelGatewayModule` が全部持ち、`FunnelGatewayServer` は**その上に bind を足すだけの薄いホスト**である。
+
+- **`Funnel.gatewayServer(options)`** — funnel が listen socket を所有する。`Bun.serve` の port / hostname を funnel が決め、非 loopback bind + token 無しの fail-fast もここが持つ。ホスト固有の route を足したいだけなら `extraRoutes` で間借りする。従来どおりの入口で、daemon（`lib/gateway/daemon.ts`）もこれを使う
+- **`Funnel.gatewayModule(options)`** — ホストが自分の Hono ルート樹と `Bun.serve` を所有し、gateway を 1 モジュールとして載せる。ホストアプリ側で「funnel の有効 / 無効を config で切り替える」ような構成はこちら。`hostname` は受け取らず、`port` も bind には使わない（replay DB の命名 — funnel dir + port ごとの分離 — にしか使わない）。bind はホストの関心なので、非 loopback + token 無しの fail-fast も module は持たない（ホストの責務）
+
+module の公開面は `app`（認証 middleware 込みの Hono サブアプリ）/ `handleUpgrade(req, server)` / `websocket` / `start()` / `stop()` と、`emit()` / `onEvent()` / `getStatus()` / `getBroadcaster()` / `getRegistry()` / `getEventLog()`。
+
+```ts
+const gw = funnel.gatewayModule({ token, eventLog })
+const app = new Hono().route("/", hostRoutes).route("/", gw.app)
+
+Bun.serve({
+  port,
+  fetch: (req, server) => {
+    const upgrade = gw.handleUpgrade(req, server)
+    return upgrade.handled ? upgrade.response : app.fetch(req)
+  },
+  websocket: gw.websocket,
+})
+
+await gw.start()
+```
+
+`handleUpgrade` の戻り値を `Response | undefined` に潰さないこと。「upgrade 成功（Bun に undefined を返す）」と「/ws ではないのでホストが処理すべき」が両方 `undefined` になり、`?? app.fetch(req)` と書いたホストが**既に upgrade 済みのソケットに 404 body を書く**。そのため 3 状態の `GatewayUpgradeResult`（`handled: false` / `handled: true` + `response`）で返す。
+
+`stop()` は listener 停止と「自分が作った eventLog の close」の 2 つで、注入された eventLog は閉じない。ホストが bind を持つ場合は停止順（listeners → socket → eventLog）もホストが決めるので、module 側は `stopListeners()` / `dispose()` に分けて公開している。
 
 ### 型安全な接続・URL 構築
 
@@ -159,6 +188,7 @@ graph TD
   subgraph gateway["ゲートウェイ層"]
     BC[Broadcaster]
     LS[ListenerRegistry]
+    GM[GatewayModule]
     GS[GatewayServer]
     GW[Gateway]
     CP[ChannelPublisher]
@@ -257,6 +287,8 @@ Slack / GitHub / Discord / Schedule の Connector 実装。engine の他モジ�
 ### lib/gateway
 
 `Bun.serve` で WebSocket と内部管理 API を同一ポートにホストする daemon。listener registry、broadcaster、event log、フラットなルート群を抱える。CLI から listener 操作のために `http://127.0.0.1:9742` を叩くのは gateway 経由のみ。
+
+bind とそれ以外は 2 クラスに分かれている。`FunnelGatewayModule`（`gateway-module.ts`）が gateway の中身を全部持つ mountable なモジュールで、`FunnelGatewayServer`（`gateway-server.ts`）はそこに `Bun.serve` と非 loopback ガードだけを足す薄いホスト。ホストアプリが自分の `Bun.serve` に載せたい場合は module を直接使う（上の「in-process をさらに 2 つに割る」節）。
 
 ### lib/cli
 
@@ -371,6 +403,7 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる
 - 永続 replay は `FunnelEventLog` 抽象 port（`record` / `loadSince` / `findMaxOffset` / `close`）に閉じる。default 実装は `SqliteFunnelEventLog`（再起動跨ぎの replay と offset 永続を担う）、`MemoryFunnelEventLog` は in-process double。`gatewayServer({ eventLog })` で注入でき、無指定なら tmp 配下で funnel dir + port ごとに分離した SQLite。Broadcaster が依存するのは `loadSince` だけ（narrow な `ReplaySource`）なので EventLog は interface segregation で繋がる
 - in-process で全 event を観測したい host は `FunnelGatewayServer.onEvent(handler)`（= broadcaster.subscribe の薄い委譲）を使う。別プロセスの daemon は観測できない（WS クライアントを使う）。`onEvent` は書き出し専用で、replay（読み戻し）は EventLog の責務 — 2 つを混ぜない
+- gateway の中身は `FunnelGatewayModule` にあり、`FunnelGatewayServer` は bind を足すだけのホスト。bind に属する判断（port / hostname、非 loopback + token 無しの fail-fast、single-use ガード、`Bun.serve` の停止順）は server 側にしか無い。module を直接 mount するホストはこれらを自分で持つ（`gatewayModule()` は `port` を replay DB の命名にしか使わない）
 - daemon 起動コマンドは `bun .../dist/gateway/daemon.js funnel-gateway[<FUNNEL_DIR>]` の形で argv 末尾に dir tag を付ける。Slack Socket Mode 起動時の競合 kill は `ps -o args=` でこの tag を grep して同 dir の daemon だけを kill する（別 `~/.funnel/` を指す他 install には触らない）
 - gateway daemon が built-in HTTP route 以外を露出する必要が出たら、`buildServiceRoutes` のように Hono サブアプリを書いて `gatewayServer({ extraRoutes, token })` に渡す。daemon は `funnel.diagnostics` / `funnel.doctor` 等を保持しているので、外部プロセス（MCP）からの HTTP 経由アクセスはこの経路でだけ提供する（built-in route table の `lib/gateway/routes/index.ts` は触らない）
 

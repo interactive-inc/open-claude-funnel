@@ -3,6 +3,7 @@
 // spawning a daemon. The Funnel facade's gatewayServer() method wires
 // these together automatically — import directly only when you need
 // fine-grained control over the gateway internals.
+export * from "@/gateway/gateway-module"
 export * from "@/gateway/gateway-server"
 export * from "@/gateway/channel-ws-url"
 export * from "@/engine/http/gateway-base-url"
