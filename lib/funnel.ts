@@ -48,7 +48,8 @@ import { FunnelChannelPublisher } from "@/gateway/channel-publisher"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { Env } from "@/gateway/factory"
 import { FunnelGateway } from "@/gateway/gateway"
-import { FunnelGatewayServer, type GatewayEventStore } from "@/gateway/gateway-server"
+import { FunnelGatewayModule, type GatewayEventStore } from "@/gateway/gateway-module"
+import { FunnelGatewayServer } from "@/gateway/gateway-server"
 import { FunnelGatewayToken } from "@/gateway/gateway-token"
 import { FunnelListenersClient } from "@/gateway/listeners-client"
 import { resolveDaemonScript } from "@/gateway/resolve-daemon-script"
@@ -136,6 +137,19 @@ export type GatewayServerOptions = GatewayEventStore & {
   token?: string
   /** Permit a non-loopback `hostname` without a token. See FunnelGatewayServer. */
   allowInsecureHost?: boolean
+  extraRoutes?: Hono<Env>
+}
+
+/**
+ * Options for `Funnel.gatewayModule()`. No `hostname` / `allowInsecureHost`:
+ * the module never binds, so the bind address — and the fail-fast guard that
+ * refuses a non-loopback bind without a token — is the host's concern. `port`
+ * only names the default replay database.
+ */
+export type GatewayModuleOptions = GatewayEventStore & {
+  port?: number
+  killCompetingSlack?: boolean
+  token?: string
   extraRoutes?: Hono<Env>
 }
 
@@ -356,6 +370,46 @@ export class Funnel {
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
       allowInsecureHost: options.allowInsecureHost,
+      extraRoutes: options.extraRoutes,
+      diagnosticLog: this.diagnosticLog,
+    })
+  }
+
+  /**
+   * Mountable in-process gateway. Everything `gatewayServer()` runs except the
+   * bind: the host owns its own Hono tree and `Bun.serve` and mounts this.
+   *
+   * @example
+   * ```ts
+   * const gw = funnel.gatewayModule({ token })
+   * const app = new Hono().route("/", hostRoutes).route("/", gw.app)
+   *
+   * Bun.serve({
+   *   port,
+   *   fetch: (req, server) => {
+   *     const upgrade = gw.handleUpgrade(req, server)
+   *     return upgrade.handled ? upgrade.response : app.fetch(req)
+   *   },
+   *   websocket: gw.websocket,
+   * })
+   *
+   * await gw.start()
+   * ```
+   */
+  gatewayModule(options: GatewayModuleOptions = {}): FunnelGatewayModule {
+    return new FunnelGatewayModule({
+      channels: this.channels,
+      // EventStore is a union (dbPath xor eventLog); spread it so exactly one reaches the module.
+      ...(options.eventLog ? { eventLog: options.eventLog } : { dbPath: options.dbPath }),
+      process: this.process,
+      clock: this.clock,
+      logger: this.logger,
+      onError: this.onError,
+      dir: this.paths.dir,
+      tmpDir: this.paths.tmpDir,
+      port: options.port,
+      killCompetingSlack: options.killCompetingSlack,
+      token: options.token ?? this.gatewayToken.ensure(),
       extraRoutes: options.extraRoutes,
       diagnosticLog: this.diagnosticLog,
     })

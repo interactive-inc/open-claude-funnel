@@ -93,6 +93,7 @@ export * from "@/engine/connectors/schedule-connector-schema"
 // Gateway
 export type { GatewayApp } from "@/gateway/routes"
 export * from "@/gateway/gateway"
+export * from "@/gateway/gateway-module"
 export * from "@/gateway/gateway-server"
 export * from "@/gateway/channel-ws-url"
 export * from "@/engine/http/gateway-base-url"
