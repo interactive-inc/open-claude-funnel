@@ -152,3 +152,4 @@
   "title": "Funnel per-repo launch config",
   "description": "Used by `fnl claude` to declare channels (transport: connectors to materialize into ~/.funnel/settings.json on launch) and profiles (launch recipe: options / env / resume) bound to those channels."
 }
+
