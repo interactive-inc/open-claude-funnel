@@ -53,8 +53,10 @@ type Deps = GatewayEventStore & {
   /**
    * Additional hono app mounted before the built-in gateway routes.
    * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
-   * Host routes are mounted first; built-in `/listeners`, `/status`,
-   * `/channels`, `/health` are mounted after and take precedence on conflict.
+   * Host routes are mounted first and take precedence on conflict — Hono
+   * matches the first registered route, so a host `/health` shadows the
+   * built-in one. Built-in `/listeners`, `/status`, `/channels`, `/health`
+   * are mounted after.
    */
   extraRoutes?: Hono<Env>
   /** Read-side diagnostic source exposed to the built-in debug route. */
