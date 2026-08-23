@@ -46,6 +46,7 @@ recommended path — but it is just one composition root, not the only one.
     FunnelRecovery,
     FunnelDocs,
     FunnelGatewayServer,
+    FunnelGatewayModule,
     MemoryFunnelFileSystem,
     MemoryFunnelProcessRunner,
     MemoryFunnelClock,
@@ -55,7 +56,8 @@ recommended path — but it is just one composition root, not the only one.
 
 For targeted imports (smaller bundle / clearer dependency footprint):
 
-  import { FunnelGatewayServer } from "@interactive-inc/claude-funnel/gateway"
+  import { FunnelGatewayServer, FunnelGatewayModule }
+                                from "@interactive-inc/claude-funnel/gateway"
   import { FunnelProfiles }      from "@interactive-inc/claude-funnel/profiles"
   import { FunnelLocalConfig }   from "@interactive-inc/claude-funnel/local-config"
   import { slackConnector }      from "@interactive-inc/claude-funnel/connectors/slack"
@@ -106,7 +108,20 @@ extension hooks.
 
 The daemon (funnel.gateway.start()) runs in a separate process, so your code
 cannot observe its events directly. To receive events in-process, host the
-gateway yourself with gatewayServer():
+gateway yourself. Two forms, split by who owns the listen socket:
+
+  funnel.gatewayServer(options)   funnel owns Bun.serve (port / hostname, the
+                                  non-loopback guard). Add host routes with
+                                  extraRoutes. This is what the daemon uses
+  funnel.gatewayModule(options)   your app owns Bun.serve and its Hono tree;
+                                  the gateway mounts into it as one module
+
+Both expose the same internals (listener registry, broadcaster, event log,
+emit / onEvent / getStatus). gatewayServer() is the thin bind-owning host on
+top of gatewayModule(); pick the module when funnel is one feature of a bigger
+service — e.g. when a config flag turns funnel on and off inside your app.
+
+gatewayServer() — funnel owns the socket:
 
   import { Funnel, channelWsUrl } from "@interactive-inc/claude-funnel"
   import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
@@ -126,10 +141,69 @@ gateway yourself with gatewayServer():
     console.log(event.content, event.meta, event.offset)
   })
 
-  await funnel.publisher.publish("inbox", { content: "hello" })
+  server.emit({ channel: "inbox", content: "hello" })
+  // not publisher.publish() — that hops to a daemon PID, which a gatewayServer
+  // you host yourself never writes, so it would just return { state: "offline" }
 
   unsubscribe()
   await server.stop()                    // stops listeners, closes the socket
+
+gatewayModule() — your app owns the socket:
+
+  import { Hono } from "hono"
+
+  const gw = funnel.gatewayModule({ token, eventLog })
+  const app = new Hono().route("/", hostRoutes).route("/", gw.app)
+
+  Bun.serve({
+    port,
+    fetch: (req, server) => {
+      const upgrade = gw.handleUpgrade(req, server)
+      return upgrade.handled ? upgrade.response : app.fetch(req)
+    },
+    websocket: gw.websocket,
+  })
+
+  await gw.start()                       // boots listeners; binds nothing
+
+  gw.app                                 // Hono sub-app (auth included)
+  gw.handleUpgrade(req, server)          // /ws upgrade decision, three states
+  gw.websocket                           // Bun WebSocketHandler for it
+  gw.emit(event) / gw.onEvent(handler)   // same surface as the server
+
+start() first clears competing gateway daemons rooted at the same funnel dir
+(they would share Slack tokens and split inbound events); pass
+killCompetingSlack: false to skip it. A stale one may still hold your port,
+so a host that binds should run gw.killCompetingSlackIfNeeded() itself
+*before* Bun.serve — it is first-call-wins, so the later start() will not
+repeat it behind your own socket.
+
+handleUpgrade returns three states on purpose — do not collapse it to
+Response | undefined:
+
+  { handled: false }                     not a /ws upgrade (wrong path or no
+                                         Upgrade header); route it yourself
+  { handled: true, response: Response }  rejected (401 / 404 / 400); return it
+  { handled: true, response: undefined } upgraded; return undefined to Bun
+
+"upgraded" and "not mine" would both be undefined, so a host writing
+gw.handleUpgrade(req, server) ?? app.fetch(req) answers an already-upgraded
+socket with a 404 body.
+
+healthRoute: false skips the built-in unauthenticated GET /health. Pass it
+when your app already serves its own /health: Hono gives the path to whoever
+registered first, so otherwise the winner silently depends on mount order.
+It is the only route the flag touches: /status, /debug, /listeners* and
+/channels/* stay mounted, and /ws is unaffected because handleUpgrade answers
+the upgrade before the Hono app ever sees it.
+
+The module never binds, so it takes no hostname and carries no non-loopback
+fail-fast — the bind address and its protection are the host's call. Its port
+option only names the default replay database. Shutdown is yours too — the
+module never closes your socket, and dispose() only closes an event log it
+created, never one you injected. Stop in the order that fits your host:
+gw.stopListeners(), close your socket, then gw.dispose(); gw.stop() is just
+the first and last of those together.
 
 To observe a daemon (separate process) instead, connect a WebSocket client:
 
@@ -142,8 +216,9 @@ To observe a daemon (separate process) instead, connect a WebSocket client:
                                           // any process; returns { state: "ok" |
                                           // "offline" | "error" }
   server.emit(event)                      // direct in-process injection into a
-                                          // gatewayServer() you host yourself;
-                                          // no HTTP, no offline state
+  gw.emit(event)                          // gatewayServer() / gatewayModule()
+                                          // you host yourself; no HTTP, no
+                                          // offline state
 
 Rule of thumb: talking to the shared daemon → publish; hosting the gateway
 in your own process → emit (or publish against your own port).
