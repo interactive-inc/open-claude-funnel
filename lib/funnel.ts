@@ -151,6 +151,8 @@ export type GatewayModuleOptions = GatewayEventStore & {
   killCompetingSlack?: boolean
   token?: string
   extraRoutes?: Hono<Env>
+  /** Mount the built-in `/health`. Defaults to true; set false to keep the host's own. */
+  healthRoute?: boolean
 }
 
 /**
@@ -411,6 +413,7 @@ export class Funnel {
       killCompetingSlack: options.killCompetingSlack,
       token: options.token ?? this.gatewayToken.ensure(),
       extraRoutes: options.extraRoutes,
+      healthRoute: options.healthRoute,
       diagnosticLog: this.diagnosticLog,
     })
   }

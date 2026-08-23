@@ -19,7 +19,18 @@ import { Funnel } from "@/funnel"
  * funnel contributes routes and a websocket handler, the host contributes the
  * socket.
  */
-const mountHost = async (options: { token: string; channelName?: string } = { token: "" }) => {
+const mountHost = async (
+  options: {
+    token: string
+    channelName?: string
+    /** Passed straight through to `gatewayModule`; undefined exercises the default. */
+    healthRoute?: boolean
+    /** Mount the gateway app before the host's own routes. Defaults to host-first. */
+    gatewayFirst?: boolean
+    /** Give the host its own `GET /health`, to exercise the collision with the built-in one. */
+    hostHealth?: boolean
+  } = { token: "" },
+) => {
   const funnel = new Funnel({
     fs: new MemoryFunnelFileSystem(),
     logger: new NoopFunnelLogger(),
@@ -32,13 +43,17 @@ const mountHost = async (options: { token: string; channelName?: string } = { to
   const gw = funnel.gatewayModule({
     killCompetingSlack: false,
     token: options.token,
+    healthRoute: options.healthRoute,
     eventLog: new MemoryFunnelEventLog(),
   })
 
   const hostRoutes = new Hono()
   hostRoutes.get("/host/ping", (c) => c.text("host-pong"))
+  if (options.hostHealth) hostRoutes.get("/health", (c) => c.json({ ok: true, owner: "host" }))
 
-  const app = new Hono().route("/", hostRoutes).route("/", gw.app)
+  const app = options.gatewayFirst
+    ? new Hono().route("/", gw.app).route("/", hostRoutes)
+    : new Hono().route("/", hostRoutes).route("/", gw.app)
 
   const server: Server<GatewayWsData> = Bun.serve<GatewayWsData>({
     port: 0,
@@ -84,6 +99,69 @@ describe.skipIf(!isBun)("FunnelGatewayModule mounted in a host Hono app", () => 
     const healthBody = (await health.json()) as { funnelDir: string }
 
     expect(healthBody.funnelDir).toBe("/funnel")
+  })
+
+  test("healthRoute: false drops /health while the rest of the table stays mounted", async () => {
+    const mounted = await mountHost({ token: "", healthRoute: false })
+    active = mounted
+
+    const health = await fetch(`http://localhost:${mounted.port}/health`)
+    const status = await fetch(`http://localhost:${mounted.port}/status`)
+    const listeners = await fetch(`http://localhost:${mounted.port}/listeners`)
+    const debug = await fetch(`http://localhost:${mounted.port}/debug`)
+
+    expect(health.status).toBe(404)
+    expect(status.status).toBe(200)
+    expect(listeners.status).toBe(200)
+    expect(debug.status).toBe(200)
+  })
+
+  test("healthRoute: false lets the host own /health regardless of mount order", async () => {
+    // The point of the flag: with the built-in route present, only "host app
+    // mounted first" keeps the host's /health reachable — an implicit ordering
+    // condition. Mounting the gateway first proves the condition is gone.
+    const mounted = await mountHost({
+      token: "",
+      healthRoute: false,
+      hostHealth: true,
+      gatewayFirst: true,
+    })
+    active = mounted
+
+    const res = await fetch(`http://localhost:${mounted.port}/health`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, owner: "host" })
+  })
+
+  test("healthRoute: false leaves the host's /health unauthenticated while /status still needs a token", async () => {
+    // Gateway auth is mounted by path prefix and never covered /health, so
+    // opting out must not drag the host's own probe endpoint behind the token.
+    const mounted = await mountHost({
+      token: "module-secret",
+      healthRoute: false,
+      hostHealth: true,
+      gatewayFirst: true,
+    })
+    active = mounted
+
+    const health = await fetch(`http://localhost:${mounted.port}/health`)
+    const status = await fetch(`http://localhost:${mounted.port}/status`)
+
+    expect(health.status).toBe(200)
+    expect(await health.json()).toEqual({ ok: true, owner: "host" })
+    expect(status.status).toBe(401)
+  })
+
+  test("omitting healthRoute keeps the built-in /health, even mounted before the host's", async () => {
+    const mounted = await mountHost({ token: "", hostHealth: true, gatewayFirst: true })
+    active = mounted
+
+    const res = await fetch(`http://localhost:${mounted.port}/health`)
+    const body = (await res.json()) as { funnelDir?: string }
+
+    expect(res.status).toBe(200)
+    expect(body.funnelDir).toBe("/funnel")
   })
 
   test("token auth still guards gateway routes when mounted by a host", async () => {

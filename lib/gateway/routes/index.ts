@@ -15,10 +15,23 @@ import { statusHandler } from "@/gateway/routes/status"
  * (the WebSocket /ws upgrade is handled directly by `Bun.serve`). Deps come
  * from the `deps` variable set by `FunnelGatewayServer`'s middleware — same
  * shape as CLI's `c.var.funnel`.
+ *
+ * The RPC client type stays the full surface (`/health` included) — a host that
+ * opts out of the built-in `/health` serves its own on that path, so the typed
+ * client's view of the route table is unchanged either way.
  */
 export type GatewayApp = ReturnType<typeof buildGatewayRoutes>
 
-function buildGatewayRoutes() {
+/**
+ * Every route except `/health`. Split out so a host mounting
+ * `FunnelGatewayModule` into its own Hono tree can keep its own `/health`
+ * without depending on mount order (`healthRoute: false`).
+ *
+ * Returns a fresh app on each call — Hono's `.get()` mutates and returns the
+ * same instance, so deriving both exports below from one shared value would
+ * leak `/health` into the health-less variant.
+ */
+function buildCoreRoutes() {
   return (
     factory
       .createApp()
@@ -33,7 +46,6 @@ function buildGatewayRoutes() {
 
         return c.json({ error: message }, 500)
       })
-      .get("/health", ...healthHandler)
       .get("/status", ...statusHandler)
       .get("/debug", ...debugHandler)
       .get("/listeners", ...listenersListHandler)
@@ -45,4 +57,12 @@ function buildGatewayRoutes() {
   )
 }
 
+function buildGatewayRoutes() {
+  return buildCoreRoutes().get("/health", ...healthHandler)
+}
+
+/** Full built-in route table, including `/health`. */
 export const gatewayRoutes = buildGatewayRoutes()
+
+/** Same table minus `/health`, for `gatewayModule({ healthRoute: false })`. */
+export const gatewayRoutesWithoutHealth = buildCoreRoutes()

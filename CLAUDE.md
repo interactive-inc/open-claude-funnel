@@ -97,6 +97,7 @@ in-process には「listen socket を誰が持つか」で 2 形態ある。gate
 
 - **`Funnel.gatewayServer(options)`** — funnel が listen socket を所有する。`Bun.serve` の port / hostname を funnel が決め、非 loopback bind + token 無しの fail-fast もここが持つ。ホスト固有の route を足したいだけなら `extraRoutes` で間借りする。従来どおりの入口で、daemon（`lib/gateway/daemon.ts`）もこれを使う
 - **`Funnel.gatewayModule(options)`** — ホストが自分の Hono ルート樹と `Bun.serve` を所有し、gateway を 1 モジュールとして載せる。ホストアプリ側で「funnel の有効 / 無効を config で切り替える」ような構成はこちら。`hostname` は受け取らず、`port` も bind には使わない（replay DB の命名 — funnel dir + port ごとの分離 — にしか使わない）。bind はホストの関心なので、非 loopback + token 無しの fail-fast も module は持たない（ホストの責務）
+  - ホストが自分の `/health` を持つ場合は `healthRoute: false` を渡す。組み込み `/health` を mount しなくなるので、「ホスト app を先に mount する」という暗黙の順序条件が要らなくなる（Hono は先に登録した route が勝つ）。既定は true で、`/status` `/debug` `/listeners*` `/channels/*` `/ws` は常に mount される
 
 module の公開面は `app`（認証 middleware 込みの Hono サブアプリ）/ `handleUpgrade(req, server)` / `websocket` / `start()` / `stop()` と、`emit()` / `onEvent()` / `getStatus()` / `getBroadcaster()` / `getRegistry()` / `getEventLog()`。
 
