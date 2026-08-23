@@ -18,7 +18,7 @@ import { SqliteFunnelEventLog } from "@/gateway/event-log/sqlite-event-log"
 import { type Env, factory } from "@/gateway/factory"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
 import { FunnelListenerRegistry } from "@/gateway/listener-registry"
-import { gatewayRoutes } from "@/gateway/routes"
+import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
 
 /**
  * Where the gateway's durable replay log lives. The two ways to specify it are
@@ -64,6 +64,15 @@ export type GatewayModuleDeps = GatewayEventStore & {
   extraRoutes?: Hono<Env>
   /** Read-side diagnostic source exposed to the built-in debug route. */
   diagnosticLog?: ConnectorDiagnosticLog
+  /**
+   * Mount the built-in unauthenticated `GET /health`. Defaults to true.
+   *
+   * Set false when the host already serves its own `/health` on the same tree.
+   * Without it the two collide and only mount order decides the winner — an
+   * implicit condition every host would have to know. The rest of the table
+   * (`/status`, `/debug`, `/listeners*`, `/channels/*`, `/ws`) is unaffected.
+   */
+  healthRoute?: boolean
 }
 
 /** Per-connection state Bun carries for an upgraded `/ws` client. */
@@ -145,6 +154,7 @@ export class FunnelGatewayModule {
   private readonly nowMs: () => number
   private readonly ownsEventLog: boolean
   private readonly diagnosticLog: ConnectorDiagnosticLog | undefined
+  private readonly healthRoute: boolean
   private startedAt: number | null = null
   private disposed = false
   private killRan = false
@@ -166,6 +176,8 @@ export class FunnelGatewayModule {
     this.killCompetingSlack = deps.killCompetingSlack ?? true
     this.token = deps.token ?? ""
     this.diagnosticLog = deps.diagnosticLog
+    // Read before buildApp() below, which branches on it.
+    this.healthRoute = deps.healthRoute ?? true
     const clock = deps.clock
     this.nowMs = clock ? () => clock.millis() : () => Date.now()
 
@@ -444,7 +456,7 @@ export class FunnelGatewayModule {
     }
 
     const withExtras = extraRoutes ? base.route("/", extraRoutes) : base
-    return withExtras.route("/", gatewayRoutes)
+    return withExtras.route("/", this.healthRoute ? gatewayRoutes : gatewayRoutesWithoutHealth)
   }
 
   private handleWsOpen(ws: ServerWebSocket<GatewayWsData>): void {
