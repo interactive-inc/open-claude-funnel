@@ -92,6 +92,7 @@ export class FunnelListenerRegistry {
   private readonly running = new Map<string, RunningEntry>()
   private readonly failureCounts = new Map<string, number>()
   private readonly starting = new Set<string>()
+  private readonly nonRetriable = new Set<string>()
   private readonly stats = new Map<string, ListenerStats>()
   private readonly healthCheckIntervalMs: number
   private readonly maxBackoffMs: number
@@ -147,6 +148,10 @@ export class FunnelListenerRegistry {
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
 
+    // A direct start is an operator/configuration-driven retry. Clear a prior
+    // permanent-failure latch so corrected credentials can be tried again.
+    this.nonRetriable.delete(key)
+
     if (this.running.has(key)) {
       return { ok: true, reason: "already running" }
     }
@@ -163,10 +168,37 @@ export class FunnelListenerRegistry {
     this.starting.add(key)
 
     try {
-      return await this.startLocked(channelName, connectorName, key)
+      const result = await this.startLocked(channelName, connectorName, key)
+
+      this.trackStartResult(key, channelName, connectorName, result)
+
+      return result
     } finally {
       this.starting.delete(key)
     }
+  }
+
+  private trackStartResult(
+    key: string,
+    channelName: string,
+    connectorName: string,
+    result: { ok: boolean; retriable?: boolean },
+  ): void {
+    if (result.ok) {
+      this.pendingRetry.delete(key)
+      this.nonRetriable.delete(key)
+      return
+    }
+
+    if (result.retriable === false) {
+      this.pendingRetry.delete(key)
+      this.nonRetriable.add(key)
+      return
+    }
+
+    if (result.retriable !== true) return
+
+    this.pendingRetry.set(key, { channelName, connectorName })
   }
 
   private async startLocked(
@@ -252,6 +284,10 @@ export class FunnelListenerRegistry {
     const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
     const entry = this.running.get(key)
 
+    this.pendingRetry.delete(key)
+    this.nonRetriable.delete(key)
+    this.failureCounts.delete(key)
+
     if (!entry) return { ok: true, reason: "not running" }
 
     try {
@@ -285,7 +321,6 @@ export class FunnelListenerRegistry {
       // reconstructing the listener — a dead listener got stuck in the registry
       // and the registry's recoverDead loop spun forever without restarting.
       this.running.delete(key)
-      this.failureCounts.delete(key)
     }
   }
 
@@ -337,6 +372,7 @@ export class FunnelListenerRegistry {
   async stopAll(): Promise<void> {
     this.stopHealthCheck()
     this.pendingRetry.clear()
+    this.nonRetriable.clear()
 
     for (const [, entry] of this.running.entries()) {
       await this.stop(entry.channelName, entry.config.name)
@@ -402,6 +438,8 @@ export class FunnelListenerRegistry {
     this.healthCheckInFlight = true
 
     try {
+      this.queueMissingConfiguredListeners()
+
       // Recover dead listeners in parallel — each recoverDead awaits its own
       // backoff sleep, and a sequential `for await` would serialise the
       // sleeps so a 10-connector mass-disconnect would take 10 × backoffMs
@@ -453,6 +491,19 @@ export class FunnelListenerRegistry {
       await Promise.all(retries.map((retry) => this.attemptRetry(retry)))
     } finally {
       this.healthCheckInFlight = false
+    }
+  }
+
+  private queueMissingConfiguredListeners(): void {
+    for (const view of this.channels.listAllConnectors()) {
+      const key = FunnelListenerRegistry.keyOf(view.channelName, view.name)
+
+      if (this.running.has(key)) continue
+      if (this.starting.has(key)) continue
+      if (this.pendingRetry.has(key)) continue
+      if (this.nonRetriable.has(key)) continue
+
+      this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
     }
   }
 

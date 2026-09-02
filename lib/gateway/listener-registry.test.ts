@@ -334,6 +334,118 @@ describe("FunnelListenerRegistry", () => {
     await registry.stopAll()
   })
 
+  test("restart retries a transient start failure instead of losing the listener", async () => {
+    let startAttempts = 0
+
+    class FailsFirstRestartListener extends FunnelConnectorListener {
+      alive = false
+
+      async start(): Promise<void> {
+        startAttempts += 1
+
+        if (startAttempts === 2) throw new Error("temporary socket close")
+
+        this.alive = true
+      }
+
+      async stop(): Promise<void> {
+        this.alive = false
+      }
+
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listener = new FailsFirstRestartListener()
+    const registry = new FunnelListenerRegistry({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      sleep: async () => {},
+    })
+
+    await registry.start("ops", "cron")
+
+    const restarted = await registry.restart("ops", "cron")
+
+    expect(restarted.ok).toBe(false)
+    expect(registry.isRunning("ops", "cron")).toBe(false)
+
+    await registry.runHealthCheckForTest()
+
+    expect(startAttempts).toBe(3)
+    expect(registry.isRunning("ops", "cron")).toBe(true)
+
+    await registry.stopAll()
+  })
+
+  test("dead-listener recovery retries when its replacement fails to start", async () => {
+    let startAttempts = 0
+
+    class FailsFirstRecoveryListener extends FunnelConnectorListener {
+      alive = false
+
+      async start(): Promise<void> {
+        startAttempts += 1
+
+        if (startAttempts === 2) throw new Error("network unavailable")
+
+        this.alive = true
+      }
+
+      async stop(): Promise<void> {
+        this.alive = false
+      }
+
+      override isAlive(): boolean {
+        return this.alive
+      }
+    }
+
+    const listener = new FailsFirstRecoveryListener()
+    const registry = new FunnelListenerRegistry({
+      channels: {
+        listAllConnectors: () => [view],
+        createListener: () => ({ config, channelId: "ch-1", listener }),
+      },
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      sleep: async () => {},
+    })
+
+    await registry.start("ops", "cron")
+    listener.alive = false
+
+    await registry.runHealthCheckForTest()
+
+    expect(startAttempts).toBe(3)
+    expect(registry.isRunning("ops", "cron")).toBe(true)
+
+    await registry.stopAll()
+  })
+
+  test("health check recreates a configured listener missing from runtime state", async () => {
+    const listener = new FakeListener()
+    const registry = new FunnelListenerRegistry({
+      channels: buildRegistry(listener),
+      notify: async () => {},
+      logger: new NoopFunnelLogger(),
+      sleep: async () => {},
+    })
+
+    expect(registry.isRunning("ops", "cron")).toBe(false)
+
+    await registry.runHealthCheckForTest()
+
+    expect(registry.isRunning("ops", "cron")).toBe(true)
+
+    await registry.stopAll()
+  })
+
   test("recoverDead really restarts the listener even when stop() throws", async () => {
     class FlakyStopListener extends FunnelConnectorListener {
       alive = false
