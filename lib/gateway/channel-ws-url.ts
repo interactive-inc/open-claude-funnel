@@ -9,7 +9,8 @@
  * `channel` a required field, so the mistake becomes a compile error.
  *
  * `subscriberId` enables targeted delivery: events carrying `meta.target=<id>`
- * reach only this client. Omit it to receive the channel's fanout.
+ * reach only this client. Exclusive replay requires a stable subscriberId;
+ * omitting it permits live delivery only for exclusive channels.
  *
  * Pair with `channelWsProtocols()` to authenticate the upgrade when the
  * gateway requires a token.
@@ -21,7 +22,7 @@ export type ChannelWsUrlInput = {
   channel: string
   /** Opaque subscriber id for targeted delivery (`meta.target=<id>`). Omit for fanout. */
   subscriberId?: string
-  /** Replay from this event offset (inclusive). Omit to receive only new events. */
+  /** Replay events strictly after this offset. Omit to receive only new events. */
   since?: number
 }
 

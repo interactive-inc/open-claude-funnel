@@ -5,6 +5,7 @@ import type { Hono } from "hono"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
+import { FunnelChannelNotFoundError } from "@/engine/error/funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import { FUNNEL_DIR, resolveFunnelPort } from "@/engine/settings/settings-store"
@@ -83,6 +84,7 @@ export type GatewayWsData = {
   channelName: string | null
   /** Connector names belonging to that channel. */
   connectors: string[]
+  connectorIds?: string[]
   /** Routing mode for this channel; resolved at upgrade time from settings. */
   delivery: "fanout" | "exclusive"
   /** Opaque client id from `?id=<subscriberId>`; lets publishers target this client via `meta.target`. */
@@ -342,13 +344,22 @@ export class FunnelGatewayModule {
     const sinceRaw = url.searchParams.get("since")
     const sinceParsed = sinceRaw === null ? Number.NaN : Number.parseInt(sinceRaw, 10)
     const since = Number.isFinite(sinceParsed) && sinceParsed >= 0 ? sinceParsed : undefined
+    const subscriberId = url.searchParams.get("id") || undefined
+
+    if (channel?.delivery === "exclusive" && since !== undefined && !subscriberId) {
+      return {
+        handled: true,
+        response: new Response("exclusive replay requires a stable subscriber id", { status: 400 }),
+      }
+    }
     const upgraded = server.upgrade(request, {
       data: {
         channel: channel?.id ?? requestedChannel,
         channelName: channel?.name ?? null,
         connectors: channel?.connectors ?? [],
+        connectorIds: channel?.connectorIds ?? [],
         delivery: channel?.delivery ?? "fanout",
-        subscriberId: url.searchParams.get("id") ?? undefined,
+        subscriberId,
         since,
       },
     })
@@ -405,7 +416,12 @@ export class FunnelGatewayModule {
     content: string
     meta?: Record<string, string>
   }): { offset: number } {
-    const channelId = this.lookupChannelId(input.channel)
+    const channel = this.resolveChannel(input.channel)
+
+    if (!channel) throw new FunnelChannelNotFoundError(input.channel)
+
+    const channelId = channel.id
+    this.broadcaster.updateChannel(channel.id, channel)
     const connectorId =
       channelId && input.connector ? this.lookupConnectorId(channelId, input.connector) : null
     const enriched: Record<string, string> = {
@@ -425,6 +441,7 @@ export class FunnelGatewayModule {
       connectorId: connectorId ?? null,
       meta: enriched,
       offset: event.offset,
+      ...(event.exclusive ? { exclusive: event.exclusive } : {}),
     })
 
     return { offset: event.offset }
@@ -531,9 +548,13 @@ export class FunnelGatewayModule {
     return false
   }
 
-  private resolveChannel(
-    requested: string,
-  ): { id: string; name: string; connectors: string[]; delivery: "fanout" | "exclusive" } | null {
+  private resolveChannel(requested: string): {
+    id: string
+    name: string
+    connectors: string[]
+    connectorIds: string[]
+    delivery: "fanout" | "exclusive"
+  } | null {
     const channel = this.channels.get(requested) ?? this.channels.getById(requested)
 
     if (!channel) return null
@@ -542,6 +563,7 @@ export class FunnelGatewayModule {
       id: channel.id,
       name: channel.name,
       connectors: channel.connectors.map((c) => c.name),
+      connectorIds: channel.connectors.map((c) => c.id),
       delivery: channel.delivery,
     }
   }
@@ -560,14 +582,6 @@ export class FunnelGatewayModule {
 
     this.logger?.info(`event store: ${this.dbPath}`)
     this.logger?.info("funnel gateway running")
-  }
-
-  private lookupChannelId(channelName: string): string | null {
-    // Resolve by name OR id, matching the WS upgrade path (`resolveChannel`).
-    // A caller that publishes by channel id would otherwise leave channelId
-    // unstamped, and the broadcaster then skips its channel filter and fans the
-    // event out to every connected client regardless of channel.
-    return this.channels.get(channelName)?.id ?? this.channels.getById(channelName)?.id ?? null
   }
 
   private lookupConnectorId(channelId: string, connectorName: string): string | null {

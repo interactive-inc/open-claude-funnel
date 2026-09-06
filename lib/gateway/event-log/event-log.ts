@@ -14,6 +14,7 @@ export const funnelEventSchema = z.object({
   channel_id: z.string().nullable(),
   connector_id: z.string().nullable(),
   meta: z.record(z.string(), z.string()).nullable(),
+  exclusive: z.record(z.string(), z.string().nullable()).optional(),
 })
 
 export type FunnelEvent = z.infer<typeof funnelEventSchema>
@@ -25,6 +26,7 @@ export type FunnelEventRecord = {
   connectorId: string | null
   meta: Record<string, string> | null
   offset: number
+  exclusive?: Record<string, string | null>
 }
 
 /**
@@ -47,6 +49,11 @@ export abstract class FunnelEventLog {
   abstract loadSince(since: number): ReplayableEvent[]
 
   abstract findMaxOffset(): number
+
+  /** Atomically assign an unclaimed exclusive event to a reconnecting worker. */
+  claimExclusive(_offset: number, _channelId: string, _subscriberId: string): boolean {
+    return false
+  }
 
   /** Drop every stored event and reclaim the file. The broadcaster's in-memory
    *  offset counter is unaffected, so offsets keep increasing after a clear. */

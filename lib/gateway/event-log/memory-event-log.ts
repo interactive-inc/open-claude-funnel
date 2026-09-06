@@ -7,13 +7,14 @@ type StoredEvent = {
   meta: Record<string, string> | undefined
   channelId: string | null
   connectorId: string | null
+  exclusive?: Record<string, string | null>
 }
 
 /**
  * In-process `FunnelEventLog` backed by a plain array. Used by tests and by
  * embedders that do not need durability — replay works within the process
- * lifetime but is lost when the process exits. Unlike the SQLite log it does
- * not truncate content or prune, so it is not meant for unbounded production
+ * lifetime but is lost when the process exits. It does not prune,
+ * so it is not meant for unbounded production
  * traffic.
  */
 export class MemoryFunnelEventLog extends FunnelEventLog {
@@ -31,6 +32,7 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
       meta: record.meta ?? undefined,
       channelId: record.channelId,
       connectorId: record.connectorId,
+      ...(record.exclusive ? { exclusive: { ...record.exclusive } } : {}),
     })
   }
 
@@ -39,7 +41,12 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
 
     for (const event of this.events) {
       if (event.offset > since) {
-        out.push({ content: event.content, meta: event.meta, offset: event.offset })
+        out.push({
+          content: event.content,
+          meta: event.meta,
+          offset: event.offset,
+          ...(event.exclusive ? { exclusive: { ...event.exclusive } } : {}),
+        })
       }
     }
 
@@ -54,6 +61,17 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     }
 
     return max
+  }
+
+  override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
+    const event = this.events.find((candidate) => candidate.offset === offset)
+    const exclusive = event?.exclusive
+
+    if (!exclusive || exclusive[channelId] === undefined) return false
+    if (exclusive[channelId] !== null) return exclusive[channelId] === subscriberId
+
+    exclusive[channelId] = subscriberId
+    return true
   }
 
   clear(): void {

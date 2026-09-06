@@ -109,9 +109,9 @@ describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
     store.close()
   })
 
-  it("truncates content at 2000 chars", () => {
+  it("preserves the full content for durable replay", () => {
     const store = new SqliteFunnelEventLog({ path: ":memory:" })
-    const long = "a".repeat(2500)
+    const long = "a".repeat(2500) + "末尾の指示"
     store.record({
       content: long,
       channelId: null,
@@ -121,8 +121,7 @@ describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
     })
 
     const records = store.loadSince(0)
-    expect(records[0]?.content.length).toBe(2003)
-    expect(records[0]?.content.endsWith("...")).toBe(true)
+    expect(records[0]?.content).toBe(long)
 
     store.close()
   })

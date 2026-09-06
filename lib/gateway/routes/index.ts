@@ -1,4 +1,5 @@
 import { HTTPException } from "hono/http-exception"
+import { FunnelChannelNotFoundError } from "@/engine/error/funnel-error"
 import { factory } from "@/gateway/factory"
 import { channelsConnectorsCallHandler } from "@/gateway/routes/channels.connectors.call"
 import { channelsPublishHandler } from "@/gateway/routes/channels.publish"
@@ -41,6 +42,9 @@ function buildCoreRoutes() {
       // carries its own status/body, so delegate to its native response untouched.
       .onError((error, c) => {
         if (error instanceof HTTPException) return error.getResponse()
+        if (error instanceof FunnelChannelNotFoundError) {
+          return c.json({ error: error.message }, 404)
+        }
 
         const message = error instanceof Error ? error.message : String(error)
 

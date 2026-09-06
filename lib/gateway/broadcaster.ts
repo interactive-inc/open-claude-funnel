@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from "bun"
+import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 
@@ -21,6 +22,7 @@ type ClientData = {
   channelName?: string | null
   /** Connector names belonging to that channel. */
   connectors: string[]
+  connectorIds?: string[]
   /** Routing mode resolved from channel config at upgrade time. Defaults to fanout. */
   delivery?: "fanout" | "exclusive"
   /**
@@ -38,7 +40,11 @@ export type BroadcastEvent = {
   meta?: Record<string, string>
 }
 
-export type ReplayableEvent = BroadcastEvent & { offset: number }
+export type ReplayableEvent = BroadcastEvent & {
+  offset: number
+  /** Per-channel exclusive assignment; null means no worker was connected. */
+  exclusive?: Record<string, string | null>
+}
 
 export type BroadcastSubscriber = (event: ReplayableEvent) => void
 
@@ -50,6 +56,7 @@ export type BroadcastSubscriber = (event: ReplayableEvent) => void
  */
 type ReplaySource = {
   loadSince(since: number): ReplayableEvent[]
+  claimExclusive?(offset: number, channelId: string, subscriberId: string): boolean
 }
 
 type Deps = {
@@ -112,6 +119,7 @@ export class FunnelBroadcaster {
   private readonly replayBuffer: ReplayableEvent[] = []
   private readonly persistentReplay: ReplaySource | null
   private readonly exclusiveCursor = new Map<string, number>()
+  private readonly channelDelivery = new Map<string, "fanout" | "exclusive">()
   private replayBufferBytes = 0
   private eventsBroadcast = 0
   private droppedSlowClients = 0
@@ -160,18 +168,45 @@ export class FunnelBroadcaster {
     const needFallback =
       this.persistentReplay && (oldestInMemory === undefined || since < oldestInMemory - 1)
     const fromMemory = this.replayBuffer.filter(
-      (event) => event.offset > since && this.matchesClient(event, data),
+      (event) => event.offset > since && this.matchesReplay(event, data),
     )
 
     if (!needFallback) return fromMemory
 
     const persisted = this.persistentReplay
-      ? this.persistentReplay.loadSince(since).filter((event) => this.matchesClient(event, data))
+      ? this.persistentReplay.loadSince(since).filter((event) => this.matchesReplay(event, data))
       : []
     const cutoff = oldestInMemory ?? Number.POSITIVE_INFINITY
     const beforeMemory = persisted.filter((event) => event.offset < cutoff)
 
     return [...beforeMemory, ...fromMemory]
+  }
+
+  private matchesReplay(event: ReplayableEvent, data: ClientData): boolean {
+    if (!this.matchesClient(event, data)) return false
+
+    const assigned = event.exclusive?.[data.channel]
+
+    if (assigned === undefined) {
+      // Legacy rows do not identify which exclusive worker already saw them.
+      return (
+        data.delivery !== "exclusive" ||
+        (event.meta?.target === data.subscriberId && !!data.subscriberId)
+      )
+    }
+
+    if (!data.subscriberId) return false
+    if (assigned !== null) return assigned === data.subscriberId
+
+    if (this.persistentReplay) {
+      return (
+        this.persistentReplay.claimExclusive?.(event.offset, data.channel, data.subscriberId) ??
+        false
+      )
+    }
+
+    if (event.exclusive) event.exclusive[data.channel] = data.subscriberId
+    return true
   }
 
   private matchesClient(event: BroadcastEvent, data: ClientData): boolean {
@@ -184,6 +219,9 @@ export class FunnelBroadcaster {
     if (channelId && channelId !== data.channel) return false
 
     const connector = event.meta?.connector
+    const connectorId = event.meta?.connectorId
+
+    if (connectorId && data.connectorIds) return data.connectorIds.includes(connectorId)
 
     if (!connector) return true
 
@@ -198,14 +236,21 @@ export class FunnelBroadcaster {
    * `meta.target` narrows the recipient set via `matchesClient`: only the subscriber
    * whose `subscriberId` equals `target` receives a targeted event.
    */
-  private pickRecipients(event: BroadcastEvent): ServerWebSocket<unknown>[] {
+  private pickRecipients(event: ReplayableEvent): ServerWebSocket<unknown>[] {
     const exclusiveByChannel = new Map<string, ServerWebSocket<unknown>[]>()
     const recipients: ServerWebSocket<unknown>[] = []
+    const channelId = event.meta?.channelId
+    const exclusive: Record<string, string | null> = {}
+
+    if (channelId && this.channelDelivery.get(channelId) === "exclusive") {
+      exclusive[channelId] = null
+    }
 
     for (const [ws, data] of this.clients) {
       if (!this.matchesClient(event, data)) continue
 
       if (data.delivery === "exclusive") {
+        exclusive[data.channel] = null
         const list = exclusiveByChannel.get(data.channel) ?? []
 
         list.push(ws)
@@ -222,16 +267,44 @@ export class FunnelBroadcaster {
       const cursor = this.exclusiveCursor.get(channel) ?? 0
       const picked = candidates[cursor % candidates.length]
 
-      if (picked) recipients.push(picked)
+      if (picked) {
+        recipients.push(picked)
+        const data = this.clients.get(picked)
+
+        if (data) {
+          const subscriberId = data.subscriberId || randomUUID()
+          this.clients.set(picked, { ...data, subscriberId })
+          exclusive[channel] = subscriberId
+        }
+      }
 
       this.exclusiveCursor.set(channel, cursor + 1)
     }
+
+    if (Object.keys(exclusive).length > 0) event.exclusive = exclusive
 
     return recipients
   }
 
   addClient(ws: ServerWebSocket<unknown>, data: ClientData): void {
     this.clients.set(ws, data)
+  }
+
+  updateChannel(
+    channelId: string,
+    subscription: Pick<ClientData, "connectors" | "connectorIds" | "delivery">,
+  ): void {
+    this.channelDelivery.set(channelId, subscription.delivery ?? "fanout")
+    for (const [ws, data] of this.clients) {
+      if (data.channel !== channelId) continue
+
+      this.clients.set(ws, {
+        ...data,
+        connectors: subscription.connectors,
+        connectorIds: subscription.connectorIds,
+        delivery: subscription.delivery,
+      })
+    }
   }
 
   removeClient(ws: ServerWebSocket<unknown>): void {
@@ -257,6 +330,7 @@ export class FunnelBroadcaster {
   broadcast(content: string, meta?: Record<string, string>): ReplayableEvent {
     this.latestOffset += 1
     const event: ReplayableEvent = { content, meta, offset: this.latestOffset }
+    const recipients = this.pickRecipients(event)
     const payload = JSON.stringify(event)
 
     this.eventsBroadcast += 1
@@ -278,8 +352,6 @@ export class FunnelBroadcaster {
         if (dropped) this.replayBufferBytes -= byteLengthOf(dropped)
       }
     }
-
-    const recipients = this.pickRecipients(event)
 
     for (const ws of recipients) {
       const buffered = ws.getBufferedAmount()

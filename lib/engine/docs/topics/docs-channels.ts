@@ -13,8 +13,18 @@ delivery modes:
               has its own job (multiple profiles processing the same source,
               observer clients tapping in).
   exclusive   one event goes to one subscriber, round-robin. Use when
-              subscribers are interchangeable workers and each event must be
-              processed exactly once.
+              subscribers are interchangeable workers. Reconnect with the same
+              id and since offset to replay only that worker's assigned events.
+              Events queued without a worker are claimed by the first eligible
+              reconnecting worker. MCP keeps the same id across reconnects.
+
+Exclusive replay requires id; anonymous workers receive live events only.
+Assignments survive gateway restarts. Older events without an assignment record
+are not replayed to exclusive workers because their previous recipient is unknown.
+Replay may repeat an event to the same worker; external side effects still need
+their own deduplication. Replay stores full content; old truncated rows cannot be
+recovered. Connector renames and delivery changes apply on the next live emit.
+Publishing to an unknown channel returns HTTP 404 or throws FunnelChannelNotFoundError.
 
 what a channel does NOT own:
   - launch options (those live on Profile)

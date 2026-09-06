@@ -33,6 +33,7 @@ const mountHost = async (
 ) => {
   const funnel = new Funnel({
     fs: new MemoryFunnelFileSystem(),
+    connectors: [scheduleConnector()],
     logger: new NoopFunnelLogger(),
     dir: "/funnel",
     tmpDir: "/tmp/funnel-module-test",
@@ -85,6 +86,76 @@ afterEach(async () => {
 })
 
 describe.skipIf(!isBun)("FunnelGatewayModule mounted in a host Hono app", () => {
+  test("publishing to an unknown channel rejects before broadcast or persistence", async () => {
+    const mounted = await mountHost({ token: "", channelName: "ops" })
+    active = mounted
+    const seen: string[] = []
+    mounted.gw.onEvent((event) => seen.push(event.content))
+    const response = await mounted.gw.app.request("/channels/typo/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content: "must not reach ops",
+        meta: { channelId: mounted.funnel.channels.get("ops")?.id },
+      }),
+    })
+
+    expect(response.status).toBe(404)
+    expect(() => mounted.gw.emit({ channel: "typo", content: "also rejected" })).toThrow(
+      "channel not found",
+    )
+    expect(seen).toEqual([])
+    expect(mounted.gw.getEventLog().loadSince(0)).toEqual([])
+    expect(mounted.gw.getBroadcaster().getMetrics().latestOffset).toBe(0)
+  })
+
+  test("a connected client keeps receiving after a connector is renamed", async () => {
+    const mounted = await mountHost({ token: "", channelName: "ops" })
+    active = mounted
+    mounted.funnel.channels.addConnector("ops", { type: "schedule", name: "old" })
+    const received = await new Promise<string[]>((resolve, reject) => {
+      const messages: string[] = []
+      const ws = new WebSocket(`ws://localhost:${mounted.port}/ws?channel=ops`)
+      const timeout = setTimeout(() => {
+        ws.close()
+        reject(new Error("rename delivery timed out"))
+      }, 2000)
+      ws.addEventListener("open", () => {
+        mounted.gw.emit({ channel: "ops", connector: "old", content: "before" })
+        mounted.funnel.channels.renameConnector("ops", "old", "new")
+        mounted.gw.emit({ channel: "ops", connector: "new", content: "after" })
+      })
+      ws.addEventListener("message", (message) => {
+        messages.push(JSON.parse(String(message.data)).content)
+        if (messages.length !== 2) return
+        clearTimeout(timeout)
+        ws.close()
+        resolve(messages)
+      })
+      ws.addEventListener("error", () => {
+        clearTimeout(timeout)
+        ws.close()
+        reject(new Error("ws error"))
+      })
+    })
+
+    expect(received).toEqual(["before", "after"])
+  })
+
+  test("exclusive replay rejects an anonymous worker instead of guessing its assignment", async () => {
+    const mounted = await mountHost({ token: "", channelName: "ops" })
+    active = mounted
+    mounted.funnel.channels.setDelivery("ops", "exclusive")
+    const upgrade = mounted.gw.handleUpgrade(
+      new Request(`http://localhost:${mounted.port}/ws?channel=ops&since=0`, {
+        headers: { upgrade: "websocket" },
+      }),
+      mounted.server,
+    )
+    expect(upgrade.handled).toBe(true)
+    expect(upgrade.response?.status).toBe(400)
+  })
+
   test("host routes and gateway routes coexist on the host's server", async () => {
     const mounted = await mountHost({ token: "" })
     active = mounted
@@ -296,7 +367,12 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
 
     // list() enumerates the running listeners, so a booted schedule connector
     // must appear and a stopped one must not.
-    expect(gw.getRegistry().list().map((entry) => entry.name)).toEqual(["tick"])
+    expect(
+      gw
+        .getRegistry()
+        .list()
+        .map((entry) => entry.name),
+    ).toEqual(["tick"])
     expect(gw.getRegistry().list()[0]?.channelId).toBe(channel.id)
 
     await gw.stop()

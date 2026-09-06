@@ -34,6 +34,48 @@ const lastOffsetOf = (subscriber: FunnelChannelSubscriber): unknown => {
 }
 
 describe("FunnelChannelSubscriber", () => {
+  test.each([1, 7])(
+    "reconnects after a failed first notification at offset %i with the same worker id",
+    async (offset) => {
+      const sockets: Array<{ url: URL; socket: EventTarget }> = []
+      const reconnects: Array<() => void> = []
+      const notification = mock(async () => {
+        throw new Error("transport failed")
+      })
+      const subscriber = new FunnelChannelSubscriber({
+        // @ts-expect-error Only notification is exercised by the subscriber.
+        server: { notification },
+        baseUrl: "ws://localhost/ws?channel=test",
+        protocols: undefined,
+        createSocket: (url) => {
+          const socket = new EventTarget()
+          sockets.push({ url: new URL(url), socket })
+          return {
+            addEventListener: socket.addEventListener.bind(socket),
+            close: () => socket.dispatchEvent(new Event("close")),
+          }
+        },
+        scheduleReconnect: (connect) => {
+          reconnects.push(connect)
+        },
+      })
+      subscriber.start()
+      sockets[0]?.socket.dispatchEvent(message(offset))
+      const state = Reflect.get(subscriber, "state")
+      await state.messageQueue
+      expect(notification).toHaveBeenCalledTimes(1)
+      expect(lastOffsetOf(subscriber)).toBe(0)
+      reconnects[0]?.()
+      await Promise.resolve()
+
+      expect(sockets).toHaveLength(2)
+      expect(sockets[0]?.url.searchParams.has("since")).toBe(false)
+      expect(sockets[1]?.url.searchParams.get("since")).toBe(String(offset - 1))
+      expect(sockets[0]?.url.searchParams.get("id")).toBeTruthy()
+      expect(sockets[1]?.url.searchParams.get("id")).toBe(sockets[0]?.url.searchParams.get("id"))
+    },
+  )
+
   test("advances the replay offset only after the MCP notification succeeds", async () => {
     const notification = mock(async () => {
       throw new Error("transport failed")

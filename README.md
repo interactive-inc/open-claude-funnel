@@ -205,6 +205,10 @@ transport モデルは 2 つの概念でできている。
 
 Channel は名前付きの購読箱（transport のみ）。1 つ以上のコネクタと delivery モードを持ち、起動フラグは持たない。エージェントセッションはちょうど 1 つのチャネルを購読する。WS 接続は `?id=<uuid>` の targeted delivery のみで、`tap=all` は廃止されている。delivery は `fanout`（全 subscriber が全イベントを見る、デフォルト）か `exclusive`（1 イベントを 1 subscriber が round-robin で消費、ワーカープール向け）。
 
+`exclusive` の再接続では同じ `id` と最後に配送を完了した `since` を渡す。配送先を永続化するため、別ワーカーへ配送済みのイベントは再送されない。接続者がいない間のイベントは、最初に再送を要求したワーカーへ割り当てる。MCP クライアントはプロセス内で同じ `id` を維持する。自作クライアントで `id` を省略した場合は接続中の配送のみを利用でき、`exclusive` の `since` 指定には `id` が必須。
+
+再送用の本文は全文保存する。旧バージョンで既に切り詰められた本文は復元されず、配送先の記録がない旧イベントは `exclusive` では再送しない。同じワーカーへの再送はあり得るため、外部への副作用の完了を一度だけにする保証とは別である。コネクタの改名・追加や配送モードの変更は、次の送信時に接続済みクライアントにも反映する。存在しないチャネルへの publish は HTTP 404（SDK は `FunnelChannelNotFoundError`）になる。
+
 Connector はチャネルから外部ソースへの 1 つの接続。`slack` / `gh` / `discord` / `schedule` の 4 型。前者 3 つは双方向（イベント入力・返信出力）、`schedule` は一方向（cron tick の入力のみ）。
 
 Profile はその transport モデルの外側にある起動の便宜レイヤで、モデルの一部ではない。エージェントを動かすのに必須ではない（`fnl claude --channel <name>` で足りる）。`{ path, channelId, options, env, resume }` を束ねた保存済みの起動 preset で、`fnl claude --profile cto` が既知のセットアップを再現する。どのディレクトリから起動するか、どのチャネルをバインドするか、起動レシピ（claude argv の先頭に積む引数、プロセスに被せる env、セッション再利用）をまとめて持つ。プロファイルは不変の uuid `id` を持ち（PID ファイルと再開可能なセッションがこれをキーにするので、rename してもどちらも迷子にならない）、`name` は人が打つハンドル。プロファイルは既にチャネルをバインドしているので、`--profile` と `--channel` は併用できない。

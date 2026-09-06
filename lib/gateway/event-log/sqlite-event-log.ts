@@ -7,8 +7,7 @@ import {
   type FunnelEventRecord,
 } from "@/gateway/event-log/event-log"
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
-
-const MAX_CONTENT_CHARS = 2000
+import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-claims"
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */
@@ -55,6 +54,8 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
   private readonly now: () => number
   private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError | undefined
+  private readonly exclusiveClaims: SqliteExclusiveClaims
+  private readonly hasRetention: boolean
 
   constructor(props: Props) {
     super()
@@ -74,6 +75,9 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       ...(props.maxBytes !== undefined ? { maxBytes: props.maxBytes } : {}),
       ...(props.targetBytes !== undefined ? { targetBytes: props.targetBytes } : {}),
     })
+    this.exclusiveClaims = new SqliteExclusiveClaims(props.path)
+    this.hasRetention =
+      props.maxRows !== undefined || props.maxAgeMs !== undefined || props.maxBytes !== undefined
   }
 
   /**
@@ -84,12 +88,19 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
   record(record: FunnelEventRecord): void {
     const event: FunnelEvent = {
       type: record.meta?.event_type ?? "unknown",
-      content: truncate(record.content),
+      content: record.content,
       channel_id: record.channelId,
       connector_id: record.connectorId,
       meta: record.meta,
+      ...(record.exclusive ? { exclusive: record.exclusive } : {}),
     }
     const result = this.sink.write({ seq: record.offset, ts: this.now(), event })
+
+    if (this.hasRetention && !(result instanceof Error)) {
+      const oldest = this.sink.query({ limit: 1 })[0]?.seq
+      if (oldest === undefined) this.exclusiveClaims.clear()
+      else this.exclusiveClaims.pruneBefore(oldest)
+    }
 
     // A dropped write (PK collision on a reused offset, disk-full, locked WAL)
     // silently loses the event from durable replay. Surface it to the local
@@ -124,6 +135,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
         content: record.event.content,
         meta: record.event.meta ?? undefined,
         offset: record.seq,
+        ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
       })
     }
     return out
@@ -156,6 +168,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
         content: record.event.content,
         meta: record.event.meta ?? undefined,
         offset: record.seq,
+        ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
       })
     }
     return out
@@ -165,16 +178,23 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     return this.sink.getMaxSeq()
   }
 
+  override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
+    const event = this.sink.query({ seq: offset, limit: 1 })[0]?.event
+    const assigned = event?.exclusive?.[channelId]
+
+    if (assigned === undefined) return false
+    if (assigned !== null) return assigned === subscriberId
+
+    return this.exclusiveClaims.claim(offset, channelId, subscriberId)
+  }
+
   clear(): void {
     this.sink.clear()
+    this.exclusiveClaims.clear()
   }
 
   close(): void {
     this.sink.close()
+    this.exclusiveClaims.close()
   }
-}
-
-function truncate(content: string): string {
-  if (content.length <= MAX_CONTENT_CHARS) return content
-  return `${content.slice(0, MAX_CONTENT_CHARS)}...`
 }

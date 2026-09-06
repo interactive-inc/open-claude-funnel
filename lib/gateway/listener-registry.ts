@@ -25,7 +25,11 @@ type RunningEntry = {
   channelName: string
   channelId: string
   listener: FunnelConnectorListener
+  controller: AbortController
 }
+
+type StartResult = { ok: boolean; reason?: string; retriable?: boolean }
+type StartingEntry = { controller: AbortController; completion: Promise<StartResult> }
 
 type ListenerStats = {
   events: number
@@ -91,7 +95,13 @@ export class FunnelListenerRegistry {
   private readonly onError: OnFunnelError
   private readonly running = new Map<string, RunningEntry>()
   private readonly failureCounts = new Map<string, number>()
-  private readonly starting = new Set<string>()
+  private readonly starting = new Map<string, StartingEntry>()
+  private readonly stopping = new Map<string, Promise<StartResult>>()
+  private readonly stopped = new Set<string>()
+  private readonly revisions = new Map<string, number>()
+  private lifecycle = 0
+  private isStopped = false
+  private stoppingAll: Promise<void> | null = null
   private readonly nonRetriable = new Set<string>()
   private readonly stats = new Map<string, ListenerStats>()
   private readonly healthCheckIntervalMs: number
@@ -148,6 +158,10 @@ export class FunnelListenerRegistry {
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
 
+    if (this.stoppingAll) return { ok: false, reason: "registry is stopping" }
+    if (this.stopping.has(key))
+      return { ok: false, reason: "listener is stopping", retriable: true }
+
     // A direct start is an operator/configuration-driven retry. Clear a prior
     // permanent-failure latch so corrected credentials can be tried again.
     this.nonRetriable.delete(key)
@@ -165,12 +179,21 @@ export class FunnelListenerRegistry {
       return { ok: false, reason: "already starting", retriable: true }
     }
 
-    this.starting.add(key)
+    this.isStopped = false
+    this.stopped.delete(key)
+    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
+    const controller = new AbortController()
+    const completion = Promise.resolve().then(() =>
+      this.startLocked({ channelName, connectorName, key, controller }),
+    )
+    this.starting.set(key, { controller, completion })
 
     try {
-      const result = await this.startLocked(channelName, connectorName, key)
+      const result = await completion
 
-      this.trackStartResult(key, channelName, connectorName, result)
+      if (!this.isStopped && !this.stopped.has(key)) {
+        this.trackStartResult(key, channelName, connectorName, result)
+      }
 
       return result
     } finally {
@@ -201,11 +224,19 @@ export class FunnelListenerRegistry {
     this.pendingRetry.set(key, { channelName, connectorName })
   }
 
-  private async startLocked(
-    channelName: string,
-    connectorName: string,
-    key: string,
-  ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
+  private async startLocked(input: {
+    channelName: string
+    connectorName: string
+    key: string
+    controller: AbortController
+  }): Promise<StartResult> {
+    const channelName = input.channelName
+    const connectorName = input.connectorName
+    const key = input.key
+    const signal = input.controller.signal
+
+    if (signal.aborted) return { ok: false, reason: "start cancelled" }
+
     const created = this.channels.createListener(channelName, connectorName)
 
     if (!created) {
@@ -216,6 +247,8 @@ export class FunnelListenerRegistry {
     }
 
     const bind = async (content: string, meta?: Record<string, string>) => {
+      if (signal.aborted) throw new Error("listener stopped before delivery")
+
       try {
         await this.notify(channelName, connectorName, content, meta)
         this.recordEvent(key)
@@ -225,18 +258,43 @@ export class FunnelListenerRegistry {
       }
     }
 
+    const startup = { needsLateCleanup: false }
+
     try {
+      const opened = created.listener.start(bind)
+      void opened
+        .then(
+          async () => {
+            // A timed-out start may still finish opening its transport later.
+            if (startup.needsLateCleanup) await created.listener.stop()
+          },
+          () => {},
+        )
+        .catch((error: unknown) => {
+          const err = error instanceof Error ? error : new Error(String(error))
+          this.onError(err, {
+            component: "listener-registry.late-stop",
+            channel: channelName,
+            connector: connectorName,
+          })
+        })
       await Promise.race([
-        created.listener.start(bind),
+        opened,
         this.sleep(this.startTimeoutMs).then(() => {
           throw new Error(`listener start timed out after ${this.startTimeoutMs}ms`)
         }),
       ])
+      if (signal.aborted) {
+        await created.listener.stop()
+        return { ok: false, reason: "start cancelled" }
+      }
+
       this.running.set(key, {
         config: created.config,
         channelName,
         channelId: created.channelId,
         listener: created.listener,
+        controller: input.controller,
       })
       this.pendingRetry.delete(key)
       this.ensureStats(key)
@@ -248,12 +306,17 @@ export class FunnelListenerRegistry {
       return { ok: true }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error))
+      const wasCancelled = signal.aborted
+      startup.needsLateCleanup = true
+      input.controller.abort()
 
       try {
         await created.listener.stop()
       } catch {
         // best-effort cleanup; the listener may be partially initialized
       }
+
+      if (wasCancelled) return { ok: false, reason: "start cancelled" }
 
       this.logger?.error(`${created.config.type} listener failed to start`, {
         channel: channelName,
@@ -282,6 +345,36 @@ export class FunnelListenerRegistry {
     connectorName: string,
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
     const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
+    this.stopped.add(key)
+    this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
+
+    return this.stopEntry(channelName, connectorName)
+  }
+
+  private async stopEntry(channelName: string, connectorName: string): Promise<StartResult> {
+    const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
+    const existing = this.stopping.get(key)
+
+    if (existing) return existing
+
+    const completion = this.stopLocked(channelName, connectorName)
+    this.stopping.set(key, completion)
+
+    try {
+      return await completion
+    } finally {
+      this.stopping.delete(key)
+    }
+  }
+
+  private async stopLocked(channelName: string, connectorName: string): Promise<StartResult> {
+    const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
+    const starting = this.starting.get(key)
+    starting?.controller.abort()
+    this.running.get(key)?.controller.abort()
+
+    if (starting) await starting.completion.catch(() => {})
+
     const entry = this.running.get(key)
 
     this.pendingRetry.delete(key)
@@ -336,15 +429,24 @@ export class FunnelListenerRegistry {
   }
 
   async startAll(): Promise<void> {
+    if (this.stoppingAll) await this.stoppingAll
+
+    this.isStopped = false
+    const lifecycle = this.lifecycle
     const all = this.channels.listAllConnectors()
 
     const results = await Promise.allSettled(
       all.map((view) => this.start(view.channelName, view.name)),
     )
 
+    if (this.isStopped || lifecycle !== this.lifecycle) return
+
     for (let i = 0; i < results.length; i++) {
       const result = results[i]!
       const view = all[i]!
+      const key = FunnelListenerRegistry.keyOf(view.channelName, view.name)
+
+      if (this.stopped.has(key)) continue
 
       if (result.status === "rejected") {
         // throw paths are always retriable — only the structured
@@ -370,13 +472,32 @@ export class FunnelListenerRegistry {
   }
 
   async stopAll(): Promise<void> {
+    if (this.stoppingAll) return this.stoppingAll
+
+    this.isStopped = true
+    this.lifecycle += 1
     this.stopHealthCheck()
     this.pendingRetry.clear()
     this.nonRetriable.clear()
 
-    for (const [, entry] of this.running.entries()) {
-      await this.stop(entry.channelName, entry.config.name)
+    for (const entry of this.starting.values()) entry.controller.abort()
+    for (const entry of this.running.values()) entry.controller.abort()
+
+    this.stoppingAll = this.finishStopAll()
+
+    try {
+      await this.stoppingAll
+    } finally {
+      this.stoppingAll = null
     }
+  }
+
+  private async finishStopAll(): Promise<void> {
+    await Promise.allSettled([...this.starting.values()].map((entry) => entry.completion))
+    await Promise.all(
+      [...this.running.values()].map((entry) => this.stop(entry.channelName, entry.config.name)),
+    )
+    this.pendingRetry.clear()
   }
 
   private ensureStats(key: string): ListenerStats {
@@ -433,7 +554,7 @@ export class FunnelListenerRegistry {
   }
 
   private async runHealthCheck(): Promise<void> {
-    if (this.healthCheckInFlight) return
+    if (this.healthCheckInFlight || this.isStopped) return
 
     this.healthCheckInFlight = true
 
@@ -500,8 +621,10 @@ export class FunnelListenerRegistry {
 
       if (this.running.has(key)) continue
       if (this.starting.has(key)) continue
+      if (this.stopping.has(key)) continue
       if (this.pendingRetry.has(key)) continue
       if (this.nonRetriable.has(key)) continue
+      if (this.stopped.has(key)) continue
 
       this.pendingRetry.set(key, { channelName: view.channelName, connectorName: view.name })
     }
@@ -512,6 +635,8 @@ export class FunnelListenerRegistry {
     channelName: string
     connectorName: string
   }): Promise<void> {
+    const lifecycle = this.lifecycle
+    const revision = this.revisions.get(retry.key)
     this.logger?.info("retrying failed listener", {
       channel: retry.channelName,
       connector: retry.connectorName,
@@ -521,6 +646,8 @@ export class FunnelListenerRegistry {
     const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
 
     await this.sleep(backoffMs)
+
+    if (!this.canRecover(retry.key, lifecycle, revision)) return
 
     const result = await this.start(retry.channelName, retry.connectorName)
 
@@ -553,6 +680,8 @@ export class FunnelListenerRegistry {
     type: string,
   ): Promise<void> {
     const key = FunnelListenerRegistry.keyOf(channelName, connectorName)
+    const lifecycle = this.lifecycle
+    const revision = this.revisions.get(key)
     const failureCount = this.failureCounts.get(key) ?? 0
     const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
 
@@ -563,8 +692,10 @@ export class FunnelListenerRegistry {
       backoffMs,
     })
 
-    await this.stop(channelName, connectorName)
+    await this.stopEntry(channelName, connectorName)
     await this.sleep(backoffMs)
+
+    if (!this.canRecover(key, lifecycle, revision)) return
 
     const result = await this.start(channelName, connectorName)
 
@@ -587,5 +718,14 @@ export class FunnelListenerRegistry {
     } else {
       this.failureCounts.set(key, failureCount + 1)
     }
+  }
+
+  private canRecover(key: string, lifecycle: number, revision: number | undefined): boolean {
+    return (
+      !this.isStopped &&
+      !this.stopped.has(key) &&
+      this.lifecycle === lifecycle &&
+      this.revisions.get(key) === revision
+    )
   }
 }

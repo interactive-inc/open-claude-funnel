@@ -1,4 +1,5 @@
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { randomUUID } from "node:crypto"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 
 const RECONNECT_DELAY = 1000
@@ -8,6 +9,11 @@ type Props = {
   server: Server
   baseUrl: string
   protocols: string[] | undefined
+  createSocket?: (
+    url: string,
+    protocols?: string[],
+  ) => Pick<WebSocket, "addEventListener" | "close">
+  scheduleReconnect?: (connect: () => void, delay: number) => void
 }
 
 type State = {
@@ -16,6 +22,8 @@ type State = {
   isStarted: boolean
   hasPendingReconnect: boolean
   hasDeliveryFailure: boolean
+  firstOffset: number | null
+  hasAttemptedConnection: boolean
   messageQueue: Promise<void>
 }
 
@@ -35,10 +43,14 @@ export class FunnelChannelSubscriber {
     isStarted: false,
     hasPendingReconnect: false,
     hasDeliveryFailure: false,
+    firstOffset: null,
+    hasAttemptedConnection: false,
     messageQueue: Promise.resolve(),
   }
+  private readonly subscriberId: string
 
   constructor(private readonly props: Props) {
+    this.subscriberId = new URL(props.baseUrl).searchParams.get("id") || randomUUID()
     Object.freeze(this)
   }
 
@@ -50,9 +62,19 @@ export class FunnelChannelSubscriber {
   }
 
   private connect(): void {
-    const sinceQuery = this.state.lastOffset > 0 ? `&since=${this.state.lastOffset}` : ""
-    const wsUrl = `${this.props.baseUrl}${sinceQuery}`
-    const ws = new WebSocket(wsUrl, this.props.protocols)
+    const url = new URL(this.props.baseUrl)
+    url.searchParams.set("id", this.subscriberId)
+
+    if (this.state.hasAttemptedConnection) {
+      const since = this.state.lastOffset || Math.max(0, (this.state.firstOffset ?? 1) - 1)
+      url.searchParams.set("since", String(since))
+    }
+
+    this.state.hasAttemptedConnection = true
+    const wsUrl = url.toString()
+    const createSocket =
+      this.props.createSocket ?? ((address, protocols) => new WebSocket(address, protocols))
+    const ws = createSocket(wsUrl, this.props.protocols)
 
     ws.addEventListener("open", () => {
       this.state.reconnectDelay = RECONNECT_DELAY
@@ -68,7 +90,8 @@ export class FunnelChannelSubscriber {
 
       this.state.hasPendingReconnect = true
       process.stderr.write(`funnel: disconnected, reconnecting in ${this.state.reconnectDelay}ms\n`)
-      setTimeout(() => {
+      const schedule = this.props.scheduleReconnect ?? setTimeout
+      schedule(() => {
         this.state.messageQueue.then(() => {
           this.state.hasPendingReconnect = false
           this.state.hasDeliveryFailure = false
@@ -108,6 +131,8 @@ export class FunnelChannelSubscriber {
       const payload = JSON.parse(String(event.data))
       const eventType = payload.meta?.event_type ?? "unknown"
       const offset = typeof payload.offset === "number" ? payload.offset : null
+
+      if (this.state.firstOffset === null && offset !== null) this.state.firstOffset = offset
 
       process.stderr.write(`funnel: received event (${eventType})\n`)
 

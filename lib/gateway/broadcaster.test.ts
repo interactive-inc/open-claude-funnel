@@ -241,6 +241,93 @@ describe("FunnelBroadcaster", () => {
     expect(broadcaster.getMetrics().latestOffset).toBe(12)
   })
 
+  test("exclusive replay keeps tasks assigned to their original worker", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const alice = new FakeWs()
+    const bob = new FakeWs()
+    const aliceSubscription: Parameters<FunnelBroadcaster["addClient"]>[1] = {
+      channel: "ops",
+      connectors: [],
+      delivery: "exclusive",
+      subscriberId: "alice",
+    }
+    broadcaster.addClient(asWs(alice), aliceSubscription)
+    broadcaster.addClient(asWs(bob), { ...aliceSubscription, subscriberId: "bob" })
+    broadcaster.broadcast("task-1", { channelId: "ops" })
+    broadcaster.broadcast("task-2", { channelId: "ops" })
+    broadcaster.removeClient(asWs(alice))
+    broadcaster.broadcast("task-3", { channelId: "ops" })
+
+    expect(broadcaster.replaySince(0, aliceSubscription).map((event) => event.content)).toEqual([
+      "task-1",
+    ])
+    expect(broadcaster.replaySince(1, aliceSubscription)).toEqual([])
+    expect(
+      broadcaster
+        .replaySince(0, { ...aliceSubscription, delivery: "fanout" })
+        .map((event) => event.content),
+    ).toEqual(["task-1"])
+    expect(broadcaster.replaySince(0, { channel: "ops", connectors: [] })).toEqual([])
+  })
+
+  test("an event queued without workers can only be claimed by one worker", () => {
+    const broadcaster = new FunnelBroadcaster()
+    broadcaster.updateChannel("ops", { connectors: [], delivery: "exclusive" })
+    broadcaster.broadcast("queued", { channelId: "ops" })
+    const subscription: Parameters<FunnelBroadcaster["addClient"]>[1] = {
+      channel: "ops",
+      connectors: [],
+      delivery: "exclusive",
+      subscriberId: "alice",
+    }
+
+    expect(broadcaster.replaySince(0, subscription).map((event) => event.content)).toEqual([
+      "queued",
+    ])
+    expect(broadcaster.replaySince(0, { ...subscription, subscriberId: "bob" })).toEqual([])
+    expect(broadcaster.replaySince(0, subscription)).toHaveLength(1)
+  })
+
+  test("renamed connectors replay by stable id and delivery changes affect existing clients", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const alice = new FakeWs()
+    const bob = new FakeWs()
+    broadcaster.addClient(asWs(alice), {
+      channel: "ops",
+      connectors: ["old"],
+      connectorIds: ["connector-id"],
+      subscriberId: "alice",
+    })
+    broadcaster.addClient(asWs(bob), {
+      channel: "ops",
+      connectors: ["old"],
+      connectorIds: ["connector-id"],
+      subscriberId: "bob",
+    })
+    broadcaster.broadcast("before", {
+      channelId: "ops",
+      connector: "old",
+      connectorId: "connector-id",
+    })
+    broadcaster.updateChannel("ops", {
+      connectors: ["new"],
+      connectorIds: ["connector-id"],
+      delivery: "exclusive",
+    })
+    broadcaster.broadcast("after", {
+      channelId: "ops",
+      connector: "new",
+      connectorId: "connector-id",
+    })
+
+    expect(alice.sent.length + bob.sent.length).toBe(3)
+    expect(
+      broadcaster
+        .replaySince(0, { channel: "ops", connectors: ["new"], connectorIds: ["connector-id"] })
+        .map((event) => event.content),
+    ).toEqual(["before"])
+  })
+
   test("exclusive delivery picks one client per channel via round-robin", () => {
     const broadcaster = new FunnelBroadcaster()
     const a = new FakeWs()
