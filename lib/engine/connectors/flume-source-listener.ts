@@ -183,10 +183,14 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   }
 
   async stop(): Promise<void> {
-    if (!this.running) return
+    const running = this.running
+    if (!running) return
 
     try {
-      await this.running.close()
+      await running.close()
+      // Flume 0.11 separates source shutdown from callback completion.
+      // Finish queued status/log callbacks before finalizing listener state.
+      await running.drain()
       this.diagnostics.recordConnection("disconnected", "")
     } catch (error) {
       this.diagnostics.recordConnection("error", errorMessageOf(error))

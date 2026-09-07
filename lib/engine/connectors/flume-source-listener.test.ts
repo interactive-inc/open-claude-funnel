@@ -40,6 +40,10 @@ class FakeFlumeSource extends FlumeSource {
     if (this.hooks.disconnectError) throw this.hooks.disconnectError
     this.capturedCtx = null
   }
+
+  emitStatus(status: FlumeStatus, detail: string): void {
+    this.setStatus(status, detail)
+  }
 }
 
 class TestListenerWithSignal extends FunnelFlumeSourceListener {
@@ -103,6 +107,48 @@ class TestListener extends FunnelFlumeSourceListener {
 }
 
 describe("FunnelFlumeSourceListener", () => {
+  test("stop finishes queued Flume status callbacks before recording the final stopped row", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+
+    await listener.start()
+
+    for (const index of Array.from({ length: 50 }, (_, index) => index)) {
+      listener.source.emitStatus("connected", `connection-${index}`)
+    }
+
+    await listener.stop()
+    const statusesAtStop = log.queryConnection({ type: "slack" }).map((row) => row.status)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(log.queryConnection({ type: "slack" }).map((row) => row.status)).toEqual(statusesAtStop)
+    expect(statusesAtStop.filter((status) => status === "connected")).toHaveLength(50)
+    expect(statusesAtStop.at(-1)).toBe("stopped")
+    expect(listener.isAlive()).toBe(false)
+  })
+
+  test("an event handler can await listener shutdown without waiting on itself", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+    const stopped = Promise.withResolvers<void>()
+
+    await listener.startWithHandler(async () => {
+      await listener.stop()
+      stopped.resolve()
+    })
+
+    const ctx = listener.source.capturedCtx
+    if (!ctx) throw new Error("source not yet connected")
+    ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
+
+    await stopped.promise
+
+    expect(listener.source.disconnectCalls).toBe(1)
+    expect(listener.resetCount).toBe(1)
+    expect(listener.isAlive()).toBe(false)
+  })
+
   test("records connected/disconnected on status transitions and flips alive accordingly", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
