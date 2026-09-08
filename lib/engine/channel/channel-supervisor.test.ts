@@ -60,6 +60,46 @@ function freshSupervisor(options: { signal?: AbortSignal } = {}) {
 }
 
 describe("FunnelChannelSupervisor", () => {
+  it("stop aborts a manifest build already in progress and never opens its late sources", async () => {
+    const { supervisor } = freshSupervisor()
+    const source = new StubSource()
+    const building = Promise.withResolvers<AbortSignal>()
+    supervisor.register(
+      defineChannel({
+        id: "pending",
+        build: async (ctx) => {
+          building.resolve(ctx.signal)
+          await new Promise<void>((resolve) =>
+            ctx.signal.addEventListener("abort", () => resolve(), { once: true }),
+          )
+          return { sources: [source] }
+        },
+      }),
+    )
+    const starting = supervisor.start()
+    const signal = await building.promise
+    await supervisor.stop()
+    await starting
+    expect(signal.aborted).toBe(true)
+    expect(source.pushEvent).toBeNull()
+    expect(supervisor.ids()).toEqual([])
+    expect(supervisor.has("pending")).toBe(false)
+  })
+
+  it("multiple sources use the same transform and stop together", async () => {
+    const { supervisor, received } = freshSupervisor()
+    const first = new StubSource()
+    const second = new StubSource()
+    supervisor.register(defineChannel({ id: "many", build: () => ({ sources: [first, second] }) }))
+    await supervisor.start()
+    for (const source of [first, second])
+      source.pushEvent?.({ source: "discord", type: "x", data: {}, meta: {}, receivedAt: 0 })
+    await waitForCondition(() => received.length === 2)
+    await supervisor.stop()
+    expect(first.pushEvent).toBeNull()
+    expect(second.pushEvent).toBeNull()
+  })
+
   it("register + start opens channel sources and forwards transformed events to broadcaster", async () => {
     const { received, supervisor } = freshSupervisor()
 

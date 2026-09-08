@@ -140,21 +140,26 @@ export class FunnelClaude {
       this.guard.acquire(options.profileId)
     }
 
-    const resume = options.resume ?? false
-    const session =
-      resume && options.profileId
-        ? this.resolveSession(options.profileId, cwd, options.userArgs ?? [], options.env ?? {})
-        : null
-    const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
-    const env = this.buildEnv(channel.id, options.env ?? {})
-
-    this.logger?.info(`claude launch`, {
-      channel: options.channel,
-      channelId: channel.id,
-      cwd,
-    })
-
     try {
+      const resume = options.resume ?? false
+      const session =
+        resume && options.profileId
+          ? this.resolveSession(
+              options.profileId,
+              cwd,
+              [...(options.options ?? []), ...(options.userArgs ?? [])],
+              options.env ?? {},
+            )
+          : null
+      const claudeArgs = this.buildArgs(options.options ?? [], options.userArgs ?? [], cwd, session)
+      const env = this.buildEnv(channel.id, options.env ?? {})
+
+      this.logger?.info(`claude launch`, {
+        channel: options.channel,
+        channelId: channel.id,
+        cwd,
+      })
+
       return await this.process.attach(["claude", ...claudeArgs], {
         cwd,
         env,
@@ -222,6 +227,8 @@ export class FunnelClaude {
     recipeEnv: Record<string, string>,
   ): SessionResolution {
     for (const arg of userArgs) {
+      if (arg === "--") break
+      if (arg === "-r" || arg.startsWith("-r=")) return null
       if (arg === "-c" || arg === "--continue") return null
       if (arg === "--resume" || arg.startsWith("--resume=")) return null
       if (arg === "--session-id" || arg.startsWith("--session-id=")) return null

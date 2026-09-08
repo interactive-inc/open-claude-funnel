@@ -59,7 +59,7 @@ class TestListenerWithSignal extends FunnelFlumeSourceListener {
 
   async start(): Promise<void> {
     await this.runStart({
-      source: this.source,
+      sources: [this.source],
       onEvent: () => {},
       signal: this.signal,
     })
@@ -87,13 +87,13 @@ class TestListener extends FunnelFlumeSourceListener {
 
   async start(): Promise<void> {
     await this.runStart({
-      source: this.source,
+      sources: [this.source],
       onEvent: () => {},
     })
   }
 
   async startWithHandler(onEvent: FlumeEventHandler): Promise<void> {
-    await this.runStart({ source: this.source, onEvent })
+    await this.runStart({ sources: [this.source], onEvent })
   }
 
   emitStatus(status: FlumeStatus, detail?: string): void {
@@ -284,7 +284,7 @@ describe("FunnelFlumeSourceListener", () => {
       }
 
       async start(): Promise<void> {
-        await this.runStart({ source: this.source, onEvent })
+        await this.runStart({ sources: [this.source], onEvent })
       }
 
       driveEvent(): void {
@@ -384,7 +384,7 @@ describe("FunnelFlumeSourceListener", () => {
       }
 
       async start(): Promise<void> {
-        await this.runStart({ source: this.source, onEvent: () => {} })
+        await this.runStart({ sources: [this.source], onEvent: () => {} })
       }
     }
 

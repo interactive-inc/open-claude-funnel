@@ -15,7 +15,7 @@ import {
   type GatewayEventStore,
   type GatewayWsData,
 } from "@/gateway/gateway-module"
-import { FunnelListenerRegistry } from "@/gateway/listener-registry"
+import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 
 export type { GatewayEventStore }
 

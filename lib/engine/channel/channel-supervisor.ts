@@ -1,229 +1,112 @@
-import type {
-  FlumeConfluenceItem,
-  FlumeErrorHandler,
-  FlumeEvent,
-  FlumeRuntimeDeps,
-} from "@interactive-inc/flume"
-import { FlumeConfluence } from "@interactive-inc/flume"
-import { join } from "node:path"
+import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import type { FunnelClock } from "@/engine/time/clock"
 import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import type { FunnelLogger } from "@/engine/logger/logger"
-import type {
-  Channel,
-  ChannelBroadcastPayload,
-  ChannelBroadcastSink,
-  ChannelRuntime,
-} from "@/engine/channel/channel"
-import { createChannelStatePersisterFactory } from "@/engine/channel/channel-state-persister-factory"
+import type { Channel, ChannelBroadcastSink } from "@/engine/channel/channel"
+import { FunnelChannelListener } from "@/engine/channel/channel-listener"
+import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 
 type Props = {
   readonly broadcaster: ChannelBroadcastSink
   readonly logger: FunnelLogger
   readonly clock: FunnelClock
   readonly fs: FunnelFileSystem
-  /**
-   * Root for per-channel state files. Writes go under
-   * `<root>/channels/<channelId>/`
-   */
   readonly dir: string
   readonly deps?: FlumeRuntimeDeps
   readonly onError?: FlumeErrorHandler
-  /** Host abort. Once fired the supervisor closes every channel and goes inert */
   readonly signal?: AbortSignal
 }
 
-type Registered = {
-  readonly channel: Channel
-  readonly runtime: ChannelRuntime
-  readonly abortController: AbortController
-}
-
-/**
- * Maps the Channel manifest onto a single `FlumeConfluence`.
- *
- *  - channels accepted via `register(channel)` are `build(ctx)`-ed on `start()`
- *    and their sources inserted with `add(channelId, sources)`
- *  - the confluence onItem stream (tagged with groupId) is routed through the
- *    owning channel's `transform`, then into `broadcaster.broadcast(content, meta)`
- *  - `unregister(id)` stops one channel, `stop()` stops them all
- *
- * Independent from the ConnectorDescriptor system (`FunnelListenerRegistry`);
- * the two run side-by-side so callers can migrate incrementally
- */
+/** Compatibility facade: manifests use the connector registry's lifecycle. */
 export class FunnelChannelSupervisor {
-  private readonly confluence: FlumeConfluence
-
-  private readonly registered = new Map<string, Registered>()
-
-  private readonly pending = new Map<string, Channel>()
-
-  private readonly opening = new Map<string, Promise<void>>()
-
+  private readonly channels = new Map<string, Channel>()
+  private readonly registry: FunnelListenerRegistry
   private started = false
-
-  private aborted = false
+  private closed = false
 
   constructor(private readonly props: Props) {
-    this.confluence = new FlumeConfluence({
-      onEvent: (item) => this.handleItem(item),
-      onError: props.onError,
-      deps: props.deps,
+    this.registry = new FunnelListenerRegistry({
+      logger: props.logger,
+      channels: {
+        listAllConnectors: () =>
+          [...this.channels.keys()].map((id) => ({
+            id,
+            name: id,
+            type: "channel",
+            channelId: id,
+            channelName: id,
+          })),
+        createListener: (id) => {
+          const channel = this.channels.get(id)
+          return channel === undefined
+            ? null
+            : {
+                channelId: id,
+                config: { id, name: id, type: "channel" },
+                listener: new FunnelChannelListener({ ...props, channel }),
+              }
+        },
+      },
+      notify: async (_channel, _connector, content, meta) => {
+        props.broadcaster.broadcast(content, meta)
+      },
     })
-
-    if (props.signal) {
-      if (props.signal.aborted) {
-        this.aborted = true
-      } else {
-        const onAbort = (): void => {
-          this.aborted = true
-          this.stop().catch(() => {})
-        }
-        props.signal.addEventListener("abort", onAbort, { once: true })
-      }
-    }
+    props.signal?.addEventListener(
+      "abort",
+      () => {
+        void this.stop().catch((error: unknown) => {
+          props.logger.error("channel shutdown failed", { error: String(error) })
+        })
+      },
+      { once: true },
+    )
   }
 
-  /**
-   * Accepted before or after start (post-start registers open immediately,
-   * tracked in `opening` until settled). No-op once the host signal aborted
-   */
   register(channel: Channel): void {
-    if (this.aborted) return
-
+    if (this.closed || this.props.signal?.aborted) return
     if (this.has(channel.id)) {
       throw new Error(`FunnelChannelSupervisor: channel id already registered: ${channel.id}`)
     }
-
-    if (!this.started) {
-      this.pending.set(channel.id, channel)
-      return
-    }
-
-    const open = this.openChannel(channel).finally(() => {
-      this.opening.delete(channel.id)
-    })
-
-    this.opening.set(channel.id, open)
+    this.channels.set(channel.id, channel)
+    if (this.started) void this.startChannel(channel)
   }
 
-  /** Waits for an in-flight post-start open of the same id before removing */
   async unregister(id: string): Promise<void> {
-    this.pending.delete(id)
-
-    const open = this.opening.get(id)
-    if (open) await open
-
-    const entry = this.registered.get(id)
-    if (!entry) return
-
-    this.registered.delete(id)
-    entry.abortController.abort()
-    await this.confluence.remove(id)
+    // Keep the name reserved until stop completes, so a new registration cannot
+    // lose its start to the old instance's pending stop.
+    await this.registry.stop(id, id)
+    this.channels.delete(id)
   }
 
   async start(): Promise<void> {
-    if (this.started || this.aborted) return
+    if (this.closed || this.started || this.props.signal?.aborted) return
     this.started = true
-
-    const channels = [...this.pending.values()]
-    this.pending.clear()
-
-    for (const channel of channels) {
-      await this.openChannel(channel)
-    }
+    await Promise.all([...this.channels.values()].map((channel) => this.startChannel(channel)))
   }
 
   async stop(): Promise<void> {
+    this.closed = true
     this.started = false
-    this.pending.clear()
-
-    await Promise.all(this.opening.values())
-
-    for (const entry of this.registered.values()) entry.abortController.abort()
-    this.registered.clear()
-    await this.confluence.closeAll()
+    this.channels.clear()
+    await this.registry.stopAll()
   }
 
   ids(): ReadonlyArray<string> {
-    return [...this.registered.keys()]
+    return this.registry.list().map((entry) => entry.channelId)
   }
 
   has(id: string): boolean {
-    return this.registered.has(id) || this.pending.has(id) || this.opening.has(id)
+    return this.channels.has(id)
   }
 
-  /** Never rejects: build/add failures are logged and the channel is skipped */
-  private async openChannel(channel: Channel): Promise<void> {
-    const abortController = new AbortController()
-
-    const runtime = await this.buildRuntime(channel, abortController.signal)
-    if (runtime instanceof Error) {
-      this.props.logger.error(`channel "${channel.id}" failed to build`, {
-        error: runtime.message,
-      })
-      abortController.abort()
-      return
-    }
-
-    const result = await this.confluence.add(channel.id, runtime.sources)
-    if (result instanceof Error) {
-      this.props.logger.error(`channel "${channel.id}" failed to start`, {
-        error: result.message,
-      })
-      abortController.abort()
-      return
-    }
-
-    this.registered.set(channel.id, { channel, runtime, abortController })
-  }
-
-  private async buildRuntime(
-    channel: Channel,
-    signal: AbortSignal,
-  ): Promise<ChannelRuntime | Error> {
-    const channelDir = join(this.props.dir, "channels", channel.id)
-
+  private async startChannel(channel: Channel): Promise<void> {
     try {
-      return await channel.build({
-        channelId: channel.id,
-        channelName: channel.name ?? channel.id,
-        signal,
-        logger: this.props.logger,
-        clock: this.props.clock,
-        fs: this.props.fs,
-        statePersister: createChannelStatePersisterFactory({ fs: this.props.fs, channelDir }),
-      })
+      const result = await this.registry.start(channel.id, channel.id)
+      if (result.ok) return
+      this.props.logger.error(`channel "${channel.id}" failed to start`, { error: result.reason })
     } catch (error) {
-      return error instanceof Error ? error : new Error(String(error))
+      this.props.logger.error(`channel "${channel.id}" failed to start`, { error: String(error) })
     }
-  }
-
-  private handleItem(item: FlumeConfluenceItem): void {
-    if (item.kind !== "event") return
-
-    const entry = this.registered.get(item.groupId)
-    if (!entry) return
-
-    const payload = this.transformToPayload(entry, item.event)
-    if (payload === null) return
-
-    this.props.broadcaster.broadcast(payload.content, payload.meta)
-  }
-
-  /** Never throws: a throwing user transform is logged and the event dropped */
-  private transformToPayload(entry: Registered, event: FlumeEvent): ChannelBroadcastPayload | null {
-    const transform = entry.runtime.transform
-    if (transform === undefined) {
-      return { content: JSON.stringify(event.data), meta: event.meta }
-    }
-
-    try {
-      return transform(event)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.props.logger.error(`channel "${entry.channel.id}" transform threw`, { error: message })
-      return null
-    }
+    if (this.channels.get(channel.id) === channel) this.channels.delete(channel.id)
   }
 }

@@ -432,7 +432,7 @@ import {
   slackConnectorSchema,
 } from "@interactive-inc/claude-funnel/connectors/slack"
 
-// Channel manifest（flume sources を broadcaster に流す宣言的 channel。ConnectorDescriptor 系とは独立）
+// Channel manifest（宣言的な sources。Connector と同じ起動・停止管理を使う）
 import {
   FunnelChannelSupervisor,
   timeChannel,
@@ -515,3 +515,5 @@ bun lib/bin.ts ...  # ソースから CLI を実行（ビルド不要、高速�
 ## ライセンス
 
 MIT © Interactive Inc.
+
+Gateway の `emit()` と `getBroadcaster().broadcast()` は、どちらも配信前に replay log へ保存します。Channel manifest の `stop()` 後は新しい `FunnelChannelSupervisor` を作成してください。

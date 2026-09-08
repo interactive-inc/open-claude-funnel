@@ -26,7 +26,7 @@ type Props = {
 }
 
 type RunStartOptions = {
-  source: FlumeSource
+  sources: ReadonlyArray<FlumeSource>
   /** Typed event handler — receives the source's events only (logs are routed separately). */
   onEvent: FlumeEventHandler
   /** Optional log handler for everything the firehose emits (including status transitions). */
@@ -155,7 +155,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       signal?: AbortSignal
       reconnect?: FlumeReconnectOptions
     } = {
-      sources: [options.source],
+      sources: options.sources,
       onEvent: handleItem,
     }
 

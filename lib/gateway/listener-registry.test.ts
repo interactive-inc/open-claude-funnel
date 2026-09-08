@@ -3,7 +3,7 @@ import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-con
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
-import { FunnelListenerRegistry } from "@/gateway/listener-registry"
+import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 
 class FakeListener extends FunnelConnectorListener {
   alive = false

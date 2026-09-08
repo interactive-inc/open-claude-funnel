@@ -26,7 +26,7 @@ CLI とプログラマブル API (`new Funnel(...)`) を 1 つの core から共
 
 ### Channel manifest（`/channel` サブエントリ）
 
-上記の Channel（settings.json 上の transport 概念）と同名だが別系統の、プログラマブルな inbound 定義。`{ id, name?, build }` の宣言的 manifest を `FunnelChannelSupervisor` に register すると、`build(ctx)` が返す flume sources を 1 つの `FlumeConfluence` に挿し、event を optional な transform 経由で broadcaster に流す。ConnectorDescriptor 系（Listener Registry）とは独立に並走する段階的移行用 API。実体は `lib/engine/channel/`、公開は `@interactive-inc/claude-funnel/channel`。supervisor は gateway 具象でなく engine 側の narrow interface `ChannelBroadcastSink` に依存する（`FunnelBroadcaster` が構造的に満たす）。per-channel state は `ctx.statePersister<S>(filename)` が `<dir>/channels/<channelId>/<filename>.json` に書く。`timeChannel({ id, cron, transform })` が最初の具体 channel。
+settings.json の Channel とは別の、プログラマブルな inbound 定義。`{ id, name?, build }` を `FunnelChannelSupervisor` に register すると、`FunnelChannelListener` が manifest を通常の listener に変換する。起動・停止・起動中キャンセルは `engine/connectors/listener-registry.ts`、Flume sources の接続・切断は `FunnelFlumeSourceListener` が Connector と共通で管理する。manifest 側に別の接続管理を実装しない。supervisor は互換 facade として登録した定義を保持し、失敗した定義はログを残して除外する。`stop()` 後は新しい supervisor を作る。公開 API は `@interactive-inc/claude-funnel/channel`、配信先は engine の `ChannelBroadcastSink`。per-channel state は `ctx.statePersister<S>(filename)` が `<dir>/channels/<channelId>/<filename>.json` に書く。`timeChannel({ id, cron, transform })` が具体例。
 
 ### Connector
 
@@ -54,7 +54,7 @@ ProfileSpec = { name, channel, options?, env?, resume? }
 
 ### Listener Registry と Broadcaster
 
-gateway 内に常駐する 2 つの裏方。`FunnelListenerRegistry` は Listener の起動 / 停止 / 自動再起動を管理する。Broadcaster は notify を受け取って WS クライアントに fanout し、`FunnelEventLog`（永続 replay log の port）に offset を打って永続化する。EventLog は差し替え可能な port で、default は `SqliteFunnelEventLog`、test / 軽量 embedder 向けに `MemoryFunnelEventLog` がある（CLAUDE.md 末尾の Gateway 節参照）。
+gateway 内に常駐する 2 つの裏方。`FunnelListenerRegistry` は Listener の起動 / 停止 / 自動再起動を管理する。Broadcaster は offset と配信先を確定し、`FunnelEventLog` に保存してから WS / in-process subscriber に配信する。Gateway の `emit()` と `getBroadcaster().broadcast()` は同じ保存経路を通る。EventLog は差し替え可能な port で、default は `SqliteFunnelEventLog`、test / 軽量 embedder 向けに `MemoryFunnelEventLog` がある（CLAUDE.md 末尾の Gateway 節参照）。
 
 ### Diagnostics と Recovery と Doctor と Docs サービス
 
@@ -398,7 +398,7 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
 
 - 同一 `Bun.serve` で WebSocket と内部管理 API（`/health` `/status` `/listeners*` `/channels/.../call`）をホストする
 - WebSocket クライアントは `?channel=<name>&id=<subscriberId>` で接続する。`id` は funnel の targeted delivery キーで、`meta.target=<id>` のイベントがそのクライアントだけに届く。`id` を省略した場合は channel 全体の fanout を受信する（tap=all は廃止済み）
-- listener は `start(notify)` / `stop()` / `isAlive()` を持ち、`FunnelListenerRegistry` が 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う。設定済みなのに runtime registry から欠落した listener も health check が再作成する。初回起動・明示 restart・dead recovery のどの経路でも一時的な start 失敗は同じ retry queue に戻し、認証失敗のような non-retriable error だけを operator action まで停止する
+- listener は `start(notify, signal?)` / `stop()` / `isAlive()` を持ち、`FunnelListenerRegistry` が 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う。設定済みなのに runtime registry から欠落した listener も health check が再作成する。初回起動・明示 restart・dead recovery のどの経路でも一時的な start 失敗は同じ retry queue に戻し、認証失敗のような non-retriable error だけを operator action まで停止する
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
 - connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` は engine（`FunnelChannels`）を直接叩いて connector を同期するため route 経由の hot-reload は走らない。`fnl claude` の dispatch が同期後に `reconcileListeners` で listener を取り込む（それ以外の経路は `fnl gateway restart` が必要）
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる
@@ -435,3 +435,5 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
 - recipe（options/env/resume）は解決された profile から `LaunchOptions` 経由で渡す。repo-local profile は name 由来の `localProfileId` で PID と `<repo-state>/claude/local-sessions.json` の session id を分離する。argv の組立順は `[profile.options] [user CLI args] [MCP server flag]`。env は `profile.env` → `process.env` の順で被せる（process.env が勝つ）。同名フラグは後ろが勝つ
 - 同一 profile 名の二重起動は PID ファイルで拒否する
 - `fnl schema` で `funnel.json` の JSON Schema を stdout、`make build` で `funnel.schema.json` と `public/schema.json` を再生成
+
+CLI の Connector add / set は型別に分岐せず、登録された descriptor の buildConfig / applyUpdate に入力を渡す。既存の kebab-case オプションだけ `cli/connector-fields.ts` で変換し、独自フィールドはそのまま渡す。型固有の検証・未対応操作のエラーは descriptor が所有する。Claude の明示 session 指定（`-r` / `--resume` / `--session-id` の空白・equals 形式、`-c` / `--continue`）は recipe と userArgs のどちらでも自動再開に優先する。

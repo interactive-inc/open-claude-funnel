@@ -1,26 +1,13 @@
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
+import { connectorFieldsSchema } from "@/cli/connector-fields"
 import { factory } from "@/cli/factory"
 import { notFoundMessage } from "@/cli/routes/not-found-message"
 import { zValidator } from "@/cli/router/validator"
 
 export const channelsConnectorsSetHandler = factory.createHandlers(
   zValidator("param", z.object({ channel: z.string(), connector: z.string() })),
-  zValidator(
-    "query",
-    z
-      .object({
-        "bot-token": z.string().optional(),
-        "app-token": z.string().optional(),
-        "poll-interval": z.coerce.number().int().positive().optional(),
-      })
-      // `.loose()` is the zod 4 replacement for the deprecated
-      // `.passthrough()` — extra query keys (e.g. future flags the CLI
-      // hasn't taught the engine yet) survive validation instead of being
-      // stripped, so the engine still sees them via the descriptor's
-      // `applyUpdate(fields, ...)` interface.
-      .loose(),
-  ),
+  zValidator("query", connectorFieldsSchema),
   async (c) => {
     const param = c.req.valid("param")
     const query = c.req.valid("query")
@@ -40,26 +27,7 @@ export const channelsConnectorsSetHandler = factory.createHandlers(
       })
     }
 
-    if (existing.type === "slack") {
-      funnel.channels.updateSlackConnector(param.channel, param.connector, {
-        ...(query["bot-token"] !== undefined ? { botToken: query["bot-token"] } : {}),
-        ...(query["app-token"] !== undefined ? { appToken: query["app-token"] } : {}),
-      })
-    } else if (existing.type === "discord") {
-      funnel.channels.updateDiscordConnector(
-        param.channel,
-        param.connector,
-        query["bot-token"] !== undefined ? { botToken: query["bot-token"] } : {},
-      )
-    } else if (existing.type === "gh") {
-      funnel.channels.updateGhConnector(
-        param.channel,
-        param.connector,
-        query["poll-interval"] !== undefined ? { pollInterval: query["poll-interval"] } : {},
-      )
-    } else {
-      throw new HTTPException(400, { message: "schedule connectors have no settable fields" })
-    }
+    funnel.channels.updateConnector(param.channel, param.connector, query)
 
     await funnel.listeners.restart(param.channel, param.connector)
 

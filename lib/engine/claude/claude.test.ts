@@ -89,6 +89,15 @@ const buildClaude = (overrides: { gateway?: GatewayStub } = {}) => {
 }
 
 describe("FunnelClaude", () => {
+  test("session preparation failure releases the profile guard", async () => {
+    const { claude, acquired, process } = buildClaude()
+    await expect(
+      claude.launch({ channel: "ops", profileId: "missing", resume: true }),
+    ).rejects.toThrow("not found")
+    expect(acquired.size).toBe(0)
+    expect(process.calls.filter((call) => call.kind === "attach")).toHaveLength(0)
+  })
+
   test("launch injects FUNNEL_CHANNEL_ID with the channel id, not the name", async () => {
     const { claude, channel, fs, process } = buildClaude()
 
@@ -415,6 +424,27 @@ describe("FunnelClaude", () => {
       expect(attach.command.includes(userArg)).toBe(true)
     }
   })
+
+  test.each(["-r", "-r=explicit", "--continue", "-c"])(
+    "explicit %s overrides automatic resume in user and recipe arguments",
+    async (flag) => {
+      for (const location of ["userArgs", "options"] as const) {
+        const { claude, process, addProfile } = buildClaude()
+        await claude.launch({
+          channel: "ops",
+          cwd: "/work",
+          profileId: addProfile("dev"),
+          resume: true,
+          [location]: [flag],
+        })
+        const attach = process.calls.find((call) => call.kind === "attach")
+        if (attach?.kind !== "attach") throw new Error("expected attach")
+        expect(attach.command).toContain(flag)
+        expect(attach.command).not.toContain("--session-id")
+        expect(attach.command).not.toContain("--resume")
+      }
+    },
+  )
 
   test("launch omits its own --resume when the user passes --resume", async () => {
     const { claude, fs, process, addProfile } = buildClaude()

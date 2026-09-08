@@ -1,6 +1,6 @@
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { FunnelBroadcaster } from "@/gateway/broadcaster"
-import type { FunnelListenerRegistry } from "@/gateway/listener-registry"
+import type { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 
 export type GatewayEmitInput = {

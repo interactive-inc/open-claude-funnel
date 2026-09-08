@@ -59,10 +59,8 @@ export const scheduleConnector = (options: ScheduleConnectorOptions = {}): Conne
       updatedAt: context.now,
     })
   },
-  applyUpdate(config, _fields, context) {
-    const current = scheduleConnectorSchema.parse(config)
-
-    return scheduleConnectorSchema.parse({ ...current, updatedAt: context.now })
+  applyUpdate() {
+    throw new Error("schedule connectors have no settable fields; use schedule entry operations")
   },
   operations: {
     listEntries(props) {

@@ -27,6 +27,22 @@ class FakeWs {
 const asWs = (ws: FakeWs): ServerWebSocket<unknown> => ws as unknown as ServerWebSocket<unknown>
 
 describe("FunnelBroadcaster", () => {
+  test("persistence failure prevents live delivery and in-memory replay", () => {
+    const broadcaster = new FunnelBroadcaster({
+      record: () => {
+        throw new Error("disk full")
+      },
+    })
+    const events: string[] = []
+    broadcaster.subscribe((event) => events.push(event.content))
+    const ws = new FakeWs()
+    broadcaster.addClient(asWs(ws), { channel: "ops", connectors: [] })
+    expect(() => broadcaster.broadcast("lost")).toThrow("disk full")
+    expect(events).toEqual([])
+    expect(ws.sent).toEqual([])
+    expect(broadcaster.getMetrics().oldestReplayableOffset).toBeNull()
+  })
+
   test("subscribers receive every event with content + meta + offset", () => {
     const broadcaster = new FunnelBroadcaster()
     const events: { content: string; meta?: Record<string, string>; offset: number }[] = []

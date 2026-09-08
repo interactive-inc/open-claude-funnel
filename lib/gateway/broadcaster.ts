@@ -59,7 +59,13 @@ type ReplaySource = {
   claimExclusive?(offset: number, channelId: string, subscriberId: string): boolean
 }
 
+type ChannelSubscription = Pick<ClientData, "connectors" | "connectorIds" | "delivery"> & {
+  id: string
+}
+
 type Deps = {
+  /** Current subscriptions, including exclusive channels with no connected workers. */
+  channels?: () => ReadonlyArray<ChannelSubscription>
   logger?: FunnelLogger
   /** Host hook for surfacing subscriber-throw exceptions. Defaults to no-op. */
   onError?: OnFunnelError
@@ -71,6 +77,8 @@ type Deps = {
   replayBufferMaxBytes?: number
   /** Persistent replay source consulted when the in-memory buffer cannot satisfy `since`. */
   persistentReplay?: ReplaySource
+  /** Persist the assigned event before notifying any consumer. */
+  record?: (event: ReplayableEvent) => void
 }
 
 const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024
@@ -118,6 +126,8 @@ export class FunnelBroadcaster {
   private readonly replayBufferMaxBytes: number
   private readonly replayBuffer: ReplayableEvent[] = []
   private readonly persistentReplay: ReplaySource | null
+  private readonly channels: Deps["channels"]
+  private readonly record: ((event: ReplayableEvent) => void) | undefined
   private readonly exclusiveCursor = new Map<string, number>()
   private readonly channelDelivery = new Map<string, "fanout" | "exclusive">()
   private replayBufferBytes = 0
@@ -137,6 +147,8 @@ export class FunnelBroadcaster {
       deps.replayBufferMaxBytes ?? DEFAULT_REPLAY_BUFFER_MAX_BYTES,
     )
     this.persistentReplay = deps.persistentReplay ?? null
+    this.channels = deps.channels
+    this.record = deps.record
   }
 
   getMetrics(): BroadcasterMetrics {
@@ -242,8 +254,8 @@ export class FunnelBroadcaster {
     const channelId = event.meta?.channelId
     const exclusive: Record<string, string | null> = {}
 
-    if (channelId && this.channelDelivery.get(channelId) === "exclusive") {
-      exclusive[channelId] = null
+    for (const [id, delivery] of this.channelDelivery) {
+      if (delivery === "exclusive" && (!channelId || channelId === id)) exclusive[id] = null
     }
 
     for (const [ws, data] of this.clients) {
@@ -328,9 +340,14 @@ export class FunnelBroadcaster {
   }
 
   broadcast(content: string, meta?: Record<string, string>): ReplayableEvent {
+    if (this.channels) {
+      this.channelDelivery.clear()
+      for (const channel of this.channels()) this.updateChannel(channel.id, channel)
+    }
     this.latestOffset += 1
     const event: ReplayableEvent = { content, meta, offset: this.latestOffset }
     const recipients = this.pickRecipients(event)
+    this.record?.(event)
     const payload = JSON.stringify(event)
 
     this.eventsBroadcast += 1

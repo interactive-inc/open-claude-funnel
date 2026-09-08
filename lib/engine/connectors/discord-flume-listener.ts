@@ -105,7 +105,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
     })
 
     await this.runStart({
-      source,
+      sources: [source],
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
       signal: this.signal,

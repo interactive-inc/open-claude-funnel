@@ -12,7 +12,7 @@ export type NotifyFn = (content: string, meta?: Record<string, string>) => Promi
  * that self-heal.
  */
 export abstract class FunnelConnectorListener {
-  abstract start(notify: NotifyFn): Promise<void>
+  abstract start(notify: NotifyFn, signal?: AbortSignal): Promise<void>
   abstract stop(): Promise<void>
   isAlive(): boolean {
     return true

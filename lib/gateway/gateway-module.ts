@@ -18,7 +18,7 @@ import { FunnelEventLog } from "@/gateway/event-log/event-log"
 import { SqliteFunnelEventLog } from "@/gateway/event-log/sqlite-event-log"
 import { type Env, factory } from "@/gateway/factory"
 import { killCompetingSlackGateways } from "@/gateway/kill-competing-slack-gateways"
-import { FunnelListenerRegistry } from "@/gateway/listener-registry"
+import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
 
 /**
@@ -205,6 +205,22 @@ export class FunnelGatewayModule {
       onError: this.onError,
       now: this.nowMs,
       persistentReplay: this.eventLog,
+      channels: () =>
+        this.channels.list().map((channel) => ({
+          id: channel.id,
+          connectors: channel.connectors.map((connector) => connector.name),
+          connectorIds: channel.connectors.map((connector) => connector.id),
+          delivery: channel.delivery,
+        })),
+      record: (event) =>
+        this.eventLog.record({
+          content: event.content,
+          channelId: event.meta?.channelId ?? null,
+          connectorId: event.meta?.connectorId ?? null,
+          meta: event.meta ?? null,
+          offset: event.offset,
+          ...(event.exclusive ? { exclusive: event.exclusive } : {}),
+        }),
     })
     this.broadcaster.seedLatestOffset(this.eventLog.findMaxOffset())
     this.registry = new FunnelListenerRegistry({
@@ -434,15 +450,6 @@ export class FunnelGatewayModule {
     if (connectorId) enriched.connectorId = connectorId
 
     const event = this.broadcaster.broadcast(input.content, enriched)
-
-    this.eventLog.record({
-      content: input.content,
-      channelId: channelId ?? null,
-      connectorId: connectorId ?? null,
-      meta: enriched,
-      offset: event.offset,
-      ...(event.exclusive ? { exclusive: event.exclusive } : {}),
-    })
 
     return { offset: event.offset }
   }

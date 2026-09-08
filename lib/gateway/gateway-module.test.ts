@@ -109,6 +109,43 @@ describe.skipIf(!isBun)("FunnelGatewayModule mounted in a host Hono app", () => 
     expect(mounted.gw.getBroadcaster().getMetrics().latestOffset).toBe(0)
   })
 
+  test("raw broadcasts and emit persist once, before reentrant subscribers run", async () => {
+    const mounted = await mountHost({ token: "", channelName: "ops" })
+    active = mounted
+    mounted.gw.onEvent((event) => {
+      expect(
+        mounted.gw
+          .getEventLog()
+          .loadSince(0)
+          .some((row) => row.offset === event.offset),
+      ).toBe(true)
+      if (event.content === "raw") mounted.gw.emit({ channel: "ops", content: "nested" })
+    })
+    mounted.gw.getBroadcaster().broadcast("raw")
+    expect(
+      mounted.gw
+        .getEventLog()
+        .loadSince(0)
+        .map((row) => row.content),
+    ).toEqual(["raw", "nested"])
+  })
+
+  test("raw broadcasts persist offline exclusive assignments from current channel settings", async () => {
+    const mounted = await mountHost({ token: "", channelName: "ops" })
+    active = mounted
+    mounted.funnel.channels.setDelivery("ops", "exclusive")
+    const channel = mounted.funnel.channels.get("ops")
+    if (!channel) throw new Error("expected channel")
+    mounted.gw.getBroadcaster().broadcast("global")
+    mounted.gw.getBroadcaster().broadcast("scoped", { channelId: channel.id })
+    expect(
+      mounted.gw
+        .getEventLog()
+        .loadSince(0)
+        .map((row) => row.exclusive),
+    ).toEqual([{ [channel.id]: null }, { [channel.id]: null }])
+  })
+
   test("a connected client keeps receiving after a connector is renamed", async () => {
     const mounted = await mountHost({ token: "", channelName: "ops" })
     active = mounted
@@ -490,8 +527,7 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
   })
 
   test("start() after stop() is refused instead of running on a closed event log", async () => {
-    // emit() broadcasts before it records, so a restart on a disposed module
-    // would deliver events live and silently drop them from the replay log.
+    // A disposed module must never restart on its closed replay log.
     const funnel = new Funnel({
       fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
