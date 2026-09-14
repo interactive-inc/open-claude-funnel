@@ -151,6 +151,46 @@ describe("minifySlackEvent", () => {
     expect(attachment).not.toHaveProperty("color")
   })
 
+  test("flattens section blocks that carry text objects and fields", () => {
+    const result = minifySlackEvent({
+      type: "message",
+      bot_id: "B1",
+      channel: "C1",
+      ts: "1.0",
+      attachments: [
+        {
+          fallback: "Security Hub Finding",
+          blocks: [
+            {
+              type: "section",
+              block_id: "b1",
+              text: { type: "mrkdwn", text: "*Latest Update*: finding created" },
+            },
+            {
+              type: "section",
+              block_id: "b2",
+              fields: [
+                { type: "mrkdwn", text: "*Severity*\nCritical" },
+                { type: "mrkdwn", text: "*Last Seen*\nFri, 12 Sep 2026" },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const attachments = result.attachments
+
+    expect(Array.isArray(attachments)).toBe(true)
+    if (!Array.isArray(attachments)) return
+
+    expect(attachments[0]).toMatchObject({
+      fallback: "Security Hub Finding",
+      text: "*Latest Update*: finding created\n*Severity*\nCritical\n*Last Seen*\nFri, 12 Sep 2026",
+      _funnel_omitted: ["blocks"],
+    })
+  })
+
   test("drops icons and image_* fields wherever they appear", () => {
     const result = minifySlackEvent({
       type: "message",

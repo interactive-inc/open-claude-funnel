@@ -48,12 +48,25 @@ const minifyFile = (file: unknown): unknown => {
 
 // Slack rich_text_section nodes carry text under elements[].text;
 // concatenating those yields the plain text of a single table cell.
+// section blocks instead carry a text object ({type, text}) or a fields array,
+// so those shapes are flattened here too — otherwise the body is lost entirely.
 const flattenRichText = (node: unknown): string => {
   if (!isRecord(node)) return ""
 
   const text = node.text
 
   if (typeof text === "string") return text
+
+  if (isRecord(text)) return flattenRichText(text)
+
+  const fields = node.fields
+
+  if (Array.isArray(fields)) {
+    return fields
+      .map(flattenRichText)
+      .filter((line) => line.length > 0)
+      .join("\n")
+  }
 
   const elements = node.elements
 
