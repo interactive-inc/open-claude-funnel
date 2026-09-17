@@ -173,55 +173,66 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const dir = dirname(props.path)
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     }
+    // Index names are validated before opening so a bad call leaves no handle behind.
+    const indexes = (props.indexes ?? []) as unknown as I
+    if (indexes.length > 0) validateIndexNames(indexes)
+
     this.db = new Database(props.path)
-    applySqliteBusyTimeout(this.db)
-    this.db.run("PRAGMA journal_mode = WAL")
-    this.migrate()
+    // Anything after open can throw (lock timeout, disk, schema). Close the
+    // handle so a failed constructor does not leak it to the caller's retry.
+    try {
+      applySqliteBusyTimeout(this.db)
+      this.db.run("PRAGMA journal_mode = WAL")
+      this.migrate()
 
-    this.maxRows = props.maxRows ?? null
-    this.maxAgeMs = props.maxAgeMs ?? null
-    this.maxBytes = props.maxBytes ?? null
-    // Default the shrink target to a quarter of the cap when only maxBytes is
-    // given, so a sink with a byte cap always has somewhere to shrink to.
-    this.targetBytes =
-      props.targetBytes ?? (props.maxBytes !== undefined ? Math.floor(props.maxBytes / 4) : null)
-    this.now = props.now ?? (() => Date.now())
+      this.maxRows = props.maxRows ?? null
+      this.maxAgeMs = props.maxAgeMs ?? null
+      this.maxBytes = props.maxBytes ?? null
+      // Default the shrink target to a quarter of the cap when only maxBytes is
+      // given, so a sink with a byte cap always has somewhere to shrink to.
+      this.targetBytes =
+        props.targetBytes ?? (props.maxBytes !== undefined ? Math.floor(props.maxBytes / 4) : null)
+      this.now = props.now ?? (() => Date.now())
 
-    // The conditional `SqliteEventLogProps<E, I>` type widens to a union when `I` is a
-    // generic, so TS can't narrow `props.indexes` back to `I` after the
-    // runtime check. One cast at this boundary brings it back; everything
-    // downstream stays I-typed.
-    this.indexes = (props.indexes ?? []) as unknown as I
+      // The conditional `SqliteEventLogProps<E, I>` type widens to a union when `I` is a
+      // generic, so TS can't narrow `props.indexes` back to `I` after the
+      // runtime check. One cast at this boundary brings it back; everything
+      // downstream stays I-typed.
+      this.indexes = (props.indexes ?? []) as unknown as I
 
-    if (this.indexes.length > 0) {
-      validateIndexNames(this.indexes)
-      this.extractIndexes = props.extractIndexes ?? null
-      this.syncIndexColumns()
-    } else {
-      this.extractIndexes = null
+      if (this.indexes.length > 0) {
+        validateIndexNames(this.indexes)
+        this.extractIndexes = props.extractIndexes ?? null
+        this.syncIndexColumns()
+      } else {
+        this.extractIndexes = null
+      }
+
+      const cols = ["ts", "type", "event", ...this.indexes]
+      const placeholders = cols.map(() => "?").join(", ")
+      this.insertStmt = this.db.prepare(
+        `INSERT INTO logs (${cols.join(", ")}) VALUES (${placeholders})`,
+      )
+
+      const colsWithSeq = ["seq", ...cols]
+      const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
+      this.insertWithSeqStmt = this.db.prepare(
+        `INSERT INTO logs (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
+      )
+
+      this.maxSeqStmt = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS max FROM logs")
+      this.countStmt = this.db.prepare("SELECT COUNT(*) AS n FROM logs")
+      this.trimRowsStmt = this.db.prepare(
+        "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
+      )
+      this.trimAgeStmt = this.db.prepare("DELETE FROM logs WHERE ts < ?")
+      this.trimOldestStmt = this.db.prepare(
+        "DELETE FROM logs WHERE seq IN (SELECT seq FROM logs ORDER BY seq ASC LIMIT ?)",
+      )
+    } catch (error) {
+      this.db.close()
+      throw error
     }
-
-    const cols = ["ts", "type", "event", ...this.indexes]
-    const placeholders = cols.map(() => "?").join(", ")
-    this.insertStmt = this.db.prepare(
-      `INSERT INTO logs (${cols.join(", ")}) VALUES (${placeholders})`,
-    )
-
-    const colsWithSeq = ["seq", ...cols]
-    const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
-    this.insertWithSeqStmt = this.db.prepare(
-      `INSERT INTO logs (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
-    )
-
-    this.maxSeqStmt = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS max FROM logs")
-    this.countStmt = this.db.prepare("SELECT COUNT(*) AS n FROM logs")
-    this.trimRowsStmt = this.db.prepare(
-      "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
-    )
-    this.trimAgeStmt = this.db.prepare("DELETE FROM logs WHERE ts < ?")
-    this.trimOldestStmt = this.db.prepare(
-      "DELETE FROM logs WHERE seq IN (SELECT seq FROM logs ORDER BY seq ASC LIMIT ?)",
-    )
   }
 
   insert(input: { ts: number; event: E }): EventLogEntry<E> | Error {

@@ -105,27 +105,39 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       }),
       ...rawCap,
     })
-    this.processed = new SqliteEventLog<ConnectorProcessedEvent, ProcessedIndexes>({
-      path: props.processedPath,
-      indexes: ["event_id", "connector_id", "channel_id", "outcome"],
-      extractIndexes: (event) => ({
-        event_id: event.event_id,
-        connector_id: event.connector_id,
-        channel_id: event.channel_id,
-        outcome: event.outcome,
-      }),
-      ...verdictCap,
-    })
-    this.connection = new SqliteEventLog<ConnectorConnectionEvent, ConnectionIndexes>({
-      path: props.connectionPath,
-      indexes: ["connector_id", "channel_id", "status"],
-      extractIndexes: (event) => ({
-        connector_id: event.connector_id,
-        channel_id: event.channel_id,
-        status: event.status,
-      }),
-      ...verdictCap,
-    })
+    // Opening is three separate files; if a later one fails, close the ones
+    // already open so a failed constructor does not leak handles.
+    try {
+      this.processed = new SqliteEventLog<ConnectorProcessedEvent, ProcessedIndexes>({
+        path: props.processedPath,
+        indexes: ["event_id", "connector_id", "channel_id", "outcome"],
+        extractIndexes: (event) => ({
+          event_id: event.event_id,
+          connector_id: event.connector_id,
+          channel_id: event.channel_id,
+          outcome: event.outcome,
+        }),
+        ...verdictCap,
+      })
+      try {
+        this.connection = new SqliteEventLog<ConnectorConnectionEvent, ConnectionIndexes>({
+          path: props.connectionPath,
+          indexes: ["connector_id", "channel_id", "status"],
+          extractIndexes: (event) => ({
+            connector_id: event.connector_id,
+            channel_id: event.channel_id,
+            status: event.status,
+          }),
+          ...verdictCap,
+        })
+      } catch (error) {
+        this.processed.close()
+        throw error
+      }
+    } catch (error) {
+      this.raw.close()
+      throw error
+    }
 
     // These files hold untouched inbound payloads (Slack message text, user
     // ids). On a shared host /tmp is world-traversable, so lock the files to

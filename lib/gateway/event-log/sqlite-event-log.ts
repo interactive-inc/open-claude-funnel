@@ -75,7 +75,12 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       ...(props.maxBytes !== undefined ? { maxBytes: props.maxBytes } : {}),
       ...(props.targetBytes !== undefined ? { targetBytes: props.targetBytes } : {}),
     })
-    this.exclusiveClaims = new SqliteExclusiveClaims(props.path)
+    try {
+      this.exclusiveClaims = new SqliteExclusiveClaims(props.path)
+    } catch (error) {
+      this.sink.close()
+      throw error
+    }
     this.hasRetention =
       props.maxRows !== undefined || props.maxAgeMs !== undefined || props.maxBytes !== undefined
   }

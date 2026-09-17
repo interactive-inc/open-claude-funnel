@@ -7,14 +7,19 @@ export class SqliteExclusiveClaims {
 
   constructor(path: string) {
     this.database = new Database(path)
-    applySqliteBusyTimeout(this.database)
-    this.database.run("PRAGMA journal_mode = WAL")
-    this.database.run(`CREATE TABLE IF NOT EXISTS funnel_exclusive_claims (
-      offset INTEGER NOT NULL,
-      channel_id TEXT NOT NULL,
-      subscriber_id TEXT NOT NULL,
-      PRIMARY KEY (offset, channel_id)
-    )`)
+    try {
+      applySqliteBusyTimeout(this.database)
+      this.database.run("PRAGMA journal_mode = WAL")
+      this.database.run(`CREATE TABLE IF NOT EXISTS funnel_exclusive_claims (
+        offset INTEGER NOT NULL,
+        channel_id TEXT NOT NULL,
+        subscriber_id TEXT NOT NULL,
+        PRIMARY KEY (offset, channel_id)
+      )`)
+    } catch (error) {
+      this.database.close()
+      throw error
+    }
   }
 
   claim(offset: number, channelId: string, subscriberId: string): boolean {
