@@ -310,6 +310,13 @@ CLI 入口。argv を内部 HTTP リクエストに変換して Hono アプリ�
 human diagnostic logなのでlogger側に残す。gatewayの `SqliteFunnelEventLog` も
 共通のSQLite event-log storeを内部利用する。
 
+SQLiteの書き込み接続（`SqliteEventLog` / `SqliteExclusiveClaims`）は開いた直後に
+`applySqliteBusyTimeout`（`lib/event-log/sqlite-busy-timeout.ts`、5秒）を掛けてから
+WAL切り替え・migrationを行う。daemonと短命CLIが同じファイルを開くため、これが無いと
+daemonの書き込み中に開いただけで `database is locked` になる。新しく書き込み接続を
+作るときも同じ関数を通す。回帰テストは `lib/event-log/sqlite-event-log.test.ts`
+（別プロセスが書き込みロックを握る）。
+
 ## Storage 規約
 
 ファイル一覧そのものは README.md の File layout を参照。ここには Claude が新規に永続データを足すときの判断ルールだけを置く。

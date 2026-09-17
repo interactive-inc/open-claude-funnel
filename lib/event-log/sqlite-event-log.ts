@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite"
+import { applySqliteBusyTimeout } from "@/event-log/sqlite-busy-timeout"
 import type { SQLQueryBindings, Statement } from "bun:sqlite"
 import { existsSync, mkdirSync } from "node:fs"
 import { dirname } from "node:path"
@@ -173,6 +174,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     }
     this.db = new Database(props.path)
+    applySqliteBusyTimeout(this.db)
     this.db.run("PRAGMA journal_mode = WAL")
     this.migrate()
 
