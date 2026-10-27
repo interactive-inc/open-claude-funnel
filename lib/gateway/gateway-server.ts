@@ -133,6 +133,7 @@ export class FunnelGatewayServer {
     }
 
     this.server = Bun.serve<GatewayWsData>({
+      port: this.configuredPort,
       hostname: this.configuredHostname,
       development: false,
       fetch: (request, server) => {

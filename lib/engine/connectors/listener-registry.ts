@@ -276,40 +276,41 @@ export class FunnelListenerRegistry {
     const channelName = current?.channelName ?? input.channelName
     const connectorName = current?.name ?? input.connectorName
 
-    const created = current ? this.channels.createListener(channelName, connectorName) : null
-
-    if (!created) {
-      return {
-        ok: false,
-        reason: `connector "${connectorName}" not found in channel "${channelName}"`,
-      }
-    }
-
-    const bind = async (content: string, meta?: Record<string, string>) => {
-      if (signal.aborted || this.isStopped || this.stopped.has(key))
-        throw new Error("listener stopped before delivery")
-
-      try {
-        const current = this.configured(key)
-        if (!current) throw new Error("listener configuration no longer exists")
-        await this.notify(current.channelName, current.name, content, meta)
-        this.recordEvent(key)
-      } catch (error) {
-        this.recordError(key)
-        throw error
-      }
-    }
-
+    let created: ReturnType<ConnectorRegistry["createListener"]> = null
     const startup = { needsLateCleanup: false }
     const deadline = new AbortController()
 
     try {
-      const opened = created.listener.start(bind, signal)
+      created = current ? this.channels.createListener(channelName, connectorName) : null
+      if (!created) {
+        return {
+          ok: false,
+          reason: `connector "${connectorName}" not found in channel "${channelName}"`,
+        }
+      }
+
+      const bind = async (content: string, meta?: Record<string, string>) => {
+        if (signal.aborted || this.isStopped || this.stopped.has(key))
+          throw new Error("listener stopped before delivery")
+
+        try {
+          const current = this.configured(key)
+          if (!current) throw new Error("listener configuration no longer exists")
+          await this.notify(current.channelName, current.name, content, meta)
+          this.recordEvent(key)
+        } catch (error) {
+          this.recordError(key)
+          throw error
+        }
+      }
+
+      const listener = created.listener
+      const opened = listener.start(bind, signal)
       void opened
         .then(
           async () => {
             // A timed-out start may still finish opening its transport later.
-            if (startup.needsLateCleanup) await created.listener.stop()
+            if (startup.needsLateCleanup) await listener.stop()
           },
           () => {},
         )
@@ -328,7 +329,7 @@ export class FunnelListenerRegistry {
         }),
       ])
       if (signal.aborted || !this.configured(key)) {
-        await created.listener.stop()
+        await listener.stop()
         return { ok: false, reason: "start cancelled" }
       }
 
@@ -354,14 +355,15 @@ export class FunnelListenerRegistry {
       input.controller.abort()
 
       try {
-        await created.listener.stop()
+        await created?.listener.stop()
       } catch {
         // best-effort cleanup; the listener may be partially initialized
       }
 
       if (wasCancelled) return { ok: false, reason: "start cancelled" }
 
-      this.logger?.error(`${created.config.type} listener failed to start`, {
+      const type = created?.config.type ?? current?.type ?? "unknown"
+      this.logger?.error(`${type} listener failed to start`, {
         channel: channelName,
         connector: connectorName,
         error: err.message,
@@ -370,7 +372,7 @@ export class FunnelListenerRegistry {
         component: "listener-registry.start",
         channel: channelName,
         connector: connectorName,
-        type: created.config.type,
+        type,
       })
 
       // Auth failures need host action (token rotation) and will keep

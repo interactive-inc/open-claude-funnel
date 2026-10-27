@@ -93,6 +93,27 @@ afterEach(async () => {
 })
 
 describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
+  test("host-selected and ephemeral ports are honored with concurrent servers", async () => {
+    const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("probe") })
+    const requested = probe.port
+    probe.stop(true)
+    if (requested === undefined) throw new Error("TCP probe did not receive a port")
+    const fixed = new Funnel().gatewayServer({ port: requested, token: "test-fixed" })
+    const ephemeral = new Funnel().gatewayServer({ port: 0, token: "test-ephemeral" })
+    try {
+      await fixed.start()
+      await ephemeral.start()
+      expect(fixed.port).toBe(requested)
+      expect(ephemeral.port).toBeGreaterThan(0)
+      expect(ephemeral.port).not.toBe(fixed.port)
+      expect((await fetch(`http://127.0.0.1:${fixed.port}/health`)).status).toBe(200)
+      expect((await fetch(`http://127.0.0.1:${ephemeral.port}/health`)).status).toBe(200)
+    } finally {
+      await fixed.stop()
+      await ephemeral.stop()
+    }
+  })
+
   test("/status returns 401 without bearer token", async () => {
     active = await startServer("secret-1")
     const url = `http://localhost:${active.server.port}/status`

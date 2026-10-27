@@ -46,6 +46,7 @@ const setup = (
   const views = initial
   const listeners: Listener[] = []
   const received: { channel: string; connector: string; content: string }[] = []
+  const reported: Error[] = []
   let create = () => new Listener()
   const registry = new FunnelListenerRegistry({
     channels: {
@@ -61,6 +62,9 @@ const setup = (
     notify: async (channel, connector, content) => {
       received.push({ channel, connector, content })
     },
+    onError: (error) => {
+      reported.push(error)
+    },
     // Startup deadlines stay pending; recovery backoffs run without wall-clock delays.
     sleep: sleep ?? ((ms) => (ms === 30_000 ? new Promise(() => {}) : Promise.resolve())),
   })
@@ -68,6 +72,7 @@ const setup = (
     views,
     listeners,
     received,
+    reported,
     registry,
     useFactory: (factory: () => Listener) => {
       create = factory
@@ -76,6 +81,24 @@ const setup = (
 }
 
 describe("listener identity", () => {
+  test("factory failures reach the host and can be retried after the factory is corrected", async () => {
+    const { registry, listeners, reported, useFactory } = setup()
+    useFactory(() => {
+      throw new Error("factory unavailable")
+    })
+    try {
+      const result = await registry.start("ops", "inbox")
+      expect(result).toMatchObject({ ok: false, retriable: true, reason: "factory unavailable" })
+      expect(reported.map((error) => error.message)).toEqual(["factory unavailable"])
+      useFactory(() => new Listener())
+      await registry.runHealthCheckForTest()
+      expect(listeners).toHaveLength(1)
+      expect(registry.isRunning("ops", "inbox")).toBe(true)
+    } finally {
+      await registry.stopAll()
+    }
+  })
+
   test.each(["stop", "stopAll"])(
     "a synchronous abort callback requesting %s cannot stop the same source twice",
     async (operation) => {
