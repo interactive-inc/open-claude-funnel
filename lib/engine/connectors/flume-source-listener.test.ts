@@ -181,6 +181,16 @@ describe("FunnelFlumeSourceListener", () => {
     expect(listener.isAlive()).toBe(false)
   })
 
+  test("concurrent stop calls finalize a listener exactly once", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+    await listener.start()
+    await Promise.all([listener.stop(), listener.stop(), listener.stop()])
+    expect(listener.source.disconnectCalls).toBe(1)
+    expect(listener.resetCount).toBe(1)
+    expect(log.queryConnection({ type: "slack" }).filter((row) => row.status === "stopped")).toHaveLength(1)
+  })
+
   test("the final failed delivery is recorded and later deliveries still run", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)

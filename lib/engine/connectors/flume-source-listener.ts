@@ -82,6 +82,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   protected running: FlumeRunning | null = null
   /** Flume owns the bounded queue; stopping never waits for a host callback. */
   private delivery: AsyncIterableIterator<FlumeStreamItem> | null = null
+  private stopTask: Promise<void> | null = null
 
   constructor(props: Props) {
     super()
@@ -180,13 +181,25 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   }
 
   async stop(): Promise<void> {
+    if (this.stopTask) return this.stopTask
     const running = this.running
     if (!running) return
 
+    // Install the guard before source cleanup or observer callbacks can reenter.
+    const task = Promise.resolve().then(() => this.stopRunning(running))
+    this.stopTask = task
+    try {
+      await task
+    } finally {
+      if (this.stopTask === task) this.stopTask = null
+    }
+  }
+
+  private async stopRunning(running: FlumeRunning): Promise<void> {
     const delivery = this.delivery
     this.delivery = null
-    await delivery?.return?.()
     try {
+      await delivery?.return?.()
       const closed = await running.close()
       // Flume 0.11 separates source shutdown from callback completion.
       // Finish queued status/log callbacks before finalizing listener state.
