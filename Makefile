@@ -7,6 +7,6 @@ test:
 	@bun test
 
 typecheck:
-	@bunx --no-install tsc -b
+	@bunx --no-install tsgo --noEmit
 
 check: typecheck test

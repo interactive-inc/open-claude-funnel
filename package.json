@@ -88,7 +88,7 @@
   "scripts": {
     "prepack": "make build",
     "test": "bun test",
-    "typecheck": "tsc -b",
+    "typecheck": "tsgo --noEmit",
     "build": "vp pack",
     "lint": "vp lint"
   },

@@ -25,7 +25,7 @@ export default defineConfig({
       "connectors/schedule": "lib/engine/connectors/schedule.ts",
     },
     format: "esm",
-    dts: true,
+    dts: { generator: "tsgo" },
     deps: { neverBundle: ["bun", "bun:sqlite"] },
     outExtensions: () => ({ js: ".js" }),
   },
