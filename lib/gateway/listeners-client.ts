@@ -15,6 +15,7 @@ const listenerEntrySchema = z.object({
   name: z.string(),
   type: z.string(),
   alive: z.boolean(),
+  connected: z.boolean().optional(),
 })
 
 const listenersResponseSchema = z.object({

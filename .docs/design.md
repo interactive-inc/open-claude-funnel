@@ -18,9 +18,9 @@ Connector は Channel に nest されるので、外部 API 呼び出しは `fnl
 
 ### Funnel Facade
 
-全 Service を束ねる `Funnel` クラスを CLI・TUI・プログラマブル呼び出しの単一入口にする。Service の依存関係は Funnel が解決し、ルート層で個別 Service を new しない。
+埋め込み用途は `FunnelTransport` がチャネル・コネクタ・gateway を組み立てる。Claude の起動・セッション・設定同期と診断サービスは既存の `Funnel` が transport の上に追加する。CLI は引き続き `Funnel` を使い、ルート層で個別 Service を new しない。
 
-Service は getter で公開し、初回アクセス時に new して `memos` に保持する（同一インスタンスを返す）。境界（fs / process / clock / id / store）も同じく memoize するので、Funnel 1 つの中では全 Service が同じ境界実装を共有する。
+選んだ入口の constructor で依存を即座に組み立て、freeze する。境界（fs / process / clock / id / store）は共有する。`Funnel` のチャネルと gateway は `funnel.transport` と同じ実装を利用する。
 
 ### DI は abstract class で揃える
 

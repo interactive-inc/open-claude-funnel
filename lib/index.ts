@@ -15,6 +15,7 @@
 
 // Facade
 export * from "@/funnel"
+export { FunnelTransport, type FunnelTransportOptions } from "@/transport"
 
 // Engine — core domain
 export * from "@/engine/channels/channels"

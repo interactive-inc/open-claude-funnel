@@ -339,6 +339,22 @@ Settings   = { channels[], profiles[] }                 → ~/.funnel/settings.j
 
 ## プログラマブル API（Bun）
 
+Agent SDK や独自ランタイムにイベント中継だけを組み込む場合は、`/transport` を使う。Claude の起動・セッション管理・設定同期・診断サービスを読み込まず、チャネル、コネクタ、イベントの保存・再送と gateway を使える。
+
+```ts
+import { FunnelTransport } from "@interactive-inc/claude-funnel/transport"
+import { slackConnector } from "@interactive-inc/claude-funnel/connectors/slack"
+
+const transport = new FunnelTransport({ connectors: [slackConnector()] })
+// transport.channels でチャネルとコネクタを設定する。
+// gatewayModule() はホストの Hono/Bun.serve に組み込む場合に使う。
+const gateway = transport.gatewayServer({ port: 9742 })
+await gateway.start()
+// 終了時: await gateway.stop()
+```
+
+既存の `Funnel` と CLI は起動管理を含む入口として維持する。`funnel.transport` は同じ設定・チャネルを共有し、既存の `funnel.gatewayServer()` / `gatewayModule()` もこの transport に委譲する。
+
 CLI を介さず、ライブラリとして組み込める。CLI が使うのと同じ `Funnel` facade をパッケージのルートから export している。`new Funnel()` は constructor で全依存を即座に組み立てて freeze する（完全イミュータブル）。
 
 コネクタは完全 DI。使う型の descriptor を `connectors` に渡したぶんだけが扱われ、渡さなければコネクタゼロ。core の import（`import { Funnel }`）にはコネクタの SDK（@slack/bolt, discord.js）が一切載らず、サブエントリ（`@interactive-inc/claude-funnel/connectors/<type>`）から descriptor を import したときだけバンドルに入る。
@@ -416,6 +432,9 @@ const base = gatewayLoopbackUrl(9743) // → http://127.0.0.1:9743
 個別の層だけを import したい場合は sub-entry を使う。
 
 ```ts
+// 起動管理を含まないチャネル・配信の入口
+import { FunnelTransport } from "@interactive-inc/claude-funnel/transport"
+
 // in-process gateway building blocks（FunnelGatewayServer, FunnelBroadcaster 等）
 import { FunnelGatewayServer } from "@interactive-inc/claude-funnel/gateway"
 

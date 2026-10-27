@@ -8,6 +8,18 @@ Hono app over these services.
 
   npm install @interactive-inc/claude-funnel
 
+── transport-only embedding ────────────────────────────────────────────────
+
+  import { FunnelTransport } from "@interactive-inc/claude-funnel/transport"
+  const transport = new FunnelTransport({ connectors: [slackConnector()] })
+  transport.channels                       // shared channel/connector core
+  transport.gatewayModule({ token })       // mount in a host-owned server
+  transport.gatewayServer({ port: 9742 })  // let Funnel own the socket
+
+This entry does not load Claude launch/session management, local config sync,
+or optional diagnostic/recovery services. The full facade below composes this
+transport and retains the existing CLI and SDK API.
+
 ── facade ──────────────────────────────────────────────────────────────────
 
   import { Funnel } from "@interactive-inc/claude-funnel"
@@ -20,6 +32,7 @@ Hono app over these services.
   const funnel = new Funnel({ connectors: [slackConnector()] })  // uses ~/.funnel
   const sandbox = Funnel.inMemory()        // touches no disk / process / clock
 
+  funnel.transport                        // same transport and settings as channels
   funnel.paths                            // { dir, tmpDir, settings }
   funnel.channels                         // CRUD on channels + nested connectors
   funnel.profiles                         // CRUD on launch presets
@@ -37,8 +50,8 @@ Hono app over these services.
 ── independent service classes (compose freely) ────────────────────────────
 
 Each service depends on narrow interfaces, so you can wire them outside the
-facade if you want a lighter-weight integration. The Funnel facade is the
-recommended path — but it is just one composition root, not the only one.
+facade for custom wiring. Use FunnelTransport for transport-only embedding;
+use Funnel when Claude launch management and the full CLI services are needed.
 
   import {
     FunnelChannels,

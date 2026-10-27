@@ -8,11 +8,6 @@ import {
   type FlumeStatus,
 } from "@interactive-inc/flume"
 
-// Flume 0.9 dropped FlumeStatusEvent; funnel reconstructs the same shape
-// internally from `log.action === "status"` log entries. The tests still want
-// to call `handleStatus()` directly to drive deterministic transitions.
-type StatusEvent = { source: string; status: FlumeStatus; detail: string | null }
-
 type FakeHooks = {
   /** Error to return from `connect()` so Flume rolls back the start and we hit the FlumeStartError path. */
   connectError?: Error
@@ -41,7 +36,7 @@ class FakeFlumeSource extends FlumeSource {
     this.capturedCtx = null
   }
 
-  emitStatus(status: FlumeStatus, detail: string): void {
+  emitStatus(status: FlumeStatus, detail?: string): void {
     this.setStatus(status, detail)
   }
 }
@@ -65,9 +60,9 @@ class TestListenerWithSignal extends FunnelFlumeSourceListener {
     })
   }
 
-  emitStatus(status: FlumeStatus, detail?: string): void {
-    const event: StatusEvent = { source: "slack", status, detail: detail ?? null }
-    this.handleStatus(event)
+  async emitStatus(status: FlumeStatus, detail?: string): Promise<void> {
+    this.source.emitStatus(status, detail)
+    await this.running?.drain()
   }
 }
 
@@ -96,9 +91,9 @@ class TestListener extends FunnelFlumeSourceListener {
     await this.runStart({ sources: [this.source], onEvent })
   }
 
-  emitStatus(status: FlumeStatus, detail?: string): void {
-    const event: StatusEvent = { source: "slack", status, detail: detail ?? null }
-    this.handleStatus(event)
+  async emitStatus(status: FlumeStatus, detail?: string): Promise<void> {
+    this.source.emitStatus(status, detail)
+    await this.running?.drain()
   }
 
   protected override onStop(): void {
@@ -107,6 +102,43 @@ class TestListener extends FunnelFlumeSourceListener {
 }
 
 describe("FunnelFlumeSourceListener", () => {
+  test("health reads current source state before queued status logs are delivered", async () => {
+    const listener = new TestListener(new MemoryConnectorDiagnosticLog())
+    await listener.start()
+    listener.source.emitStatus("connected")
+    expect(listener.isConnected()).toBe(true)
+    listener.source.emitStatus("reconnecting")
+    expect(listener.isAlive()).toBe(true)
+    expect(listener.isConnected()).toBe(false)
+    listener.source.emitStatus("connecting", "retry handshake")
+    expect(listener.isAlive()).toBe(true)
+    expect(listener.isConnected()).toBe(false)
+    await listener.stop()
+  })
+
+  test("one healthy source does not hide another source's terminal disconnect", async () => {
+    class MultiSourceListener extends FunnelFlumeSourceListener {
+      readonly first = new FakeFlumeSource()
+      readonly second = new FakeFlumeSource()
+      constructor() {
+        super({ type: "channel", connectorId: "multi", channelId: "ops" })
+      }
+      async start(): Promise<void> {
+        await this.runStart({ sources: [this.first, this.second], onEvent: () => {} })
+      }
+    }
+    const listener = new MultiSourceListener()
+    await listener.start()
+    listener.first.emitStatus("connected")
+    listener.second.emitStatus("connected")
+    expect(listener.isConnected()).toBe(true)
+    listener.first.emitStatus("disconnected")
+    listener.second.emitStatus("connected", "still connected")
+    expect(listener.isAlive()).toBe(false)
+    expect(listener.isConnected()).toBe(false)
+    await listener.stop()
+  })
+
   test("stop finishes queued Flume status callbacks before recording the final stopped row", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
@@ -154,24 +186,23 @@ describe("FunnelFlumeSourceListener", () => {
     const listener = new TestListener(log)
 
     await listener.start()
-    listener.emitStatus("connected", "ws open")
+    await listener.emitStatus("connected", "ws open")
+    expect(listener.isAlive()).toBe(true)
+    expect(listener.isConnected()).toBe(true)
+
+    // Reconnecting stays alive so the registry does not preempt Flume's retry.
+    await listener.emitStatus("reconnecting", "")
     expect(listener.isAlive()).toBe(true)
 
-    // `reconnecting` is treated as alive so the listener registry's health check
-    // does not preempt Flume's internal retry. The connected flag flips
-    // off internally but isAlive stays true via the reconnecting flag.
-    listener.emitStatus("reconnecting", "")
+    await listener.emitStatus("connected")
     expect(listener.isAlive()).toBe(true)
 
-    listener.emitStatus("connected")
-    expect(listener.isAlive()).toBe(true)
-
-    listener.emitStatus("disconnected", "remote close")
+    await listener.emitStatus("disconnected", "remote close")
     expect(listener.isAlive()).toBe(false)
 
     const statuses = log.queryConnection({ type: "slack" }).map((row) => row.status)
 
-    expect(statuses).toEqual(["connected", "connected", "disconnected"])
+    expect(statuses).toEqual(["connected", "disconnected", "connected", "disconnected"])
   })
 
   test("stop records disconnected then stopped and calls onStop even when the source disconnect throws", async () => {
@@ -184,7 +215,7 @@ describe("FunnelFlumeSourceListener", () => {
     const listener = new TestListener(log, { disconnectError: new Error("close kaput") })
 
     await listener.start()
-    listener.emitStatus("connected")
+    await listener.emitStatus("connected")
     await listener.stop()
 
     expect(listener.isAlive()).toBe(false)
@@ -240,13 +271,13 @@ describe("FunnelFlumeSourceListener", () => {
     expect(listener.source.capturedCtx?.reconnect).not.toBeNull()
   })
 
-  test("reconnecting status does not write a row but isAlive stays true (listener registry stays out of flume's way)", async () => {
+  test("reconnecting reports disconnected transport while leaving recovery to Flume", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
 
     await listener.start()
-    listener.emitStatus("connected")
-    listener.emitStatus("reconnecting", "network blip")
+    await listener.emitStatus("connected")
+    await listener.emitStatus("reconnecting", "network blip")
 
     // isAlive is the listener registry's health check input. We deliberately keep
     // it true during reconnect so the registry lets Flume's faster,
@@ -255,8 +286,8 @@ describe("FunnelFlumeSourceListener", () => {
 
     const statuses = log.queryConnection({ type: "slack" }).map((row) => row.status)
 
-    // No "reconnecting" row — only the prior connected.
-    expect(statuses).toEqual(["connected"])
+    expect(listener.isConnected()).toBe(false)
+    expect(statuses).toEqual(["connected", "disconnected"])
   })
 
   test("delivery is serialised — a slow onEvent forces the next one to wait, preserving FIFO order", async () => {
@@ -317,14 +348,14 @@ describe("FunnelFlumeSourceListener", () => {
     const listener = new TestListener(log)
 
     await listener.start()
-    listener.emitStatus("connected")
-    listener.emitStatus("reconnecting", "network blip")
+    await listener.emitStatus("connected")
+    await listener.emitStatus("reconnecting", "network blip")
     expect(listener.isAlive()).toBe(true)
 
     // Flume gave up — reconnect exhausted, terminal close, or stop() was
     // explicit. The listener must now report not-alive so the listener registry's
     // recoverDead pass picks it up.
-    listener.emitStatus("disconnected", "give up")
+    await listener.emitStatus("disconnected", "give up")
     expect(listener.isAlive()).toBe(false)
   })
 

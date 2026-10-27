@@ -11,7 +11,7 @@ external sources → daemon → channel → agent (MCP)
                        ↑ ← outbound replies (MCP tools)
 ```
 
-CLI とプログラマブル API (`new Funnel(...)`) を 1 つの core から共有する。Web UI は持たない。
+CLI とプログラマブル API を 1 つの transport core から共有する。埋め込みは `FunnelTransport`（`/transport`）、起動管理を含む既存入口は `Funnel`。両者の責任と選び方は README の「プログラマブル API（Bun）」を参照。Web UI は持たない。
 
 ## ドメイン語彙
 
@@ -405,7 +405,8 @@ CLI 内のユーザー向けドキュメントは `lib/engine/docs/topics/docs-<
 
 - 同一 `Bun.serve` で WebSocket と内部管理 API（`/health` `/status` `/listeners*` `/channels/.../call`）をホストする
 - WebSocket クライアントは `?channel=<name>&id=<subscriberId>` で接続する。`id` は funnel の targeted delivery キーで、`meta.target=<id>` のイベントがそのクライアントだけに届く。`id` を省略した場合は channel 全体の fanout を受信する（tap=all は廃止済み）
-- listener は `start(notify, signal?)` / `stop()` / `isAlive()` を持ち、`FunnelListenerRegistry` が 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う。設定済みなのに runtime registry から欠落した listener も health check が再作成する。初回起動・明示 restart・dead recovery のどの経路でも一時的な start 失敗は同じ retry queue に戻し、認証失敗のような non-retriable error だけを operator action まで停止する
+- listener は `start(notify, signal?)` / `stop()` / `isAlive()` / `isConnected()` を持ち、`FunnelListenerRegistry` が 30 秒間隔の health check と exponential backoff（cap 60s）の自動再起動を行う。設定済みなのに runtime registry から欠落した listener も health check が再作成する。初回起動・明示 restart・dead recovery のどの経路でも一時的な start 失敗は同じ retry queue に戻し、認証失敗のような non-retriable error だけを operator action まで停止する
+- Flume-backed listener の現在状態は `FlumeRunning.statuses()` から取得する。接続フラグを複製しない。open 後の connecting / reconnecting は復旧中として alive を維持し、connected は実接続だけを示す。status log は診断履歴として記録する。
 - 外側からは `Funnel.listeners` が gateway HTTP を叩く。`Funnel.gateway` は daemon プロセス管理だけに専念する
 - connector CRUD ルート（add / remove / set / rename）は store 変更後に `Funnel.listeners` を経由して listener を hot-reload する。`FunnelLocalConfigSync` は engine（`FunnelChannels`）を直接叩いて connector を同期するため route 経由の hot-reload は走らない。`fnl claude` の dispatch が同期後に `reconcileListeners` で listener を取り込む（それ以外の経路は `fnl gateway restart` が必要）
 - Broadcaster は WS fanout に加えて in-process subscriber を `subscribe(handler)` で受ける。`getBufferedAmount()` が 1 MiB を超えた slow consumer は 1009 で切り捨てる

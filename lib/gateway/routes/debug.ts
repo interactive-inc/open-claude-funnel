@@ -2,7 +2,7 @@ import { factory } from "@/gateway/factory"
 import {
   diagnosticConnectionEventOf,
   diagnosticEventOfProcessed,
-} from "@/services/diagnostics/diagnostic-event"
+} from "@/engine/diagnostic-log/diagnostic-event"
 
 type RecentEvent = {
   seq: number | null

@@ -110,6 +110,35 @@ const seedConnection = (status: ConnectorConnectionStatus, detail: string): void
 }
 
 describe.skipIf(!isBun)("FunnelDiagnostics", () => {
+  test("warns about recovering transport without suggesting an interrupting restart", async () => {
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({
+          pid: 123,
+          uptimeMs: 1000,
+          clients: [{ channel: "ch-1", channelName: "ops", connectors: ["slack"] }],
+          listeners: [
+            {
+              channelName: "ops",
+              name: "slack",
+              type: "slack",
+              alive: true,
+              connected: false,
+              events: 0,
+              errors: 0,
+              lastEventAt: null,
+            },
+          ],
+        }),
+      { preconnect: originalFetch.preconnect },
+    )
+    const report = await buildDiagnostics().diagnose("ops")
+    if (!report) throw new Error("expected ops diagnosis")
+    expect(report.listeners[0]?.connected).toBe(false)
+    expect(report.diagnosis).toMatchObject({ status: "warn", nextActions: ["fnl gateway logs"] })
+    expect(report.diagnosis.message).toContain("reconnection")
+  })
+
   test("warns when Slack only delivered app_mention events", async () => {
     seedProcessed({ type: "app_mention", text: "<@U_BOT> ping" }, "ev-1")
 

@@ -14,6 +14,7 @@ export default defineConfig({
   pack: {
     entry: {
       index: "lib/index.ts",
+      transport: "lib/transport.ts",
       claude: "lib/claude.ts",
       gateway: "lib/gateway.ts",
       profiles: "lib/profiles.ts",

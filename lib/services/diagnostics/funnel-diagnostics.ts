@@ -12,12 +12,12 @@ import type { ChannelConfig } from "@/engine/settings/settings-schema"
 import type {
   DiagnosticConnectionError,
   DiagnosticEvent,
-} from "@/services/diagnostics/diagnostic-event"
+} from "@/engine/diagnostic-log/diagnostic-event"
 import {
   diagnosticConnectionEventOf,
   diagnosticEventOfProcessed,
   diagnosticEventOfRaw,
-} from "@/services/diagnostics/diagnostic-event"
+} from "@/engine/diagnostic-log/diagnostic-event"
 
 /** Narrow channel registry — only `list()` is needed. */
 export type DiagnosticsChannelSource = {
@@ -58,6 +58,7 @@ type ListenerStatus = {
   name: string
   type: string
   alive: boolean
+  connected?: boolean
   events: number
   errors: number
   lastEventAt: string | null
@@ -100,6 +101,7 @@ export type ChannelDiagnosis = {
     name: string
     type: string
     alive: boolean
+    connected?: boolean
     events: number
     errors: number
     lastEventAt: string | null
@@ -252,6 +254,15 @@ const buildDiagnosis = (
       status: "warn",
       message: "some listeners are dead",
       nextActions: ["fnl doctor --fix"],
+      rootCause,
+    }
+  }
+
+  if (report.listeners.some((listener) => listener.connected === false)) {
+    return {
+      status: "warn",
+      message: "listener transport disconnected (automatic reconnection in progress)",
+      nextActions: ["fnl gateway logs"],
       rootCause,
     }
   }
@@ -661,6 +672,7 @@ export class FunnelDiagnostics {
           name: l.name,
           type: l.type,
           alive: l.alive,
+          connected: l.connected,
           events: l.events,
           errors: l.errors,
           lastEventAt: l.lastEventAt,

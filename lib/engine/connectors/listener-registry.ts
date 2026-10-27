@@ -70,6 +70,7 @@ type ListenerEntryStatus = {
   name: string
   type: string
   alive: boolean
+  connected: boolean
   events: number
   errors: number
   failureCount: number
@@ -144,6 +145,7 @@ export class FunnelListenerRegistry {
         name: entry.config.name,
         type: entry.config.type,
         alive: entry.listener.isAlive(),
+        connected: entry.listener.isConnected(),
         events: stats?.events ?? 0,
         errors: stats?.errors ?? 0,
         failureCount: this.failureCounts.get(key) ?? 0,

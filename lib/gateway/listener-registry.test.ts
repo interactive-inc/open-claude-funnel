@@ -39,6 +39,32 @@ const buildRegistry = (listener: FakeListener) => ({
 })
 
 describe("FunnelListenerRegistry", () => {
+  test("reports transport disconnection without restarting a listener that is recovering", async () => {
+    class RecoveringListener extends FakeListener {
+      starts = 0
+      override async start(notify: NotifyFn): Promise<void> {
+        this.starts += 1
+        await super.start(notify)
+      }
+      override isConnected(): boolean {
+        return false
+      }
+    }
+    const listener = new RecoveringListener()
+    const registry = new FunnelListenerRegistry({
+      channels: buildRegistry(listener),
+      notify: async () => {},
+    })
+    await registry.startAll()
+    try {
+      await registry.runHealthCheckForTest()
+      expect(registry.list()[0]).toMatchObject({ alive: true, connected: false })
+      expect(listener.starts).toBe(1)
+    } finally {
+      await registry.stopAll()
+    }
+  })
+
   test("an explicit stop remains stopped until an explicit start", async () => {
     const listener = new FakeListener()
     const registry = new FunnelListenerRegistry({
