@@ -64,9 +64,14 @@ Channels は Claude Code 側で有効化したサーバーにだけ届く。MCP 
 - 購読は `events()` を呼んだ時点で開始する。接続の `start()` より先に購読すると、起動時のイベントもキューに残せる。
 - `fanout` は全配送先、`exclusive` は WebSocket と同一プロセスの購読を合わせた候補の一つへ送る。両方式を同時接続した場合もこの規則を適用する。`exclusive` のイベント列には再接続でも変わらない `subscriberId` が必要。
 - `since` は最後に処理できた offset。指定位置の次から保持中のイベントを再送してライブ配送へ移る。offset はキュー投入や MCP の送信だけで処理完了とみなさず、利用側で必要な基準を決めて保存する。
+- 再送は購読開始時の offset を上限に、`next()` の読み取りに合わせて進める。保存ログは64件以下のページで読み、現在のメモリ保持分と offset 順に合流する。再送中の新着入力はライブ用キューに入り、履歴の後に一度だけ渡す。未読の exclusive 履歴は先に取得者へ割り当てず、読む時点で claim する。
 - 未読キューは `maxQueuedEvents`（既定200件）と `maxQueuedBytes`（既定4 MiB、JSON全体のUTF-8バイト数）で制限する。超過すると当該購読を解除し、`next()` がエラーになる。他の購読は継続する。
 - `return()`、`break`、購読の `signal` の abort、gateway の停止で未読入力を破棄し、待機中の `next()` を終了する。使用しなくなった列は、読み始めていなくても解除する。`agentSdkInput` の `return()` も元の列へ解除を伝える。
 - gateway の停止は SDK の実行中タスクやホストの MCP サーバーを閉じない。それぞれの既存 API で終了する。
 - 返信は利用側が登録した SDK / MCP ツールから `funnel.channels.call(channel, connector, request)` を呼ぶ。受信時のサービス固有メタデータを使って返信先を指定する。投稿可否・送信者の許可・対象ツールの公開はホストで決める。
+
+独自の `FunnelEventLog` は `loadSince(since, limit?)` を offset 昇順・指定位置の次から返し、`limit` がある場合は読み出し件数を制限する。引数省略時は保持中の全件を返す既存の契約を維持する。ページ順序の違反や読み取り失敗は購読エラーとして返す。`record()` の保存失敗は例外にして配信側へ伝える。SQLite アダプターも logger / onError へ通知した後に例外を返し、保存されていない入力をライブ配送しない。
+
+配信されたイベントの本文・メタデータ・exclusive 割当は読み取り専用で凍結される。値を加工する場合は自分のコピーを作り、Funnel が保持する履歴を変更しない。
 
 入力列の形式は [Streaming Input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)、通知と capability は [Channels reference](https://code.claude.com/docs/en/channels-reference) に準拠する。ローカル検証では Agent SDK 0.3.299 の `SDKUserMessage` / `query` / `Query.streamInput` に型が適合し、MCP SDK 1.30.0 の実 Server/Client 間で通知を送受信できることを確認した。Claude への実問い合わせと実際の Claude Code Channels セッションは未検証。

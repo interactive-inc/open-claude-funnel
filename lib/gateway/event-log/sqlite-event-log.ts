@@ -8,13 +8,14 @@ import {
 } from "@/gateway/event-log/event-log"
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-claims"
+import { eventSnapshot } from "@/gateway/event-snapshot"
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */
   path: string
   /** Override for tests. Defaults to `Date.now`. */
   now?: () => number
-  /** Surfaces a failed persist (PK collision, disk-full, locked WAL). Silent if absent. */
+  /** Reports a failed persist (PK collision, disk-full, locked WAL) before record() throws. */
   logger?: FunnelLogger
   /**
    * Host-supplied error sink. Routed alongside the logger when a write
@@ -124,6 +125,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
         channelId: record.channelId,
         connectorId: record.connectorId,
       })
+      throw result
     }
   }
 
@@ -132,23 +134,25 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
    * the broadcaster's responsibility (it knows the client's subscription),
    * so this returns the full slice and lets the caller filter.
    */
-  loadSince(since: number): ReplayableEvent[] {
-    const records = this.sink.query({ sinceSeq: since, limit: Number.MAX_SAFE_INTEGER })
+  loadSince(since: number, limit = Number.MAX_SAFE_INTEGER): ReplayableEvent[] {
+    const records = this.sink.query({ sinceSeq: since, limit })
     const out: ReplayableEvent[] = []
     for (const record of records) {
-      out.push({
-        content: record.event.content,
-        meta: record.event.meta ?? undefined,
-        offset: record.seq,
-        ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
-      })
+      out.push(
+        eventSnapshot({
+          content: record.event.content,
+          meta: record.event.meta ?? undefined,
+          offset: record.seq,
+          ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
+        }),
+      )
     }
     return out
   }
 
   /**
-   * Returns events for one channel (and optionally one connector). Used
-   * by the gateway logs CLI for scoped queries. Channel/connector filters
+   * Returns events for one channel (and optionally one connector). Hosts
+   * can use this for scoped queries. Channel/connector filters
    * are indexed columns, so this is an indexed range scan.
    */
   loadForChannel(props: {
@@ -169,12 +173,14 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     })
     const out: ReplayableEvent[] = []
     for (const record of records) {
-      out.push({
-        content: record.event.content,
-        meta: record.event.meta ?? undefined,
-        offset: record.seq,
-        ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
-      })
+      out.push(
+        eventSnapshot({
+          content: record.event.content,
+          meta: record.event.meta ?? undefined,
+          offset: record.seq,
+          ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
+        }),
+      )
     }
     return out
   }

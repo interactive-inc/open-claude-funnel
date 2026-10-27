@@ -31,6 +31,7 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
   constructor(
     private readonly options: EventStreamOptions,
     private readonly onClose: () => void,
+    private replay?: Iterator<ReplayableEvent>,
   ) {
     this.maxQueuedEvents = options.maxQueuedEvents ?? 200
     this.maxQueuedBytes = options.maxQueuedBytes ?? 4 * 1024 * 1024
@@ -52,12 +53,21 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
 
   next(): Promise<IteratorResult<ReplayableEvent>> {
     if (this.failure) return Promise.reject(this.failure)
+    if (this.closed) return Promise.resolve({ value: undefined, done: true })
+    try {
+      const item = this.replay?.next()
+      if (item && !item.done) return Promise.resolve(item)
+      this.replay = undefined
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error))
+      this.close(failure)
+      return Promise.reject(failure)
+    }
     const queued = this.queue.shift()
     if (queued) {
       this.bytes -= queued.bytes
       return Promise.resolve({ value: queued.event, done: false })
     }
-    if (this.closed) return Promise.resolve({ value: undefined, done: true })
     return new Promise((resolve, reject) => this.pending.push({ resolve, reject }))
   }
 
@@ -88,6 +98,8 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
     this.closed = true
     this.failure = error
     this.options.signal?.removeEventListener("abort", this.onAbort)
+    this.replay?.return?.()
+    this.replay = undefined
     this.queue.length = 0
     this.bytes = 0
     this.onClose()

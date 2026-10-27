@@ -159,7 +159,9 @@ describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
 
     // Re-using offset 7 collides with the INTEGER PRIMARY KEY, so the sink write
     // fails. The event log must surface it instead of dropping it silently.
-    store.record({ content: "dup", channelId: null, connectorId: null, meta: null, offset: 7 })
+    expect(() =>
+      store.record({ content: "dup", channelId: null, connectorId: null, meta: null, offset: 7 }),
+    ).toThrow()
 
     const errors = logger.entries.filter((entry) => entry.level === "error")
 
@@ -190,7 +192,9 @@ describe.skipIf(!isBun)("SqliteFunnelEventLog", () => {
 
     store.record({ content: "first", channelId: "ch1", connectorId: "co1", meta: null, offset: 9 })
     // Re-use offset 9 to trigger the PK collision path.
-    store.record({ content: "dup", channelId: "ch1", connectorId: "co1", meta: null, offset: 9 })
+    expect(() =>
+      store.record({ content: "dup", channelId: "ch1", connectorId: "co1", meta: null, offset: 9 }),
+    ).toThrow()
 
     expect(captured).toHaveLength(1)
     expect(captured[0]?.error).toBeInstanceOf(Error)

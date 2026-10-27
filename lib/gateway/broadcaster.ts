@@ -2,6 +2,7 @@ import type { ServerWebSocket } from "bun"
 import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { eventSnapshot } from "@/gateway/event-snapshot"
 import {
   FunnelEventStream,
   type EventStreamOptions,
@@ -48,13 +49,20 @@ type Recipient = {
 )
 
 export type BroadcastEvent = {
-  content: string
-  meta?: Record<string, string>
+  readonly content: string
+  readonly meta?: Readonly<Record<string, string>>
 }
 
 export type ReplayableEvent = BroadcastEvent & {
-  offset: number
+  readonly offset: number
   /** Per-channel exclusive assignment; null means no worker was connected. */
+  readonly exclusive?: Readonly<Record<string, string | null>>
+}
+
+type PendingEvent = {
+  content: string
+  meta?: Record<string, string>
+  offset: number
   exclusive?: Record<string, string | null>
 }
 
@@ -67,7 +75,7 @@ export type BroadcastSubscriber = (event: ReplayableEvent) => void
  * `seq > since` range scan.
  */
 type ReplaySource = {
-  loadSince(since: number): ReplayableEvent[]
+  loadSince(since: number, limit?: number): ReplayableEvent[]
   claimExclusive?(offset: number, channelId: string, subscriberId: string): boolean
 }
 
@@ -113,9 +121,10 @@ type BroadcasterMetrics = {
 /**
  * In-process pub/sub for connector events.
  *
- * Two outbound paths:
+ * Outbound paths:
  *   - WS clients connected via the gateway's `/ws` endpoint, scoped per channel
  *   - In-process subscribers registered via `subscribe()` (programmable API)
+ *   - Channel-scoped async input subscriptions created by `events()`
  *
  * Backpressure: if a WS client's `bufferedAmount` exceeds `maxBufferedBytes`
  * (default 1 MiB), the client is closed with code 1009 and dropped from the
@@ -183,31 +192,57 @@ export class FunnelBroadcaster {
    * Two-tier lookup:
    *   1. The in-memory ring buffer (covers short reconnects, last `replayBufferSize` events).
    *   2. If `since` predates the oldest in-memory entry and a persistent replay source
-   *      is wired in (SQLite by default), the gap is filled from it. This covers reconnects
+   *      is wired in (bounded memory by default), the gap is filled from it. This covers reconnects
    *      across daemon restarts where the in-memory buffer was lost.
    *
    * Result is sorted ascending by offset and de-duplicated against the in-memory buffer.
    */
   replaySince(since: number, data: ClientData): ReplayableEvent[] {
-    const oldestInMemory = this.replayBuffer[0]?.offset
-    const needFallback =
-      this.persistentReplay && (oldestInMemory === undefined || since < oldestInMemory - 1)
-    const fromMemory = this.replayBuffer.filter(
-      (event) => event.offset > since && this.matchesReplay(event, data),
-    )
-
-    if (!needFallback) return fromMemory
-
-    const persisted = this.persistentReplay
-      ? this.persistentReplay.loadSince(since).filter((event) => this.matchesReplay(event, data))
-      : []
-    const cutoff = oldestInMemory ?? Number.POSITIVE_INFINITY
-    const beforeMemory = persisted.filter((event) => event.offset < cutoff)
-
-    return [...beforeMemory, ...fromMemory]
+    return [...this.replayEvents(since, data)]
   }
 
-  private matchesReplay(event: ReplayableEvent, data: ClientData): boolean {
+  /** Capture the memory boundary now; fetch older history and claim work only as it is read. */
+  private replayEvents(
+    since: number,
+    data: ClientData,
+    until?: number,
+  ): Generator<ReplayableEvent> {
+    const memory = this.replayBuffer.filter(
+      (event) => event.offset > since && (until === undefined || event.offset <= until),
+    )
+    const cutoff = Math.min(
+      memory[0]?.offset ?? Infinity,
+      until === undefined ? Infinity : until + 1,
+    )
+    const source = this.persistentReplay
+    const matches = (event: ReplayableEvent) => this.matchesReplay(event, data)
+    return (function* () {
+      let cursor = since
+      if (source && since < cutoff - 1) {
+        while (true) {
+          const page = source.loadSince(cursor, 64)
+          if (page.length === 0) break
+          let atBoundary = false
+          for (const event of page) {
+            if (!Number.isSafeInteger(event.offset) || event.offset <= cursor)
+              throw new Error("event log replay must advance offsets in ascending order")
+            if (event.offset >= cutoff) {
+              atBoundary = true
+              break
+            }
+            cursor = event.offset
+            if (matches(event)) yield eventSnapshot(event)
+          }
+          if (atBoundary) break
+        }
+      }
+      for (const event of memory) {
+        if (matches(event)) yield eventSnapshot(event)
+      }
+    })()
+  }
+
+  private matchesReplay(event: PendingEvent, data: ClientData): boolean {
     if (!this.matchesClient(event, data)) return false
 
     const assigned = event.exclusive?.[data.channel]
@@ -261,7 +296,7 @@ export class FunnelBroadcaster {
    * `meta.target` narrows the recipient set via `matchesClient`: only the subscriber
    * whose `subscriberId` equals `target` receives a targeted event.
    */
-  private pickRecipients(event: ReplayableEvent): Recipient[] {
+  private pickRecipients(event: PendingEvent): Recipient[] {
     const exclusiveByChannel = new Map<string, Recipient[]>()
     const recipients: Recipient[] = []
     const channelId = event.meta?.channelId
@@ -321,22 +356,20 @@ export class FunnelBroadcaster {
     if (options.since !== undefined && (!Number.isSafeInteger(options.since) || options.since < 0))
       throw new Error("since must be a non-negative safe integer")
     let stream: FunnelEventStream | undefined
-    stream = new FunnelEventStream(options, () => {
-      if (stream) this.streams.delete(stream)
-    })
+    const subscription = { ...data }
+    const replay =
+      options.since === undefined
+        ? undefined
+        : this.replayEvents(options.since, subscription, this.latestOffset)
+    stream = new FunnelEventStream(
+      options,
+      () => {
+        if (stream) this.streams.delete(stream)
+      },
+      replay,
+    )
     if (stream.isClosed) return stream
-    this.streams.set(stream, { ...data })
-    try {
-      if (options.since !== undefined) {
-        for (const event of this.replaySince(options.since, data)) {
-          stream.push(event)
-          if (stream.isClosed) break
-        }
-      }
-    } catch (error) {
-      stream.close()
-      throw error
-    }
+    this.streams.set(stream, subscription)
     return stream
   }
 
@@ -393,10 +426,15 @@ export class FunnelBroadcaster {
       for (const channel of this.channels()) this.updateChannel(channel.id, channel)
     }
     this.latestOffset += 1
-    const event: ReplayableEvent = { content, meta, offset: this.latestOffset }
+    const event: PendingEvent = {
+      content,
+      meta: meta ? Object.freeze({ ...meta }) : undefined,
+      offset: this.latestOffset,
+    }
     const recipients = this.pickRecipients(event)
-    this.record?.(event)
-    const payload = JSON.stringify(event)
+    const delivered = eventSnapshot(event)
+    this.record?.(delivered)
+    const payload = JSON.stringify(delivered)
 
     this.eventsBroadcast += 1
     this.lastBroadcastAt = this.now()
@@ -420,7 +458,7 @@ export class FunnelBroadcaster {
 
     for (const recipient of recipients) {
       if (recipient.kind === "stream") {
-        recipient.target.push(event)
+        recipient.target.push(delivered)
         continue
       }
       const ws = recipient.target
@@ -486,14 +524,14 @@ export class FunnelBroadcaster {
         // The cast widens the typed-void return to "could be a thenable" so
         // a host-supplied async subscriber (TS allows Promise<void> where
         // void is expected) does not slip through as a rejected microtask.
-        const result = handler(event) as unknown
+        const result = handler(delivered) as unknown
         if (result instanceof Promise) result.catch(captureError)
       } catch (error) {
         captureError(error)
       }
     }
 
-    return event
+    return delivered
   }
 
   /** Forward-seed the offset counter (used at startup from the persisted event store). */

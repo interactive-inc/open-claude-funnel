@@ -46,7 +46,8 @@ export type FunnelEventRecord = {
 export abstract class FunnelEventLog {
   abstract record(record: FunnelEventRecord): void
 
-  abstract loadSince(since: number): ReplayableEvent[]
+  /** Ascending offsets strictly after since. Honor limit when provided to bound replay read-ahead. */
+  abstract loadSince(since: number, limit?: number): ReplayableEvent[]
 
   abstract findMaxOffset(): number
 

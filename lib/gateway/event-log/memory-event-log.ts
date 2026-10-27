@@ -1,5 +1,6 @@
 import type { ReplayableEvent } from "@/gateway/broadcaster"
 import { FunnelEventLog, type FunnelEventRecord } from "@/gateway/event-log/event-log"
+import { eventSnapshot } from "@/gateway/event-snapshot"
 
 type StoredEvent = {
   offset: number
@@ -32,7 +33,7 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     this.events.push({
       offset: record.offset,
       content: record.content,
-      meta: record.meta ?? undefined,
+      meta: record.meta ? { ...record.meta } : undefined,
       channelId: record.channelId,
       connectorId: record.connectorId,
       ...(record.exclusive ? { exclusive: { ...record.exclusive } } : {}),
@@ -51,17 +52,20 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     return Buffer.byteLength(content) + Buffer.byteLength(JSON.stringify(meta ?? {}))
   }
 
-  loadSince(since: number): ReplayableEvent[] {
+  loadSince(since: number, limit = Infinity): ReplayableEvent[] {
     const out: ReplayableEvent[] = []
 
     for (const event of this.events) {
       if (event.offset > since) {
-        out.push({
-          content: event.content,
-          meta: event.meta,
-          offset: event.offset,
-          ...(event.exclusive ? { exclusive: { ...event.exclusive } } : {}),
-        })
+        if (out.length >= limit) break
+        out.push(
+          eventSnapshot({
+            content: event.content,
+            meta: event.meta,
+            offset: event.offset,
+            ...(event.exclusive ? { exclusive: { ...event.exclusive } } : {}),
+          }),
+        )
       }
     }
 

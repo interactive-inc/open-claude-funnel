@@ -18,6 +18,9 @@
 | time channel の `persist` と channel directory | `timeChannel({ statePersister })`。指定しなければ保存・catch-up は無効 |
 | `/status` / `/health` の pid / funnelDir | 削除。プロセス・作業場所の識別はホストで行う |
 | `/debug` の単一 listener・診断・CLI 案内 | `listeners` 全件、`subscribers`、取得した履歴。解釈と次の操作はホストが判断 |
+| 保存失敗を記録するだけの `SqliteFunnelEventLog.record()` | logger / onError への通知後に例外を返す。保存失敗後のライブ配送を防ぐ |
+
+独自イベントログの `loadSince(since, limit?)` は offset 昇順で返し、任意の `limit` が指定された場合は件数を制限する。引数省略時の全件取得は維持する。配信イベントとメタデータは読み取り専用の snapshot になり、加工は利用側のコピーに対して行う。
 
 再起動後も再送するホストは、イベントログだけでなく設定ストアのチャネル ID とコネクタ ID も維持する。ホスト所有のログはホストが閉じる。
 
