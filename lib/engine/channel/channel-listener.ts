@@ -38,7 +38,7 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
       deps: this.props.deps,
       signal: combinedSignal,
       onLog: (log) => {
-        if (log.level === "error") this.props.onError?.(log)
+        if (log.level === "error") return this.props.onError?.(log)
       },
       onEvent: async (event) => {
         if (combinedSignal.aborted) return

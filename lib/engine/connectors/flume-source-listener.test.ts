@@ -4,6 +4,7 @@ import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-dia
 import {
   FlumeSource,
   type FlumeEventHandler,
+  type FlumeLogHandler,
   type FlumeSourceStartContext,
   type FlumeStatus,
 } from "@interactive-inc/flume"
@@ -89,6 +90,10 @@ class TestListener extends FunnelFlumeSourceListener {
 
   async startWithHandler(onEvent: FlumeEventHandler): Promise<void> {
     await this.runStart({ sources: [this.source], onEvent })
+  }
+
+  async startWithLogHandler(onLog: FlumeLogHandler): Promise<void> {
+    await this.runStart({ sources: [this.source], onEvent: () => {}, onLog })
   }
 
   async emitStatus(status: FlumeStatus, detail?: string): Promise<void> {
@@ -179,6 +184,19 @@ describe("FunnelFlumeSourceListener", () => {
     expect(listener.source.disconnectCalls).toBe(1)
     expect(listener.resetCount).toBe(1)
     expect(listener.isAlive()).toBe(false)
+  })
+
+  test("async host log failures are recorded without breaking status delivery", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+    await listener.startWithLogHandler(async () => {
+      throw new Error("host log failed")
+    })
+    await listener.emitStatus("connected")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(log.queryConnection({ type: "slack" }).some((row) => row.status === "error" && row.detail.includes("host log failed"))).toBe(true)
+    expect(listener.isConnected()).toBe(true)
+    await listener.stop()
   })
 
   test("concurrent stop calls finalize a listener exactly once", async () => {

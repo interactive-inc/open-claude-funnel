@@ -118,7 +118,15 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       const statusEvent = readStatusLog(log)
       if (statusEvent) this.handleStatus(statusEvent)
 
-      options.onLog?.(log)
+      try {
+        // Host observers may be async despite Flume's void callback type.
+        // Observe their failure without making source shutdown await itself.
+        void Promise.resolve(options.onLog?.(log)).catch((error) => {
+          this.reportObserverError(error)
+        })
+      } catch (error) {
+        this.reportObserverError(error)
+      }
     }
 
     const flumeOptions: {
@@ -157,6 +165,18 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     this.delivery = delivery
     // Do not await this pump: a host callback may itself await stop().
     void this.pumpDelivery(delivery, options.onEvent)
+  }
+
+  private reportObserverError(error: unknown): void {
+    const message = errorMessageOf(error)
+    // Error observers are host code too. Neither sink may turn a handled
+    // rejection into a second unhandled rejection or suppress the other sink.
+    try {
+      this.diagnostics.recordConnection("error", message)
+    } catch {}
+    try {
+      this.logger?.error(`${this.type} log observer error`, { error: message })
+    } catch {}
   }
 
   private async pumpDelivery(
