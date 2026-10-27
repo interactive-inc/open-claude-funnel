@@ -716,11 +716,11 @@ describe("FunnelListenerRegistry", () => {
     const registry = new FunnelListenerRegistry({
       channels: {
         listAllConnectors: () => [
-          { ...view, name: "a" },
-          { ...view, name: "b" },
+          { ...view, id: "a", name: "a" },
+          { ...view, id: "b", name: "b" },
         ],
         createListener: (_channelName: string, connectorName: string) => ({
-          config: { ...config, name: connectorName },
+          config: { ...config, id: connectorName, name: connectorName },
           channelId: "ch-1",
           listener: connectorName === "a" ? listenerA : listenerB,
         }),

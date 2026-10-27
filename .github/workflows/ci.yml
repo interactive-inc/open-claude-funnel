@@ -22,13 +22,15 @@ jobs:
       - run: make build
       - name: Compose SDK input and Channels notifications in Node
         run: |
-          node --input-type=module <<'JS'
+          timeout 10s node --input-type=module <<'JS'
           import assert from "node:assert/strict";
           import { Funnel } from "./dist/index.js";
           import { agentSdkInput, claudeChannelNotification } from "./dist/claude.js";
-          const gateway = new Funnel({ channels: [{ name: "smoke" }] }).gatewayModule({ token: "" });
+          import { scheduleConnector } from "./dist/connectors/schedule.js";
+          const gateway = new Funnel({ connectors: [scheduleConnector()], channels: [{ name: "smoke", connectors: [{ type: "schedule", name: "clock" }] }] }).gatewayModule({ token: "" });
           const events = gateway.events({ channel: "smoke" });
           const input = agentSdkInput(events);
+          await gateway.start();
           gateway.emit({ channel: "smoke", content: "ok" });
           assert.equal(JSON.parse((await input.next()).value.message.content).content, "ok");
           assert.equal(claudeChannelNotification({ content: "ok", offset: 1 }).params.meta.funnel_offset, "1");

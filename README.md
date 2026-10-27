@@ -92,7 +92,9 @@ Slack、Discord、GitHub の接続は `/connectors/<type>` から必要なもの
 - 設定の保存は任意の `store` を渡して行います。保存・再読込する場合はチャネルとコネクタの ID を維持してください。Funnel はパスやファイル形式を定めません。
 - 定期実行の発火状態も既定はメモリです。`scheduleConnector({ stateStore })`、または `/channel` の `timeChannel({ statePersister })` にホストの保存処理を渡せます。
 - `Funnel({ signal })` のキャンセルは接続の監視・復旧も停止します。Bun helper が所有する待受も閉じます。ホスト所有の待受はホストが閉じます。
-- 実行中に接続設定を変えた場合、ホストが `gateway.getRegistry().restart(channel, connector)` で対象の接続を更新します。
+- 接続の所有権・起動ロック・停止意図はチャネル ID とコネクタ ID で保持します。改名だけでは接続を開き直さず、配送時に現在の名前を使います。同じ名前で新しい ID の接続を作っても、以前の接続からは配信しません。
+- 認証情報など接続内容を変えた場合、ホストが `gateway.getRegistry().restart(channel, connector)` で対象を更新します。設定から削除した接続は次の監視処理で停止します。直ちに停止したい場合は削除前に `stop(channel, connector)` を呼びます。
+- 起動のタイムアウトと自動復旧の待ち時間は完了・停止時にキャンセルします。停止後の待ち時間だけで Node.js プロセスを保持しません。
 - `events({ channel, subscriberId, since, signal })` は同一プロセスの購読を作ります。WebSocket と同じ fanout / exclusive・宛先指定・再送を使います。購読は呼び出した時点で始まり、`return()`・ループの `break`・abort・gateway 停止で解除します。
 - 未読キューは既定で200件・4 MiBまでです。超過は購読のエラーとして返し、停止時は未読入力を破棄します。最後に処理できた offset から、保持範囲内で再購読できます。
 - 保存済み履歴の再送は読み取りに合わせて進みます。履歴全件を未読キューに詰めないため、長い履歴も小さなキューで処理できます。再送中に届く新着イベントには未読キューの上限が適用されます。
