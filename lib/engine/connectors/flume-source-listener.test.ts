@@ -181,6 +181,69 @@ describe("FunnelFlumeSourceListener", () => {
     expect(listener.isAlive()).toBe(false)
   })
 
+  test("the final failed delivery is recorded and later deliveries still run", async () => {
+    const log = new MemoryConnectorDiagnosticLog()
+    const listener = new TestListener(log)
+    let calls = 0
+    await listener.startWithHandler(() => {
+      calls += 1
+      if (calls === 1) throw new Error("host delivery failed")
+    })
+    const emit = () => listener.source.capturedCtx!.onEvent({
+      source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0,
+    })
+    emit()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(log.queryConnection({ type: "slack" }).some((row) => row.status === "error" && row.detail.includes("host delivery failed"))).toBe(true)
+    emit()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls).toBe(2)
+    await listener.stop()
+  })
+
+  test("stop discards pending delivery without waiting for the active host callback", async () => {
+    const listener = new TestListener(new MemoryConnectorDiagnosticLog())
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let calls = 0
+    await listener.startWithHandler(async () => {
+      calls += 1
+      entered.resolve()
+      await release.promise
+    })
+    const ctx = listener.source.capturedCtx!
+    const emit = () => ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
+    emit()
+    await entered.promise
+    emit()
+    await listener.stop()
+    release.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls).toBe(1)
+  })
+
+  test("slow host delivery uses Flume's bounded buffer", async () => {
+    const listener = new TestListener(new MemoryConnectorDiagnosticLog())
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let calls = 0
+    await listener.startWithHandler(async () => {
+      calls += 1
+      entered.resolve()
+      await release.promise
+    })
+    const ctx = listener.source.capturedCtx!
+    const emit = () => ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
+    emit()
+    await entered.promise
+    for (let i = 0; i < 2000; i += 1) emit()
+    release.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(calls).toBeGreaterThan(1)
+    expect(calls).toBeLessThanOrEqual(1001)
+    await listener.stop()
+  })
+
   test("records connected/disconnected on status transitions and flips alive accordingly", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)
@@ -206,11 +269,6 @@ describe("FunnelFlumeSourceListener", () => {
   })
 
   test("stop records disconnected then stopped and calls onStop even when the source disconnect throws", async () => {
-    // Flume 0.6 owns the stop pipeline and never re-throws a per-source
-    // disconnect error to its caller (the runStop wrapper converts unexpected
-    // throws into FlumeStopped). So our listener's stop() does not see a
-    // disconnect error — it just sees a clean stop. We verify the lifecycle
-    // still finalises and onStop fires.
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log, { disconnectError: new Error("close kaput") })
 
@@ -223,6 +281,7 @@ describe("FunnelFlumeSourceListener", () => {
 
     const rows = log.queryConnection({ type: "slack" }).map((r) => r.status)
     expect(rows).toContain("connected")
+    expect(log.queryConnection({ type: "slack" }).some((row) => row.status === "error" && row.detail.includes("close kaput"))).toBe(true)
     expect(rows[rows.length - 1]).toBe("stopped")
   })
 

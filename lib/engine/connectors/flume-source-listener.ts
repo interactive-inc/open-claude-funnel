@@ -80,12 +80,8 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   protected readonly diagnostics: FunnelConnectorDiagnosticsRecorder
   protected readonly type: string
   protected running: FlumeRunning | null = null
-  /**
-   * Keep delivery outside Flume's callback queue so a notify handler may await
-   * stop() (which drains that queue) without waiting on itself. Serialize only
-   * these detached deliveries; connection state stays owned by Flume sources.
-   */
-  private deliveryChain: Promise<void> = Promise.resolve()
+  /** Flume owns the bounded queue; stopping never waits for a host callback. */
+  private delivery: AsyncIterableIterator<FlumeStreamItem> | null = null
 
   constructor(props: Props) {
     super()
@@ -115,13 +111,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       reconnectOption === false ? undefined : reconnectOption === true ? {} : reconnectOption
 
     const handleItem = (item: FlumeStreamItem): void => {
-      if (item.kind === "event") {
-        // Detach from Flume's callback queue to allow stop() inside notify.
-        this.deliveryChain = this.deliveryChain
-          .catch(() => {})
-          .then(() => Promise.resolve(options.onEvent(item.event)))
-        return
-      }
+      if (item.kind === "event") return
 
       const log = item.log
       const statusEvent = readStatusLog(log)
@@ -162,27 +152,55 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     }
 
     this.running = result
+    const delivery = result.stream()
+    this.delivery = delivery
+    // Do not await this pump: a host callback may itself await stop().
+    void this.pumpDelivery(delivery, options.onEvent)
+  }
+
+  private async pumpDelivery(
+    delivery: AsyncIterableIterator<FlumeStreamItem>,
+    onEvent: FlumeEventHandler,
+  ): Promise<void> {
+    try {
+      for await (const item of delivery) {
+        if (this.delivery !== delivery) break
+        if (item.kind !== "event") continue
+        try {
+          await onEvent(item.event)
+        } catch (error) {
+          this.diagnostics.recordConnection("error", errorMessageOf(error))
+          this.logger?.error(`${this.type} delivery error`, { error: errorMessageOf(error) })
+        }
+      }
+    } catch (error) {
+      this.diagnostics.recordConnection("error", errorMessageOf(error))
+      this.logger?.error(`${this.type} stream error`, { error: errorMessageOf(error) })
+    }
   }
 
   async stop(): Promise<void> {
     const running = this.running
     if (!running) return
 
+    const delivery = this.delivery
+    this.delivery = null
+    await delivery?.return?.()
     try {
-      await running.close()
+      const closed = await running.close()
       // Flume 0.11 separates source shutdown from callback completion.
       // Finish queued status/log callbacks before finalizing listener state.
       await running.drain()
+      for (const { error } of closed.errors()) {
+        this.diagnostics.recordConnection("error", errorMessageOf(error))
+        this.logger?.error(`${this.type} stop error`, { error: errorMessageOf(error) })
+      }
       this.diagnostics.recordConnection("disconnected", "")
     } catch (error) {
       this.diagnostics.recordConnection("error", errorMessageOf(error))
       this.logger?.error(`${this.type} stop error`, { error: errorMessageOf(error) })
     } finally {
       this.running = null
-      // Reset the chain so the next start() does not inherit a settled
-      // promise from the previous lifecycle (preserves the invariant that
-      // the chain head reflects this lifecycle's deliveries only).
-      this.deliveryChain = Promise.resolve()
       this.onStop()
       this.diagnostics.recordConnection("stopped", "")
     }

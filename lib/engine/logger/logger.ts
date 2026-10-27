@@ -1,8 +1,4 @@
-/**
- * Structured logger with three levels and an optional log-file path.
- * Defaults to NodeFunnelLogger (appends to `<os.tmpdir()>/funnel/funnel.log`);
- * MemoryFunnelLogger captures entries in memory and NoopFunnelLogger silences output.
- */
+/** Host-provided structured logging; no file or directory is created implicitly. */
 export abstract class FunnelLogger {
   abstract info(message: string, meta?: Record<string, unknown>): void
   abstract warn(message: string, meta?: Record<string, unknown>): void
