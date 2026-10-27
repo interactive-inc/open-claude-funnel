@@ -22,6 +22,9 @@
   },
   "files": [
     "dist/**/*",
+    ".docs/embedding.md",
+    ".docs/design.md",
+    ".docs/migration-0.72.md",
     "README.md",
     "LICENSE"
   ],
@@ -95,6 +98,7 @@
     "test": "bun test",
     "typecheck": "tsgo --noEmit",
     "build": "vp pack",
+    "check:package": "node scripts/check-package.mjs",
     "lint": "vp lint"
   },
   "dependencies": {

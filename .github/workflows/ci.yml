@@ -20,6 +20,7 @@ jobs:
       - run: bun run lint
       - run: make check
       - run: make build
+      - run: bun run check:package
       - name: Compose SDK input and Channels notifications in Node
         run: |
           timeout 10s node --input-type=module <<'JS'

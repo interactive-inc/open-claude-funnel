@@ -119,6 +119,7 @@ SQLite アダプターは Bun 専用です。通常の import では SQLite や�
 bun install
 make check
 make build
+bun run check:package
 ```
 
 Node.js 22 以降または Bun 1.3 以降。設定、接続、配信の API は TypeScript の公開型を参照してください。0.71 系からの破壊的変更は [移行案内](.docs/migration-0.72.md)、設計は [設計メモ](.docs/design.md) にあります。
