@@ -3,7 +3,6 @@ import { FlumeSource } from "@interactive-inc/flume"
 import type { FlumeEvent } from "@interactive-inc/flume"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
-import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { FunnelChannelSupervisor } from "@/engine/channel/channel-supervisor"
 import { defineChannel } from "@/engine/channel/channel"
 
@@ -52,8 +51,7 @@ function freshSupervisor(options: { signal?: AbortSignal } = {}) {
     },
     logger,
     clock: new MemoryFunnelClock(),
-    fs: new MemoryFunnelFileSystem(),
-    dir: "/sandbox/.funnel",
+
     signal: options.signal,
   })
   return { received, logger, supervisor }

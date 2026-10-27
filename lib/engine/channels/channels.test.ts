@@ -8,31 +8,22 @@ import { scheduleConnector } from "@/engine/connectors/schedule-connector"
 import { scheduleEntrySchema } from "@/engine/connectors/schedule-connector-schema"
 import { slackConnector } from "@/engine/connectors/slack-connector"
 import { slackConnectorSchema } from "@/engine/connectors/slack-connector-schema"
-import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelIdGenerator } from "@/engine/id/memory-id-generator"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
-import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { MockFunnelSettingsReader } from "@/engine/settings/mock-settings-reader"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 
-const profileChecker = { hasChannelRef: () => false }
-
-const buildRegistry = (fs: MemoryFunnelFileSystem): FunnelConnectorRegistry =>
+const buildRegistry = (): FunnelConnectorRegistry =>
   new FunnelConnectorRegistry({
     descriptors: [slackConnector(), ghConnector(), discordConnector(), scheduleConnector()],
-    fs,
-    process: new MemoryFunnelProcessRunner(),
+
     logger: new NoopFunnelLogger(),
-    dir: "/funnel",
   })
 
 const buildChannels = (): FunnelChannels => {
-  const fs = new MemoryFunnelFileSystem()
-
   return new FunnelChannels({
     store: new MockFunnelSettingsReader(),
-    registry: buildRegistry(fs),
-    profileChecker,
+    registry: buildRegistry(),
     clock: new MemoryFunnelClock(),
     idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
   })
@@ -218,21 +209,6 @@ describe("FunnelChannels", () => {
     expect(() => channels.rename("ops", "alt")).toThrow(/already exists/)
     channels.rename("ops", "team")
     expect(channels.get("team")?.name).toBe("team")
-  })
-
-  test("remove blocks when a profile references the channel", () => {
-    const fs = new MemoryFunnelFileSystem()
-    const referencingChecker = { hasChannelRef: (id: string) => id === "id-1" }
-    const channels = new FunnelChannels({
-      store: new MockFunnelSettingsReader(),
-      registry: buildRegistry(fs),
-      profileChecker: referencingChecker,
-      clock: new MemoryFunnelClock(),
-      idGenerator: new MemoryFunnelIdGenerator({ prefix: "id" }),
-    })
-
-    channels.add({ name: "ops" })
-    expect(() => channels.remove("ops")).toThrow(/referenced by a profile/)
   })
 
   test("listAllConnectors returns flattened channelId/channelName-tagged views", () => {

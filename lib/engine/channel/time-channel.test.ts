@@ -1,80 +1,42 @@
-import { describe, it, expect } from "vitest"
+import { describe, expect, test } from "bun:test"
+import { timeChannel } from "@/engine/channel/time-channel"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
-import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
-import { FunnelChannelSupervisor } from "@/engine/channel/channel-supervisor"
-import { timeChannel } from "@/engine/channel/time-channel"
-
-function waitFor(condition: () => boolean, timeoutMs = 1000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const start = Date.now()
-    const tick = () => {
-      if (condition()) return resolve()
-      if (Date.now() - start > timeoutMs) return reject(new Error("waitFor timeout"))
-      setTimeout(tick, 5)
-    }
-    tick()
-  })
+import type { FlumeTimeSourceState } from "@interactive-inc/flume"
+const context = {
+  channelId: "clock",
+  channelName: "clock",
+  signal: new AbortController().signal,
+  logger: new MemoryFunnelLogger(),
+  clock: new MemoryFunnelClock(),
 }
-
-function freshSupervisor(fs: MemoryFunnelFileSystem) {
-  return new FunnelChannelSupervisor({
-    broadcaster: { broadcast: () => {} },
-    logger: new MemoryFunnelLogger(),
-    clock: new MemoryFunnelClock(),
-    fs,
-    dir: "/sandbox/.funnel",
+describe("time channel state ownership", () => {
+  test("builds a time source without a directory or persistence", async () => {
+    const runtime = await timeChannel({ id: "clock", cron: "* * * * *" }).build(context)
+    expect(runtime.sources).toHaveLength(1)
   })
-}
-
-describe("timeChannel", () => {
-  it("registers and starts a cron-driven channel that broadcasts on tick", async () => {
-    const fs = new MemoryFunnelFileSystem()
-    const supervisor = freshSupervisor(fs)
-
-    supervisor.register(
-      timeChannel({
-        id: "tick-test",
-        cron: "* * * * *",
-        persist: false,
-        transform: (event) => {
-          const firedAt =
-            event.source === "time" && typeof event.data.firedAt === "number"
-              ? event.data.firedAt
-              : 0
-          return { content: `hour:${new Date(firedAt).getUTCHours()}`, meta: { kind: "tick" } }
+  test("hands explicit host state to the time source for catch-up", async () => {
+    const calls: string[] = []
+    let state: FlumeTimeSourceState | null = { lastFiredAt: Date.now() - 120000 }
+    const runtime = await timeChannel({
+      id: "clock",
+      cron: "* * * * *",
+      statePersister: {
+        load: async () => {
+          calls.push("load")
+          return state
         },
-      }),
-    )
-
-    await supervisor.start()
-
-    // We can't easily wait for a real cron tick (would need ~60s of real time);
-    // instead, verify the channel is registered and confluence has it.
-    expect(supervisor.has("tick-test")).toBe(true)
-    expect(supervisor.ids()).toEqual(["tick-test"])
-
-    await supervisor.stop()
-  })
-
-  it("persist:true writes lastFiredAt under <dir>/channels/<id>/time.json", async () => {
-    const fs = new MemoryFunnelFileSystem()
-
-    // Seed an existing state so catchup has something to load (verifies file path).
-    fs.mkdirSync("/sandbox/.funnel/channels/persisted/", { recursive: true })
-    fs.writeFileSync(
-      "/sandbox/.funnel/channels/persisted/time.json",
-      JSON.stringify({ lastFiredAt: 0 }),
-    )
-
-    const supervisor = freshSupervisor(fs)
-
-    supervisor.register(timeChannel({ id: "persisted", cron: "* * * * *", persist: true }))
-    await supervisor.start()
-    await waitFor(() => fs.existsSync("/sandbox/.funnel/channels/persisted/time.json"))
-
-    expect(fs.existsSync("/sandbox/.funnel/channels/persisted/time.json")).toBe(true)
-
-    await supervisor.stop()
+        save: async (value) => {
+          calls.push("save")
+          state = value
+        },
+      },
+    }).build(context)
+    const { Flume } = await import("@interactive-inc/flume")
+    const running = await new Flume({ sources: runtime.sources }).open()
+    if (running instanceof Error) throw running
+    await running.close()
+    await running.drain()
+    expect(calls).toContain("load")
   })
 })

@@ -4,8 +4,6 @@ import type { FunnelChannels } from "@/engine/channels/channels"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
-import type { FunnelProcessRunner } from "@/engine/process/process-runner"
-import { resolveFunnelPort } from "@/engine/settings/settings-store"
 import type { FunnelClock } from "@/engine/time/clock"
 import type { BroadcastSubscriber, FunnelBroadcaster } from "@/gateway/broadcaster"
 import { FunnelEventLog } from "@/gateway/event-log/event-log"
@@ -20,53 +18,30 @@ import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 export type { GatewayEventStore }
 
 // Bind to loopback by default so the gateway is never reachable off-box. The
-// daemon honors FUNNEL_HOST to expose it deliberately; every privileged
+// host explicitly chooses a bind address; every privileged
 // endpoint still requires the bearer token regardless of the bind address.
 const DEFAULT_HOST = "127.0.0.1"
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"])
 
 type Deps = GatewayEventStore & {
   channels: FunnelChannels
-  port?: number
-  /** Bind address for `Bun.serve`. Defaults to `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose on the network. */
+  port: number
   hostname?: string
-  process?: FunnelProcessRunner
   clock?: FunnelClock
   logger?: FunnelLogger
-  /** Host hook for surfacing internal exceptions (broadcaster / listener registry). Defaults to no-op. */
   onError?: OnFunnelError
-  selfPid?: number
-  /** Funnel home dir, used to scope kill-competing to daemons rooted at the same dir. Defaults to FUNNEL_DIR. */
-  dir?: string
-  /** Runtime directory used by the default replay database. Defaults to `funnelTmpDir()`. */
-  tmpDir?: string
-  killCompetingSlack?: boolean
-  /** Bearer token required for `/listeners*`, `/status`, and `/ws`. Empty string disables auth (tests only). */
-  token?: string
-  /**
-   * Permit binding a non-loopback hostname without a token. Off by default:
-   * `start()` throws when `hostname` is reachable off-box and `token` is empty,
-   * because every privileged endpoint would then be open to the network. Set
-   * this only when you've deliberately fronted the gateway with your own auth.
-   */
+  token: string
+  signal?: AbortSignal
   allowInsecureHost?: boolean
-  /**
-   * Additional hono app mounted before the built-in gateway routes.
-   * Use to embed host-specific endpoints (e.g. an MCP route, custom `/api/*`).
-   * Host routes are mounted first and take precedence on conflict — Hono
-   * matches the first registered route, so a host `/health` shadows the
-   * built-in one. Built-in `/listeners`, `/status`, `/channels`, `/health`
-   * are mounted after.
-   */
   extraRoutes?: Hono<Env>
-  /** Read-side diagnostic source exposed to the built-in debug route. */
   diagnosticLog?: ConnectorDiagnosticLog
+  healthRoute?: boolean
 }
 
 /**
  * In-process gateway that owns its listen socket: runs `Bun.serve` (HTTP +
  * WebSocket /ws), boots connector listeners, fans events out, and persists them
- * via a `FunnelEventLog` (SQLite by default). System events (gateway lifecycle,
+ * via a host-supplied `FunnelEventLog` or bounded memory. System events (gateway lifecycle,
  * connect/disconnect) flow to `FunnelLogger` instead — keeping the SQLite seq
  * space exclusive to broadcaster traffic so the broadcaster's offset counter and
  * `getMaxSeq()` stay aligned without per-event coordination. Exposes
@@ -81,36 +56,44 @@ export class FunnelGatewayServer {
   private readonly configuredPort: number
   private readonly configuredHostname: string
   private readonly logger: FunnelLogger | undefined
-  private readonly selfPid: number
   private readonly token: string
   private readonly allowInsecureHost: boolean
   private server: Server<GatewayWsData> | null = null
+  private readonly signal: AbortSignal | undefined
+  private readonly onAbort: () => void
+  private stopPromise: Promise<void> | null = null
   private disposed = false
 
   constructor(deps: Deps) {
-    this.configuredPort = deps.port ?? resolveFunnelPort()
+    if (!Number.isInteger(deps.port) || deps.port < 0 || deps.port > 65535)
+      throw new Error("port must be an integer between 0 and 65535")
+    this.signal = deps.signal
+    this.onAbort = () => {
+      void this.stop().catch((error: unknown) =>
+        deps.onError?.(error instanceof Error ? error : new Error(String(error)), {
+          component: "gateway-stop",
+        }),
+      )
+    }
+    this.configuredPort = deps.port
     this.configuredHostname = deps.hostname ?? DEFAULT_HOST
     this.logger = deps.logger
-    this.selfPid = deps.selfPid ?? globalThis.process.pid
     this.token = deps.token ?? ""
     this.allowInsecureHost = deps.allowInsecureHost ?? false
     this.module = new FunnelGatewayModule({
       channels: deps.channels,
-      // EventStore is a union (dbPath xor eventLog); spread it so exactly one reaches the module.
-      ...(deps.eventLog ? { eventLog: deps.eventLog } : { dbPath: deps.dbPath }),
-      process: deps.process,
+      // Persistent replay is supplied explicitly by the host.
+      eventLog: deps.eventLog,
       clock: deps.clock,
       logger: deps.logger,
       onError: deps.onError,
-      selfPid: deps.selfPid,
-      dir: deps.dir,
-      tmpDir: deps.tmpDir,
-      port: this.configuredPort,
-      killCompetingSlack: deps.killCompetingSlack,
       token: deps.token,
       extraRoutes: deps.extraRoutes,
       diagnosticLog: deps.diagnosticLog,
+      healthRoute: deps.healthRoute,
     })
+    // This helper owns the socket; the nested module does not also own shutdown.
+    if (!this.signal?.aborted) this.signal?.addEventListener("abort", this.onAbort, { once: true })
   }
 
   /**
@@ -127,7 +110,8 @@ export class FunnelGatewayServer {
   }
 
   async start(): Promise<void> {
-    if (this.disposed) {
+    this.signal?.throwIfAborted()
+    if (this.disposed || this.stopPromise) {
       // A second start() after stop() would silently no-op once `eventLog`
       // was closed, leaving the caller with a dead facade. Surface it loudly
       // so the host knows to construct a fresh instance.
@@ -147,16 +131,7 @@ export class FunnelGatewayServer {
       )
     }
 
-    // Kill any same-dir competitor BEFORE binding and opening our Socket Mode
-    // connection. Doing it here (not after the bind) frees the port if a stale
-    // same-dir daemon still holds it, and the kill waits for the competitor to
-    // exit — so its Slack socket is closed before ours opens. Otherwise two
-    // Socket Mode connections with the same token overlap and Slack splits
-    // inbound events between them.
-    await this.module.killCompetingSlackIfNeeded()
-
     this.server = Bun.serve<GatewayWsData>({
-      port: this.configuredPort,
       hostname: this.configuredHostname,
       development: false,
       fetch: (request, server) => {
@@ -172,28 +147,27 @@ export class FunnelGatewayServer {
     this.logServerStarted()
 
     // Roll back the Bun.serve binding if listener boot throws; otherwise the
-    // host is left with `this.server` holding the port (EADDRINUSE on retry)
-    // while no listeners are actually running. `module.start()` re-runs the
-    // competitor kill as a no-op — it already ran above, before the bind.
+    // host is left with a bound port while no listeners are running.
     try {
       await this.module.start()
+      this.signal?.throwIfAborted()
     } catch (error) {
-      this.server.stop()
+      this.server?.stop(true)
       this.server = null
       throw error
     }
   }
 
-  async stop(): Promise<void> {
-    await this.module.stopListeners()
-
-    if (this.server) {
-      this.server.stop()
+  stop(): Promise<void> {
+    this.stopPromise ??= (async () => {
+      this.signal?.removeEventListener("abort", this.onAbort)
+      await this.module.stopListeners()
+      this.server?.stop(true)
       this.server = null
-    }
-
-    this.module.dispose()
-    this.disposed = true
+      this.module.dispose()
+      this.disposed = true
+    })()
+    return this.stopPromise
   }
 
   /**
@@ -241,9 +215,7 @@ export class FunnelGatewayServer {
    * listener registry's `notify` callback) and the public `/channels/:channel/publish`
    * route. Returns the assigned event offset.
    *
-   * Public SDK surface for hosts running this gateway in-process — the no-HTTP
-   * sibling of `funnel.publisher.publish()`, which targets a daemon instead
-   * (see fnl docs programmable-api).
+   * The host can publish in-process without an HTTP request.
    */
   emit(input: {
     channel: string
@@ -251,6 +223,7 @@ export class FunnelGatewayServer {
     content: string
     meta?: Record<string, string>
   }): { offset: number } {
+    if (this.stopPromise || this.signal?.aborted) throw new Error("gateway is stopped")
     return this.module.emit(input)
   }
 
@@ -259,7 +232,6 @@ export class FunnelGatewayServer {
       event_type: "system",
       action: "gateway_start",
       port: String(this.port),
-      pid: String(this.selfPid),
     })
 
     this.logger?.info("funnel gateway listening", {

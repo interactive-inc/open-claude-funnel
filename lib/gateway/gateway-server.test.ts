@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test"
 const isBun = typeof globalThis.Bun !== "undefined"
 import { Hono } from "hono"
 import { Funnel } from "@/funnel"
-import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import type { Env } from "@/gateway/factory"
@@ -34,18 +33,13 @@ class TrackableEventLog extends FunnelEventLog {
 }
 
 const startServer = async (token: string) => {
-  const fs = new MemoryFunnelFileSystem()
   const funnel = new Funnel({
-    fs,
     logger: new NoopFunnelLogger(),
-    dir: "/funnel",
-    tmpDir: "/tmp/funnel-test",
   })
   const server = funnel.gatewayServer({
     port: 0,
-    killCompetingSlack: false,
+
     token,
-    dbPath: "/tmp/funnel-test/events.db",
   })
 
   await server.start()
@@ -53,18 +47,14 @@ const startServer = async (token: string) => {
 }
 
 const startServerWithExtras = async (extras: Hono<Env>) => {
-  const fs = new MemoryFunnelFileSystem()
   const funnel = new Funnel({
-    fs,
     logger: new NoopFunnelLogger(),
-    dir: "/funnel",
-    tmpDir: "/tmp/funnel-test",
   })
   const server = funnel.gatewayServer({
     port: 0,
-    killCompetingSlack: false,
+
     token: "",
-    dbPath: "/tmp/funnel-test/events.db",
+
     extraRoutes: extras,
   })
 
@@ -78,20 +68,15 @@ const startServerOn = async (props: {
   logger?: MemoryFunnelLogger
   allowInsecureHost?: boolean
 }) => {
-  const fs = new MemoryFunnelFileSystem()
   const funnel = new Funnel({
-    fs,
     logger: props.logger ?? new NoopFunnelLogger(),
-    dir: "/funnel",
-    tmpDir: "/tmp/funnel-test",
   })
   const server = funnel.gatewayServer({
     port: 0,
     hostname: props.hostname,
-    killCompetingSlack: false,
+
     token: props.token,
     allowInsecureHost: props.allowInsecureHost,
-    dbPath: "/tmp/funnel-test/events.db",
   })
 
   await server.start()
@@ -139,10 +124,8 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
   test("/debug reads the diagnostic log injected by the embedding host", async () => {
     const diagnosticLog = new MemoryConnectorDiagnosticLog()
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
-      dir: "/custom/funnel",
-      tmpDir: "/custom/runtime",
+
       diagnosticLog,
     })
     const channel = funnel.channels.add({ name: "ops" })
@@ -156,7 +139,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
     })
     const server = funnel.gatewayServer({
       port: 0,
-      killCompetingSlack: false,
+
       token: "debug-token",
       eventLog: new MemoryFunnelEventLog(),
     })
@@ -171,7 +154,7 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
     expect(res.status).toBe(200)
     expect(body).toContain("custom payload")
-    expect(body).toContain('"message":"no Claude connected to this channel"')
+    expect(body).toContain('"message":"no subscribers connected to this channel"')
     expect(body).not.toContain("no connectors configured")
   })
 
@@ -183,14 +166,14 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
     expect(res.status).toBe(200)
   })
 
-  test("/health reports the daemon funnelDir so a wrong-gateway-on-a-shared-port is detectable", async () => {
+  test("/health has no working-directory or process ownership metadata", async () => {
     active = await startServer("secret-dir")
     const url = `http://localhost:${active.server.port}/health`
     const res = await fetch(url)
     const body = JSON.parse(await res.text())
 
     expect(res.status).toBe(200)
-    expect(body.funnelDir).toBe("/funnel")
+    expect(body.funnelDir).toBeUndefined()
   })
 
   test("/ws upgrade is rejected with 404 for a channel this gateway does not know", async () => {
@@ -315,16 +298,12 @@ describe.skipIf(!isBun)("FunnelGatewayServer extraRoutes", () => {
 
 describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
   test("onEvent observes emitted events and an injected log records them", () => {
-    const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({
-      fs,
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-test",
     })
     funnel.channels.add({ name: "ops" })
     const eventLog = new MemoryFunnelEventLog()
-    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+    const server = funnel.gatewayServer({ port: 0, token: "", eventLog })
 
     const observed: string[] = []
     server.onEvent((event) => observed.push(event.content))
@@ -338,18 +317,13 @@ describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
   })
 
   test("rejects start() after stop() instead of silently no-op'ing on a closed event log", async () => {
-    const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({
-      fs,
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-test",
     })
     const server = funnel.gatewayServer({
       port: 0,
-      killCompetingSlack: false,
+
       token: "",
-      dbPath: "/tmp/funnel-test/restart.db",
     })
 
     await server.start()
@@ -359,15 +333,11 @@ describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
   })
 
   test("stop() does not close an externally-injected event log", async () => {
-    const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({
-      fs,
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-test",
     })
     const eventLog = new TrackableEventLog()
-    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+    const server = funnel.gatewayServer({ port: 0, token: "", eventLog })
 
     await server.start()
     await server.stop()
@@ -376,16 +346,12 @@ describe.skipIf(!isBun)("FunnelGatewayServer event log", () => {
   })
 
   test("emit stamps channelId whether the channel is named by name or by id", () => {
-    const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({
-      fs,
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-test",
     })
     const channel = funnel.channels.add({ name: "ops" })
     const eventLog = new MemoryFunnelEventLog()
-    const server = funnel.gatewayServer({ port: 0, killCompetingSlack: false, token: "", eventLog })
+    const server = funnel.gatewayServer({ port: 0, token: "", eventLog })
 
     const stamped: (string | undefined)[] = []
     server.onEvent((event) => stamped.push(event.meta?.channelId))
@@ -433,19 +399,14 @@ describe.skipIf(!isBun)("FunnelGatewayServer bind address", () => {
 
 describe.skipIf(!isBun)("FunnelGatewayServer error responses", () => {
   const startWithChannel = async () => {
-    const fs = new MemoryFunnelFileSystem()
     const funnel = new Funnel({
-      fs,
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-test",
     })
     funnel.channels.add({ name: "ops" })
     const server = funnel.gatewayServer({
       port: 0,
-      killCompetingSlack: false,
+
       token: "secret",
-      dbPath: "/tmp/funnel-test/events.db",
     })
 
     await server.start()

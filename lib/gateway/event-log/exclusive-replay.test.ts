@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Funnel } from "@/funnel"
-import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import type { FunnelEventLog } from "@/gateway/event-log/event-log"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
@@ -18,9 +17,9 @@ describe.each(stores)("exclusive replay with $name", (store) => {
   test("an offline event is claimed once, including after the module is recreated", () => {
     const log = store.create()
     try {
-      const funnel = new Funnel({ fs: new MemoryFunnelFileSystem(), dir: "/replay-test" })
+      const funnel = new Funnel()
       const channel = funnel.channels.add({ name: "ops", delivery: "exclusive" })
-      const gateway = funnel.gatewayModule({ eventLog: log, token: "", killCompetingSlack: false })
+      const gateway = funnel.gatewayModule({ eventLog: log, token: "" })
       gateway.emit({ channel: "ops", content: "queued" })
       gateway.emit({ channel: "ops", content: "for bob", meta: { target: "bob" } })
       const alice: Parameters<FunnelBroadcaster["replaySince"]>[1] = {
@@ -39,7 +38,6 @@ describe.each(stores)("exclusive replay with $name", (store) => {
       const restarted = funnel.gatewayModule({
         eventLog: log,
         token: "",
-        killCompetingSlack: false,
       })
       expect(
         restarted

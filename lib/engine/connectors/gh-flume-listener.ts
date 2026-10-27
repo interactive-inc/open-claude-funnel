@@ -1,3 +1,4 @@
+import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 import { FlumeGitHubSource } from "@interactive-inc/flume/github"
 import type { FlumeGitHubEvent, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
@@ -5,8 +6,6 @@ import { errorMessageOf } from "@/engine/error/error-message-of"
 import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import type { FunnelLogger } from "@/engine/logger/logger"
-import { FunnelProcessRunner } from "@/engine/process/process-runner"
-import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
 
@@ -14,7 +13,6 @@ type Deps = {
   config: GhConnectorConfig
   channelId?: string
   env?: NodeJS.ProcessEnv
-  process?: FunnelProcessRunner
   logger?: FunnelLogger
   diagnosticLog?: ConnectorDiagnosticLog
   flumeDeps?: Partial<FlumeRuntimeDeps>
@@ -22,26 +20,10 @@ type Deps = {
   signal?: AbortSignal
 }
 
-const defaultProcess = new NodeFunnelProcessRunner()
-
-/**
- * GitHub listener backed by `@interactive-inc/flume`'s `FlumeGitHubSource`
- * (raw REST polling of `/notifications` + Zod).
- *
- * Token resolution order mirrors the other connectors' literal-or-env-ref
- * slot, with a `gh auth token` fallback as the convenience path:
- *
- *   1. `config.token` (literal)
- *   2. `config.tokenEnv` (env var name → value)
- *   3. `gh auth token` (reuses the `gh` CLI's authenticated session)
- *
- * The adapter still uses `gh api` for outbound calls, so when the fallback
- * is in use the auth model is unchanged end-to-end.
- */
+/** GitHub notifications over Flume, using host-supplied credentials. */
 export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
   private readonly config: GhConnectorConfig
   private readonly env: NodeJS.ProcessEnv
-  private readonly process: FunnelProcessRunner
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
   private readonly signal: AbortSignal | undefined
 
@@ -55,7 +37,6 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
     })
     this.config = deps.config
     this.env = deps.env ?? process.env
-    this.process = deps.process ?? defaultProcess
     this.flumeDeps = deps.flumeDeps ?? {}
     this.signal = deps.signal
   }
@@ -91,28 +72,12 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
   }
 
   private async resolveToken(): Promise<string> {
-    if (this.config.token) return this.config.token
-
-    if (this.config.tokenEnv) {
-      const fromEnv = this.env[this.config.tokenEnv]
-
-      if (typeof fromEnv === "string" && fromEnv !== "") return fromEnv
-
-      throw new Error(
-        `${this.config.name}.token references env var "${this.config.tokenEnv}" but it is not set`,
-      )
-    }
-
-    // Fall back to `gh auth token` — reuses the `gh` CLI's authenticated
-    // session. Keeps the auth model identical to the original `gh api`
-    // polling listener: no separate token management.
-    const result = await this.process.run(["gh", "auth", "token"])
-
-    if (result.exitCode !== 0) {
-      throw new Error(`gh auth token failed: ${result.stderr.trim() || result.stdout.trim()}`)
-    }
-
-    return result.stdout.trim()
+    return resolveConnectorToken({
+      literal: this.config.token,
+      envVar: this.config.tokenEnv,
+      env: this.env,
+      label: `${this.config.name}.token`,
+    })
   }
 
   private async handleEvent(event: FlumeGitHubEvent, notify: NotifyFn): Promise<void> {

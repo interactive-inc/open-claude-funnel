@@ -1,6 +1,5 @@
-import type { FlumeEvent, FlumeSource, FlumeStatePersister } from "@interactive-inc/flume"
+import type { FlumeEvent, FlumeSource } from "@interactive-inc/flume"
 import type { FunnelClock } from "@/engine/time/clock"
-import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import type { FunnelLogger } from "@/engine/logger/logger"
 
 /**
@@ -36,23 +35,13 @@ export type ChannelRuntime = {
   readonly transform?: ChannelTransform
 }
 
-/**
- * Environment passed to `Channel.build`. IO boundaries stay abstract via
- * FunnelClock / FunnelLogger / FunnelFileSystem. `statePersister` builds a
- * funnel-fs-backed `FlumeStatePersister<S>` scoped to the channel id
- */
+/** Host context for building source connections. State is provided to sources explicitly. */
 export type ChannelBuildContext = {
   readonly channelId: string
   readonly channelName: string
   readonly signal: AbortSignal
   readonly logger: FunnelLogger
   readonly clock: FunnelClock
-  readonly fs: FunnelFileSystem
-  /**
-   * Reads/writes `<funnelDir>/channels/<channelId>/<filename>.json` in the
-   * `FlumeStatePersister<S>` shape flume expects
-   */
-  readonly statePersister: <S>(filename: string) => FlumeStatePersister<S>
 }
 
 /**

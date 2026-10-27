@@ -1,4 +1,8 @@
-import type { FlumeCatchupPolicy, FlumeTimeSourceState } from "@interactive-inc/flume"
+import type {
+  FlumeCatchupPolicy,
+  FlumeTimeSourceState,
+  FlumeStatePersister,
+} from "@interactive-inc/flume"
 import { FlumeTimeSource } from "@interactive-inc/flume/time"
 import { defineChannel, type Channel, type ChannelTransform } from "@/engine/channel/channel"
 
@@ -13,43 +17,22 @@ type Options = {
    * `{ content: "tick", meta: { cron, firedAt } }`
    */
   readonly transform?: ChannelTransform
-  /**
-   * Whether to enable `statePersister` (default true). `false` also disables
-   * catchup
-   */
-  readonly persist?: boolean
+  /** Optional host-owned state. Catch-up is disabled when absent. */
+  readonly statePersister?: FlumeStatePersister<FlumeTimeSourceState>
 }
 
-/**
- * Factory for a single-cron-entry time channel.
- *
- * Example (inta jiho):
- * ```ts
- * const jiho = timeChannel({
- *   id: "inta-jiho",
- *   cron: "0 * * * *",
- *   transform: (event) => ({
- *     content: `⏰ ${new Date(event.data.firedAt as number).getHours()}時をお知らせします。`,
- *     meta: { event_type: "schedule", source: "inta-jiho", target_role: "primary" },
- *   }),
- * })
- * ```
- *
- * With `persist: true` (default), `lastFiredAt` is kept in `<channelDir>/time.json`
- * and missed ticks are recovered on startup according to `catchupPolicy`
- * (default lastOnly)
- */
+/** Optional time source. Catch-up persistence is supplied by the host. */
 export function timeChannel(options: Options): Channel {
-  const persist = options.persist ?? true
+  const persist = options.statePersister !== undefined
   const catchupPolicy: FlumeCatchupPolicy = options.catchupPolicy ?? { mode: "lastOnly" }
 
   return defineChannel({
     id: options.id,
     name: options.name ?? options.id,
-    build: (ctx) => {
+    build: () => {
       const source = new FlumeTimeSource({
         cron: options.cron,
-        statePersister: persist ? ctx.statePersister<FlumeTimeSourceState>("time") : undefined,
+        statePersister: options.statePersister,
         catchupPolicy: persist ? catchupPolicy : { mode: "off" },
       })
 

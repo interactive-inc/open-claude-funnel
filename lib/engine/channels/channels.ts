@@ -2,7 +2,6 @@ import type { CallInput } from "@/engine/connectors/connector-adapter"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
-import type { ProfileChannelChecker } from "@/engine/profiles/profile-channel-checker"
 import {
   FunnelChannelAlreadyExistsError,
   FunnelChannelNotFoundError,
@@ -22,7 +21,6 @@ import type {
 type Deps = {
   store: FunnelSettingsReader
   registry: FunnelConnectorRegistry
-  profileChecker?: ProfileChannelChecker
   clock?: FunnelClock
   idGenerator?: FunnelIdGenerator
 }
@@ -57,14 +55,12 @@ const defaultIdGenerator = new NodeFunnelIdGenerator()
 export class FunnelChannels {
   private readonly store: FunnelSettingsReader
   private readonly registry: FunnelConnectorRegistry
-  private readonly profileChecker: ProfileChannelChecker | null
   private readonly clock: FunnelClock
   private readonly idGenerator: FunnelIdGenerator
 
   constructor(deps: Deps) {
     this.store = deps.store
     this.registry = deps.registry
-    this.profileChecker = deps.profileChecker ?? null
     this.clock = deps.clock ?? defaultClock
     this.idGenerator = deps.idGenerator ?? defaultIdGenerator
     Object.freeze(this)
@@ -113,12 +109,6 @@ export class FunnelChannels {
       const index = settings.channels.findIndex((c) => c.name === name)
 
       if (index < 0) throw new FunnelChannelNotFoundError(name)
-
-      const channel = settings.channels[index]
-
-      if (channel && this.profileChecker?.hasChannelRef(channel.id)) {
-        throw new Error(`channel "${name}" is referenced by a profile`)
-      }
 
       settings.channels.splice(index, 1)
     })

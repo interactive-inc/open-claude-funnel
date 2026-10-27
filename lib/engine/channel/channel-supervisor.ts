@@ -1,6 +1,5 @@
 import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import type { FunnelClock } from "@/engine/time/clock"
-import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import type { FunnelLogger } from "@/engine/logger/logger"
 import type { Channel, ChannelBroadcastSink } from "@/engine/channel/channel"
 import { FunnelChannelListener } from "@/engine/channel/channel-listener"
@@ -10,14 +9,12 @@ type Props = {
   readonly broadcaster: ChannelBroadcastSink
   readonly logger: FunnelLogger
   readonly clock: FunnelClock
-  readonly fs: FunnelFileSystem
-  readonly dir: string
   readonly deps?: FlumeRuntimeDeps
   readonly onError?: FlumeErrorHandler
   readonly signal?: AbortSignal
 }
 
-/** Compatibility facade: manifests use the connector registry's lifecycle. */
+/** Run source manifests through the same lifecycle as connector definitions. */
 export class FunnelChannelSupervisor {
   private readonly channels = new Map<string, Channel>()
   private readonly registry: FunnelListenerRegistry

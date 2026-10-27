@@ -1,13 +1,10 @@
 import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume"
-import { join } from "node:path"
 import type { Channel, ChannelBuildContext } from "@/engine/channel/channel"
-import { createChannelStatePersisterFactory } from "@/engine/channel/channel-state-persister-factory"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
 
-type Props = Pick<ChannelBuildContext, "logger" | "clock" | "fs"> & {
+type Props = Pick<ChannelBuildContext, "logger" | "clock"> & {
   channel: Channel
-  dir: string
   deps?: FlumeRuntimeDeps
   onError?: FlumeErrorHandler
   signal?: AbortSignal
@@ -34,11 +31,6 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
       signal: combinedSignal,
       logger: this.props.logger,
       clock: this.props.clock,
-      fs: this.props.fs,
-      statePersister: createChannelStatePersisterFactory({
-        fs: this.props.fs,
-        channelDir: join(this.props.dir, "channels", channel.id),
-      }),
     })
     combinedSignal.throwIfAborted()
     await this.runStart({

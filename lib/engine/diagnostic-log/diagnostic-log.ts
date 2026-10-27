@@ -176,7 +176,7 @@ export type StoredConnectionEvent = ConnectorConnectionRecord & { seq: number; t
  * exists solely for debugging.
  *
  * Implementations:
- *   - `SqliteConnectorDiagnosticLog` — the default; survives daemon restarts,
+ *   - `SqliteConnectorDiagnosticLog` — optional explicit persistent storage,
  *     bounded by per-table row/age caps.
  *   - `MemoryConnectorDiagnosticLog` — an in-process double for tests.
  */

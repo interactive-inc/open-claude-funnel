@@ -11,10 +11,6 @@ export type GatewayEmitInput = {
 }
 
 export type GatewayRouteDeps = {
-  selfPid: number
-  /** Funnel home dir this daemon is rooted at. Lets a probe tell whether the
-   *  daemon answering on a shared port belongs to the expected repo/scope. */
-  dir: string
   broadcaster: FunnelBroadcaster
   registry: FunnelListenerRegistry
   channels: FunnelChannels

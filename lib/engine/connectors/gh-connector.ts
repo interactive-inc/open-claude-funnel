@@ -4,15 +4,7 @@ import { FunnelFlumeGhListener } from "@/engine/connectors/gh-flume-listener"
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
 
-/**
- * GitHub connector descriptor. Pass `ghConnector()` to
- * `new Funnel({ connectors: [...] })` to enable the type.
- *
- * The listener is backed by `@interactive-inc/flume`'s `FlumeGitHubSource`
- * (raw REST polling + Zod), authenticating with a token resolved from the
- * environment or `gh auth token`. The adapter still uses `gh api` for
- * outbound calls, so the auth model is unchanged end-to-end.
- */
+/** GitHub REST connector. Credentials are supplied by the host. */
 export const ghConnector = (): ConnectorDescriptor => ({
   type: "gh",
   toolExposed: true,
@@ -20,16 +12,13 @@ export const ghConnector = (): ConnectorDescriptor => ({
     return new FunnelFlumeGhListener({
       config: ghConnectorSchema.parse(config),
       channelId: deps.channelId,
-      process: deps.process,
       logger: deps.logger,
       diagnosticLog: deps.diagnosticLog,
       signal: deps.signal,
     })
   },
   createAdapter(config, deps) {
-    ghConnectorSchema.parse(config)
-
-    return new FunnelGhAdapter({ process: deps.process })
+    return new FunnelGhAdapter({ config: ghConnectorSchema.parse(config), http: deps.http })
   },
   secretTokens(config) {
     const parsed = ghConnectorSchema.parse(config)

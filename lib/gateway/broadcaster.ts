@@ -50,7 +50,7 @@ export type BroadcastSubscriber = (event: ReplayableEvent) => void
 
 /**
  * Optional persistent replay source. Wired in by the gateway-server with a
- * `FunnelEventLog` (SQLite-backed by default) so reconnects across daemon
+ * host-supplied `FunnelEventLog` so reconnects across daemon
  * restarts can recover events older than the in-memory buffer via an indexed
  * `seq > since` range scan.
  */

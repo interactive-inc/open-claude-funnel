@@ -4,13 +4,10 @@ const isBun = typeof globalThis.Bun !== "undefined"
 import type { Server } from "bun"
 import { Hono } from "hono"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
-import { MemoryFunnelFileSystem } from "@/engine/fs/memory-file-system"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 import type { FunnelGatewayModule, GatewayWsData } from "@/gateway/gateway-module"
-import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
 import { scheduleConnector } from "@/engine/connectors/schedule-connector"
-import { slackConnector } from "@/engine/connectors/slack-connector"
 import { Funnel } from "@/funnel"
 
 /**
@@ -32,17 +29,13 @@ const mountHost = async (
   } = { token: "" },
 ) => {
   const funnel = new Funnel({
-    fs: new MemoryFunnelFileSystem(),
     connectors: [scheduleConnector()],
     logger: new NoopFunnelLogger(),
-    dir: "/funnel",
-    tmpDir: "/tmp/funnel-module-test",
   })
 
   if (options.channelName) funnel.channels.add({ name: options.channelName })
 
   const gw = funnel.gatewayModule({
-    killCompetingSlack: false,
     token: options.token,
     healthRoute: options.healthRoute,
     eventLog: new MemoryFunnelEventLog(),
@@ -206,7 +199,7 @@ describe.skipIf(!isBun)("FunnelGatewayModule mounted in a host Hono app", () => 
 
     const healthBody = (await health.json()) as { funnelDir: string }
 
-    expect(healthBody.funnelDir).toBe("/funnel")
+    expect(healthBody.funnelDir).toBeUndefined()
   })
 
   test("healthRoute: false drops /health while the rest of the table stays mounted", async () => {
@@ -269,7 +262,7 @@ describe.skipIf(!isBun)("FunnelGatewayModule mounted in a host Hono app", () => 
     const body = (await res.json()) as { funnelDir?: string }
 
     expect(res.status).toBe(200)
-    expect(body.funnelDir).toBe("/funnel")
+    expect(body.funnelDir).toBeUndefined()
   })
 
   test("token auth still guards gateway routes when mounted by a host", async () => {
@@ -380,10 +373,8 @@ describe.skipIf(!isBun)("FunnelGatewayModule mounted in a host Hono app", () => 
 describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
   test("start() boots the configured listeners and stop() clears them", async () => {
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
+
       connectors: [scheduleConnector()],
     })
     const channel = funnel.channels.add({ name: "ops" })
@@ -395,7 +386,6 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
     })
 
     const gw = funnel.gatewayModule({
-      killCompetingSlack: false,
       token: "",
       eventLog: new MemoryFunnelEventLog(),
     })
@@ -419,14 +409,11 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
 
   test("stop() leaves an externally-injected event log open", async () => {
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
     })
     funnel.channels.add({ name: "ops" })
     const eventLog = new MemoryFunnelEventLog()
-    const gw = funnel.gatewayModule({ killCompetingSlack: false, token: "", eventLog })
+    const gw = funnel.gatewayModule({ token: "", eventLog })
 
     await gw.start()
     gw.emit({ channel: "ops", content: "kept" })
@@ -436,109 +423,14 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
     expect(eventLog.loadSince(0).map((event) => event.content)).toEqual(["kept"])
   })
 
-  test("the Slack competitor scan runs once even if the host already ran it", async () => {
-    // FunnelGatewayServer runs the kill before Bun.serve (a stale same-dir
-    // daemon may hold the port) and then calls start(). Without the first-call-
-    // wins guard, start() would hunt for competitors a second time with our own
-    // socket already open.
-    const process = new MemoryFunnelProcessRunner()
-    let scans = 0
-    process.onListProcessesContaining(() => {
-      scans += 1
-      return []
-    })
-
-    const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
-      logger: new NoopFunnelLogger(),
-      process,
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
-      connectors: [slackConnector()],
-    })
-    funnel.channels.add({ name: "ops" })
-    funnel.channels.addConnector("ops", {
-      type: "slack",
-      name: "bot",
-      botToken: "xoxb-test",
-      appToken: "xapp-test",
-    })
-
-    const gw = funnel.gatewayModule({
-      killCompetingSlack: true,
-      token: "",
-      eventLog: new MemoryFunnelEventLog(),
-    })
-
-    await gw.killCompetingSlackIfNeeded()
-    await gw.killCompetingSlackIfNeeded()
-
-    expect(scans).toBe(1)
-
-    await gw.stop()
-  })
-
-  test("a no-op scan does not suppress a later real one", async () => {
-    // The guard must mark that the sweep RAN, not that the method was called.
-    // A host may call this before its own bind while the channel still has no
-    // Slack connector; if that call set the flag, the connector added before
-    // start() would never get its competitor swept and two Socket Mode
-    // connections would share a token.
-    const process = new MemoryFunnelProcessRunner()
-    let scans = 0
-    process.onListProcessesContaining(() => {
-      scans += 1
-      return []
-    })
-
-    const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
-      logger: new NoopFunnelLogger(),
-      process,
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
-      connectors: [slackConnector()],
-    })
-    funnel.channels.add({ name: "ops" })
-
-    const gw = funnel.gatewayModule({
-      killCompetingSlack: true,
-      token: "",
-      eventLog: new MemoryFunnelEventLog(),
-    })
-
-    // No Slack connector yet: nothing to sweep, and nothing recorded as swept.
-    await gw.killCompetingSlackIfNeeded()
-
-    expect(scans).toBe(0)
-
-    funnel.channels.addConnector("ops", {
-      type: "slack",
-      name: "bot",
-      botToken: "xoxb-test",
-      appToken: "xapp-test",
-    })
-
-    await gw.killCompetingSlackIfNeeded()
-
-    expect(scans).toBe(1)
-
-    await gw.stop()
-  })
-
   test("start() after stop() is refused instead of running on a closed event log", async () => {
     // A disposed module must never restart on its closed replay log.
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
     })
     funnel.channels.add({ name: "ops" })
     const gw = funnel.gatewayModule({
-      killCompetingSlack: false,
       token: "",
-      dbPath: "/tmp/funnel-module-test/restart.db",
     })
 
     await gw.start()
@@ -553,15 +445,11 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
     // the failed interval.
     const clock = new MemoryFunnelClock({ start: new Date("2026-01-01T00:00:00Z") })
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
       clock,
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
     })
     funnel.channels.add({ name: "ops" })
     const gw = funnel.gatewayModule({
-      killCompetingSlack: false,
       token: "",
       eventLog: new MemoryFunnelEventLog(),
     })
@@ -584,14 +472,11 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
 
   test("emit() and onEvent() work without any server bound at all", () => {
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
     })
     const channel = funnel.channels.add({ name: "ops" })
     const eventLog = new MemoryFunnelEventLog()
-    const gw = funnel.gatewayModule({ killCompetingSlack: false, token: "", eventLog })
+    const gw = funnel.gatewayModule({ token: "", eventLog })
 
     const observed: (string | undefined)[] = []
     gw.onEvent((event) => observed.push(event.meta?.channelId))
@@ -607,15 +492,12 @@ describe.skipIf(!isBun)("FunnelGatewayModule lifecycle", () => {
 describe.skipIf(!isBun)("FunnelGatewayServer over the module", () => {
   test("exposes the module it hosts", async () => {
     const funnel = new Funnel({
-      fs: new MemoryFunnelFileSystem(),
       logger: new NoopFunnelLogger(),
-      dir: "/funnel",
-      tmpDir: "/tmp/funnel-module-test",
     })
     const eventLog = new MemoryFunnelEventLog()
     const server = funnel.gatewayServer({
       port: 0,
-      killCompetingSlack: false,
+
       token: "",
       eventLog,
     })

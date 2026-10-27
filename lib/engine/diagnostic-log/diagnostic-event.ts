@@ -1,4 +1,3 @@
-import type { ConnectorDiagnosticSqlReader } from "@/engine/diagnostic-log/diagnostic-sql-reader"
 import type {
   StoredConnectionEvent,
   StoredProcessedEvent,
@@ -120,15 +119,3 @@ export const diagnosticConnectionEventOf = (
   status: event.status,
   detail: stringOrNull(event.detail),
 })
-
-export const queryRows = (
-  reader: ConnectorDiagnosticSqlReader,
-  sql: string,
-  params: (string | number | null)[],
-): Record<string, unknown>[] | Error => {
-  try {
-    return reader.query(sql, params)
-  } finally {
-    reader.close()
-  }
-}

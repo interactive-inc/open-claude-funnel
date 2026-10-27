@@ -14,5 +14,12 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      # `make check` = `bunx tsc -b` (typecheck, noEmit) + `bun test`.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun run lint
       - run: make check
+      - run: make build
+      - name: Import the library in Node without Bun or SQLite
+        run: |
+          node --input-type=module -e 'import { Funnel } from "./dist/index.js"; const f = new Funnel({ channels: [{ name: "smoke" }] }); const g = f.gatewayModule({ token: "smoke" }); g.emit({ channel: "smoke", content: "ok" }); await g.stop();'

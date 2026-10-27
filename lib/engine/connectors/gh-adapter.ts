@@ -1,48 +1,43 @@
 import { FunnelConnectorAdapter, type CallInput } from "@/engine/connectors/connector-adapter"
-import { FunnelProcessRunner } from "@/engine/process/process-runner"
-import { NodeFunnelProcessRunner } from "@/engine/process/node-process-runner"
+import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
+import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
+import type { FunnelHttpClient } from "@/engine/http/http-client"
+import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 
-type Deps = {
-  process?: FunnelProcessRunner
-}
+type Deps = { config: GhConnectorConfig; http?: FunnelHttpClient; env?: NodeJS.ProcessEnv }
 
-const defaultProcess = new NodeFunnelProcessRunner()
-
+/** GitHub REST calls use the same explicit credential as the inbound connection. */
 export class FunnelGhAdapter extends FunnelConnectorAdapter {
-  private readonly process: FunnelProcessRunner
-
-  constructor(deps: Deps = {}) {
+  private readonly token: string
+  private readonly http: FunnelHttpClient
+  constructor(deps: Deps) {
     super()
-    this.process = deps.process ?? defaultProcess
+    this.token = resolveConnectorToken({
+      literal: deps.config.token,
+      envVar: deps.config.tokenEnv,
+      env: deps.env ?? process.env,
+      label: `${deps.config.name}.token`,
+    })
+    this.http = deps.http ?? new NodeFunnelHttpClient()
     Object.freeze(this)
   }
-
   async call(input: CallInput): Promise<unknown> {
-    const args = ["api", input.path]
-
-    if (input.method && input.method.toLowerCase() !== "get") {
-      args.push("-X", input.method.toUpperCase())
-    }
-
-    const hasBody =
-      input.body && typeof input.body === "object" && Object.keys(input.body).length > 0
-
-    if (hasBody) {
-      args.push("--input", "-")
-    }
-
-    const result = await this.process.run(["gh", ...args], {
-      input: hasBody ? JSON.stringify(input.body) : undefined,
+    const method = (input.method || "GET").toUpperCase()
+    const response = await this.http.fetch({
+      method,
+      url: `https://api.github.com/${input.path.replace(/^\/+/, "")}`,
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body:
+        method !== "GET" && method !== "HEAD" && input.body !== undefined
+          ? JSON.stringify(input.body)
+          : undefined,
     })
-
-    if (result.exitCode !== 0) {
-      throw new Error(`gh api failed: ${result.stderr.trim() || result.stdout.trim()}`)
-    }
-
-    try {
-      return JSON.parse(result.stdout)
-    } catch {
-      return result.stdout
-    }
+    if (!response.ok)
+      throw new Error(`GitHub API failed (${response.status}): ${await response.text()}`)
+    return response.status === 204 ? null : response.json()
   }
 }

@@ -21,9 +21,9 @@ export type CallInput = {
 
 export abstract class FunnelConnectorAdapter {
   /**
-   * Dispatches one Claude → external call. The response is the external API's
+   * Dispatches one subscriber → external call. The response is the external API's
    * raw payload, typed `unknown` because its shape is the provider's concern —
-   * the caller (Claude, via MCP) interprets it.
+   * the caller interprets it.
    */
   abstract call(input: CallInput): Promise<unknown>
 }

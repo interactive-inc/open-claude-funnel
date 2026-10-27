@@ -1,16 +1,14 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.71.4",
-  "description": "Hub CLI that routes external events (Slack / GitHub / Discord) to Claude Code agents through subscription channels over MCP.",
+  "version": "0.72.0",
+  "description": "Connection library for routing external events to channel subscribers. Host-owned configuration, runtime and persistence.",
   "keywords": [
-    "bun",
-    "claude",
-    "claude-code",
-    "cli",
+    "connections",
     "discord",
+    "events",
     "github",
-    "mcp",
-    "slack"
+    "slack",
+    "websocket"
   ],
   "homepage": "https://github.com/interactive-inc/open-claude-funnel#readme",
   "bugs": {
@@ -22,13 +20,8 @@
     "type": "git",
     "url": "git+https://github.com/interactive-inc/open-claude-funnel.git"
   },
-  "bin": {
-    "fnl": "dist/bin.js",
-    "funnel": "dist/bin.js"
-  },
   "files": [
     "dist/**/*",
-    "funnel.schema.json",
     "README.md",
     "LICENSE"
   ],
@@ -42,45 +35,30 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./claude": {
-      "types": "./dist/claude.d.ts",
-      "import": "./dist/claude.js",
-      "default": "./dist/claude.js"
-    },
     "./gateway": {
       "types": "./dist/gateway.d.ts",
       "import": "./dist/gateway.js",
       "default": "./dist/gateway.js"
     },
-    "./profiles": {
-      "types": "./dist/profiles.d.ts",
-      "import": "./dist/profiles.js",
-      "default": "./dist/profiles.js"
+    "./channel": {
+      "types": "./dist/channel.d.ts",
+      "import": "./dist/channel.js",
+      "default": "./dist/channel.js"
     },
-    "./local-config": {
-      "types": "./dist/local-config.d.ts",
-      "import": "./dist/local-config.js",
-      "default": "./dist/local-config.js"
+    "./event-log": {
+      "types": "./dist/event-log.d.ts",
+      "import": "./dist/event-log.js",
+      "default": "./dist/event-log.js"
     },
-    "./diagnostics": {
-      "types": "./dist/diagnostics.d.ts",
-      "import": "./dist/diagnostics.js",
-      "default": "./dist/diagnostics.js"
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "import": "./dist/logger.js",
+      "default": "./dist/logger.js"
     },
-    "./recovery": {
-      "types": "./dist/recovery.d.ts",
-      "import": "./dist/recovery.js",
-      "default": "./dist/recovery.js"
-    },
-    "./doctor": {
-      "types": "./dist/doctor.d.ts",
-      "import": "./dist/doctor.js",
-      "default": "./dist/doctor.js"
-    },
-    "./docs": {
-      "types": "./dist/docs.d.ts",
-      "import": "./dist/docs.js",
-      "default": "./dist/docs.js"
+    "./sqlite": {
+      "types": "./dist/sqlite.d.ts",
+      "import": "./dist/sqlite.js",
+      "default": "./dist/sqlite.js"
     },
     "./connectors/slack": {
       "types": "./dist/connectors/slack.d.ts",
@@ -102,41 +80,22 @@
       "import": "./dist/connectors/schedule.js",
       "default": "./dist/connectors/schedule.js"
     },
-    "./event-log": {
-      "types": "./dist/event-log.d.ts",
-      "import": "./dist/event-log.js",
-      "default": "./dist/event-log.js"
-    },
-    "./logger": {
-      "types": "./dist/logger.d.ts",
-      "import": "./dist/logger.js",
-      "default": "./dist/logger.js"
-    },
-    "./channel": {
-      "types": "./dist/channel.d.ts",
-      "import": "./dist/channel.js",
-      "default": "./dist/channel.js"
-    },
-    "./bin": "./dist/bin.js",
-    "./package.json": "./package.json",
-    "./transport": {
-      "types": "./dist/transport.d.ts",
-      "import": "./dist/transport.js",
-      "default": "./dist/transport.js"
-    }
+    "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "prepack": "make build"
+    "prepack": "make build",
+    "test": "bun test",
+    "typecheck": "tsc -b",
+    "build": "vp pack",
+    "lint": "vp lint"
   },
   "dependencies": {
     "@hono/zod-validator": "0.9.0",
     "@interactive-inc/flume": "^0.11.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
     "hono": "^4.13.1",
-    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -163,6 +122,7 @@
     }
   },
   "engines": {
-    "bun": ">=1.3.0"
+    "bun": ">=1.3.0",
+    "node": ">=22"
   }
 }

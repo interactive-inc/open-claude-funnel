@@ -1,52 +1,33 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { FunnelGhAdapter } from "@/engine/connectors/gh-adapter"
-import { MemoryFunnelProcessRunner } from "@/engine/process/memory-process-runner"
-
-describe("FunnelGhAdapter", () => {
-  test("calls gh api with correct args (GET)", async () => {
-    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout: '{"ok":true}' }))
-    const adapter = new FunnelGhAdapter({ process: runner })
-
-    const result = await adapter.call({ method: "get", path: "/notifications" })
-
-    expect(result).toEqual({ ok: true })
-    expect(runner.calls[0]?.command).toEqual(["gh", "api", "/notifications"])
+import { MemoryFunnelHttpClient } from "@/engine/http/memory-http-client"
+const config = { id: "gh", name: "github", type: "gh" as const, token: "test-token" }
+describe("GitHub connection adapter", () => {
+  test("uses the supplied token for REST reads and writes without executing gh", async () => {
+    const http = new MemoryFunnelHttpClient().on(() => ({ body: '{"id":1}' }))
+    const adapter = new FunnelGhAdapter({ config, http })
+    expect(await adapter.call({ method: "GET", path: "/repos/example/repo/issues" })).toEqual({
+      id: 1,
+    })
+    await adapter.call({
+      method: "POST",
+      path: "repos/example/repo/issues",
+      body: { title: "test" },
+    })
+    expect(http.calls[0]?.url).toBe("https://api.github.com/repos/example/repo/issues")
+    expect(http.calls[0]?.headers?.Authorization).toBe("Bearer test-token")
+    expect(http.calls[1]?.body).toBe('{"title":"test"}')
   })
-
-  test("POST adds -X POST and pipes body to stdin", async () => {
-    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout: '{"ok":true}' }))
-    const adapter = new FunnelGhAdapter({ process: runner })
-
-    await adapter.call({ method: "post", path: "/repos/owner/repo/issues", body: { title: "x" } })
-
-    const call = runner.calls[0]
-    if (call?.kind !== "run") throw new Error("expected run call")
-    expect(call.command).toEqual([
-      "gh",
-      "api",
-      "/repos/owner/repo/issues",
-      "-X",
-      "POST",
-      "--input",
-      "-",
-    ])
-    expect(call.options.input).toBe('{"title":"x"}')
+  test("rejects missing credentials instead of looking for a CLI login", () => {
+    expect(
+      () => new FunnelGhAdapter({ config: { ...config, token: undefined }, env: {} }),
+    ).toThrow()
   })
-
-  test("non-zero exitCode throws Error", async () => {
-    const runner = new MemoryFunnelProcessRunner().on(() => ({
-      exitCode: 1,
-      stderr: "auth required",
-    }))
-    const adapter = new FunnelGhAdapter({ process: runner })
-
-    expect(adapter.call({ method: "get", path: "/" })).rejects.toThrow(/auth required/)
-  })
-
-  test("non-JSON stdout is returned as a plain string", async () => {
-    const runner = new MemoryFunnelProcessRunner().on(() => ({ stdout: "hello" }))
-    const adapter = new FunnelGhAdapter({ process: runner })
-
-    expect(await adapter.call({ method: "get", path: "/" })).toBe("hello")
+  test("surfaces HTTP failures and handles empty responses", async () => {
+    const http = new MemoryFunnelHttpClient().on(() => ({ status: 403, body: "denied" }))
+    const adapter = new FunnelGhAdapter({ config, http })
+    await expect(adapter.call({ method: "GET", path: "user" })).rejects.toThrow("403")
+    http.on(() => ({ status: 204 }))
+    expect(await adapter.call({ method: "DELETE", path: "notifications" })).toBeNull()
   })
 })

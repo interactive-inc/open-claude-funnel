@@ -21,14 +21,7 @@ const bodySchema = z.object({
   body: jsonValueSchema.optional(),
 })
 
-/**
- * POST /channels/:channel/connectors/:connector/call
- *
- * Generic adapter call. Used by the funnel MCP server (running in the Claude
- * Code process) to send replies/reactions/etc. without spawning a CLI
- * subprocess. Mirrors the CLI's `funnel channels <c> connectors <conn> request
- * --method=...` but with a structured JSON body and no shell.
- */
+/** Forward an authenticated subscriber call to the external connector. */
 export const channelsConnectorsCallHandler = factory.createHandlers(
   zParam(z.object({ channel: z.string().min(1), connector: z.string().min(1) })),
   async (c) => {

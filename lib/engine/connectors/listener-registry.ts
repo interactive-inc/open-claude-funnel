@@ -709,8 +709,7 @@ export class FunnelListenerRegistry {
       })
     } else if (result.retriable === false) {
       // Non-retriable: stop bouncing on it. The diagnostic table will
-      // still show auth-failed, and the operator can `fnl doctor` /
-      // `fnl listeners restart` after rotating the credential.
+      // still show auth-failed, and the host can restart the listener after rotating the credential.
       this.failureCounts.delete(key)
       this.logger?.warn(`${type} listener cannot recover (non-retriable)`, {
         channel: channelName,

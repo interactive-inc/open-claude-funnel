@@ -13,19 +13,22 @@ type StoredEvent = {
 /**
  * In-process `FunnelEventLog` backed by a plain array. Used by tests and by
  * embedders that do not need durability — replay works within the process
- * lifetime but is lost when the process exits. It does not prune,
- * so it is not meant for unbounded production
- * traffic.
+ * lifetime but is lost when the process exits. Optional row and byte caps
+ * bound retention without resetting the monotonic offset.
  */
 export class MemoryFunnelEventLog extends FunnelEventLog {
   private readonly events: StoredEvent[] = []
 
-  constructor() {
+  private latestOffset = 0
+  private bytes = 0
+
+  constructor(private readonly options: { maxRows?: number; maxBytes?: number } = {}) {
     super()
-    Object.freeze(this)
   }
 
   record(record: FunnelEventRecord): void {
+    this.latestOffset = Math.max(this.latestOffset, record.offset)
+    this.bytes += this.sizeOf(record.content, record.meta)
     this.events.push({
       offset: record.offset,
       content: record.content,
@@ -34,6 +37,18 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
       connectorId: record.connectorId,
       ...(record.exclusive ? { exclusive: { ...record.exclusive } } : {}),
     })
+    while (
+      this.events.length > 0 &&
+      (this.events.length > (this.options.maxRows ?? Infinity) ||
+        this.bytes > (this.options.maxBytes ?? Infinity))
+    ) {
+      const removed = this.events.shift()
+      if (removed) this.bytes -= this.sizeOf(removed.content, removed.meta)
+    }
+  }
+
+  private sizeOf(content: string, meta: Record<string, string> | null | undefined): number {
+    return Buffer.byteLength(content) + Buffer.byteLength(JSON.stringify(meta ?? {}))
   }
 
   loadSince(since: number): ReplayableEvent[] {
@@ -54,13 +69,7 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
   }
 
   findMaxOffset(): number {
-    let max = 0
-
-    for (const event of this.events) {
-      if (event.offset > max) max = event.offset
-    }
-
-    return max
+    return this.latestOffset
   }
 
   override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
@@ -76,6 +85,7 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
 
   clear(): void {
     this.events.length = 0
+    this.bytes = 0
   }
 
   close(): void {}

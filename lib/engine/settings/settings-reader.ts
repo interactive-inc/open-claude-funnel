@@ -1,15 +1,9 @@
 import type { Settings } from "@/engine/settings/settings-schema"
 
+/** Host-owned connection configuration. No path, file format or persistence is prescribed. */
 export abstract class FunnelSettingsReader {
   abstract read(): Settings
   abstract write(settings: Settings): void
-  /**
-   * Atomic read-modify-write. Implementations must serialize against
-   * concurrent processes touching the same file (the Node store does so via
-   * an exclusive lockfile; Memory stores are single-threaded). Engine
-   * classes must use `update` for any mutation that depends on prior state,
-   * otherwise a concurrent CLI invocation or `fnl claude` launch can lose
-   * the edit through a read-modify-write race.
-   */
+  /** Apply an update atomically relative to other writers using this store. */
   abstract update<T>(mutator: (settings: Settings) => T): T
 }

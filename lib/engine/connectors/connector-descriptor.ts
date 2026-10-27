@@ -2,17 +2,13 @@ import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-con
 import type { FunnelConnectorAdapter } from "@/engine/connectors/connector-adapter"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
-import type { FunnelFileSystem } from "@/engine/fs/file-system"
 import type { FunnelHttpClient } from "@/engine/http/http-client"
 import type { FunnelLogger } from "@/engine/logger/logger"
-import type { FunnelProcessRunner } from "@/engine/process/process-runner"
 import type { FunnelClock } from "@/engine/time/clock"
 
 /** Boundaries a listener needs, supplied by the registry at build time. */
 export type ConnectorListenerDeps = {
   channelId: string
-  fs: FunnelFileSystem
-  process: FunnelProcessRunner
   /** HTTP client for self-detection (Slack auth.test), reactions, and other listener-side REST calls. */
   http: FunnelHttpClient
   /** Wall clock — listeners that own a timer (schedule) read it from here so tests can inject a fake. */
@@ -27,14 +23,10 @@ export type ConnectorListenerDeps = {
    * `controller.abort()` in their shutdown handler.
    */
   signal?: AbortSignal
-  /** Resolves the per-connector state directory (`<dir>/channels/<id>/connectors/<id>`). */
-  connectorDir: (channelId: string, connectorId: string) => string
 }
 
 /** Boundaries an adapter needs. Adapters are channel-agnostic. */
 export type ConnectorAdapterDeps = {
-  fs: FunnelFileSystem
-  process: FunnelProcessRunner
   /** HTTP client for outbound calls. Used by the Slack adapter, future REST adapters. */
   http: FunnelHttpClient
   logger?: FunnelLogger

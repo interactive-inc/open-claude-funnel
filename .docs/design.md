@@ -1,115 +1,33 @@
-## 設計
+# 接続ライブラリとしての境界
 
-## 全体構造
+Funnel のジョブは外部の接続を共有し、購読者へイベントを届け、返信を外部へ返すこと。エージェントを起動するアプリケーションはホストが作る。
 
-### CLI を Hono にマップ
+## 所有者
 
-argv を内部 HTTP リクエストに変換して Hono でルーティングする（ネットワーク通信は発生しない）。ルート定義とバリデーションを将来の HTTP API にそのまま転用するため、かつ CLI・TUI・プログラマブル API で同じコア層を共有するため。
+| 対象 | 所有者 |
+| --- | --- |
+| Socket Mode / Gateway / poll、再接続 | Flume |
+| 接続定義、配信先、fanout / exclusive、offset と再送 | Funnel |
+| 実行ディレクトリ、プロセス、設定の保存、資格情報 | ホスト |
+| HTTP の待受・認証・公開範囲 | ホスト。Bun 用の薄い server helper は選択可能 |
+| 再起動をまたぐイベント・発火状態の保存 | ホストが注入した store |
 
-ビジネスロジックは `lib/engine/` と `lib/connectors/` の外（gateway / cli / tui）に漏らさない。ルートは validate と Funnel 呼び出しとレスポンス整形だけにする。
+`new Funnel()` はメモリ内の設定を作る。ファイルを読まず、フォルダを作らず、ポートを開かない。コネクタと待受ポートと認証は明示する。SQLite は任意の sub-entry に隔離する。
 
-### argv verb → URL セグメント
+## 構造
 
-read 系（list / show / launch）以外の CLI verb はすべて POST に写し、verb は URL セグメントとして残す。Hono は URL で disambiguate する（`/channels/add/:channel` と `/channels/remove/:channel` のように）。method を剥がさず URL に verb を残すことで、1 URL = 1 file = 1 method を保ち、ルートファイルがパスに 1:1 対応する。新しい verb を足すときもこの規約に乗せる。思いつきで増やさない。
+`lib/funnel.ts` が設定ストアとコネクタ registry を組み立てる。engine は接続・チャネルの規則を、gateway は購読・配信・HTTP/WebSocket 境界を持つ。CLI・Claude 起動・設定ファイル同期・ファイル IO の既定実装は持たない。
 
-### API call は method + path + body
+具体コネクタは `connectors/<type>` から必要なものだけ渡す。カスタムの Flume sources を合流する場合は `/channel` の manifest を使い、source 固有の状態保存は source に渡す。
 
-Connector は Channel に nest されるので、外部 API 呼び出しは `fnl channels <channel> connectors <connector> request <method> <path> [body]` 形式で受け、Adapter の `call({ method, path, body })` に渡す。Slack（apiCall で全て POST）/ GitHub（gh api spawn）/ Discord（REST fetch）は method の扱いがそれぞれ違うが、呼び出し側は同じ DSL を保つ。MCP 経由（Claude → 外部）も同じ call エンドポイントを HTTP hop で叩く。
+## 不変条件
 
-### Funnel Facade
+- 配信前に offset と再送先を記録する。保存失敗を隠してライブ配送を続けない。
+- fanout と exclusive の配送先、明示停止、停止途中のキャンセルを保持する。
+- `alive` は接続または復旧処理が生きていること、`connected` は実接続を表す。根拠は Flume の現在値で、遅れて届く状態ログは履歴として扱う。
+- 自動復旧は listener registry が失敗・欠落した接続だけに適用する。Flume が接続し直している間は介入しない。
+- 既定のメモリ再送は件数とバイト数で制限し、保持の削除で offset を巻き戻さない。
+- 注入した永続ログはホストが閉じる。ホスト所有のサーバーはホストが停止する。Bun helper が所有するサーバーの停止では古い接続も閉じる。
+- observer から停止を待っても循環待ちしない。callback の配送と source の停止を混同しない。
 
-埋め込み用途は `FunnelTransport` がチャネル・コネクタ・gateway を組み立てる。Claude の起動・セッション・設定同期と診断サービスは既存の `Funnel` が transport の上に追加する。CLI は引き続き `Funnel` を使い、ルート層で個別 Service を new しない。
-
-選んだ入口の constructor で依存を即座に組み立て、freeze する。境界（fs / process / clock / id / store）は共有する。`Funnel` のチャネルと gateway は `funnel.transport` と同じ実装を利用する。
-
-### DI は abstract class で揃える
-
-外部副作用を持つ境界（ファイルシステム、設定ストア、Connector Adapter など）は abstract class で抽象化し、本番実装（`NodeFunnelFileSystem` / `FunnelSettingsStore` / `FunnelSlackAdapter` 等）と、テスト時の in-memory 実装（`MemoryFunnelFileSystem` / `MockFunnelSettingsReader` 等）を切り替える。これでテストから実 FS や実 API を触らずに済む。
-
-### ログとエラーの出口
-
-モジュールは optional な logger を DI で受け（`this.logger?.x` で呼ぶ。未注入なら静かに no-op し、本番入口でだけ file sink を 1 度注入する）、CLI 境界のみ `process.stdout.write` / `process.stderr.write` を使う。標準出力を汚すと呼び出し側の処理が壊れるため。host にエラーを晒す経路は logger ではなく `OnFunnelError`（DI seam）に分ける。
-
-エラーは Service で throw し、ルートの onError（CLI）で整形する。経路を増やさないことで CLI 出力を一貫させる。エラーメッセージとコード内の文字列は英語で統一（ドキュメントだけ日本語）。
-
-### CLI 規約
-
-対話 UI は入れない（Claude-first）。短縮形は `-h`（help）/ `-n`（name）/ `-p`（profile）のみに限定する（衝突回避）。全ルートが `?help=true` でヘルプを返す。`--help` / `-h` は argv → query 変換で `?help=true` になる。
-
-help 要求で該当 route が無い場合、まず同 URL を GET で再試行し、それでも無ければ親グループの help にフォールバックする（ユーザーが具体コマンドの help を叩いたときに最低でもグループ全体の help を返せるようにする）。
-
-## データモデル
-
-### 参照は id、表示は name
-
-実体は不変の id（UUID）を主キーに持つ。他から参照するときは id を保持する（Profile は `channelId` で Channel を指す）。id ベースで切るので rename は name を差し替えるだけで済み、参照側も per-instance state（Connector の state / Profile の session）も追従する。name は CLI/TUI が指すラベルにすぎず、storage のキーには使わない。CLI ハンドラ層で name を id に解決してから engine に渡す（engine は id を受け取る）。
-
-### Profile の channel は単一
-
-Profile は Channel をひとつだけ持つ。複数 Channel を受けたいなら Channel 側の connectors を増やす。Profile 起動時の MCP 接続を1本に保つため。
-
-### 削除時のポリシー差
-
-Channel は Profile から参照されていれば削除拒否（`ProfileChannelChecker.hasChannelRef(channelId)` で問い合わせる）、Connector は Channel から黙って除去する。Profile（起動プリセット）は壊さない／Channel の購読内訳は壊れてよい、という意図。Profile → Channel の一方向依存で、Channel（transport コア）は Profile（launch おまけ）を知らない。
-
-### Profile の session は profile が持つ
-
-Claude session の resume 用 id は Profile の execution state として profile（by id）に内包する。channel や cwd でキーしない。同じ repo で起動した無関係な session を引き継がず、profile-less な起動（`--channel` 直）は resume しない。transport 層（Channel）は session を一切知らない。
-
-### スキーマは寛容に読んで厳格に検証する
-
-欠損フィールドは Zod の default で補完する。不正な値は明示的に throw する。補完は読みやすさのため、無視はデータ欠損を隠すので禁止。
-
-Connector は discriminated union。type ごとに必須フィールドが異なり、Zod が自動で narrow する。Slack は bot/app token、gh は pollInterval（optional）、discord は bot token。
-
-### 永続と揮発の分離
-
-設定は `~/.funnel/`（永続、持ち運び対象）、診断ログとイベントストアは `/tmp/funnel/`（揮発）。イベントの永続 replay は `FunnelEventLog` 抽象 port に閉じる（default は `SqliteFunnelEventLog`、テスト / 軽量 embedder 向けに `MemoryFunnelEventLog`）。Broadcaster は WS fanout に加えてこの log に offset を打ち、再起動跨ぎの replay を支える。
-
-## Gateway
-
-### 集約デーモンにする理由
-
-Slack Socket Mode は1トークン1接続が自然。Claude Code ごとに個別接続させると重複イベント・rate limit・トークン再配布の問題が出る。gateway を1プロセスに集約し、Claude Code 側は MCP 経由で購読バスに繋ぐだけにする。
-
-### 起動は暗黙でいい
-
-`fnl claude` 実行時に gateway が停止していれば自動起動する。ユーザーが `fnl gateway start` を覚えなくてもチャネル機能が動くように。macOS では `caffeinate -is` で wrap し、アイドル / システムスリープで Socket Mode が切れないようにする（`--no-caffeine` で opt-out 可）。
-
-### Channel 単位で配信を絞る
-
-gateway は全 Connector のイベントを受けるが、クライアントには Channel が購読する Connector のイベントだけを送る。クライアント側フィルタにすると無駄なトラフィックが流れ、Settings の二重管理になる。
-
-### Channel 名は認証にならない
-
-Channel 名は可読文字列なので秘匿情報ではない。gateway は localhost バインドのみを想定する。外部公開しない前提を崩さない。
-
-### イベントを絞るときの注意
-
-Slack listener で落としたイベントはイベントログにも残らない。絞り込みを足すときはデバッグの手掛かりが消える点を意識する。
-
-### Connector 種別ごとの listener
-
-Slack は Bolt Socket Mode、GitHub は `gh api /notifications` polling、Discord は discord.js の Gateway。gh listener は `since` パラメータで API 側フィルタし、`(id, updated_at)` の組でローカル重複排除する（同一 thread の新コメントも拾えるよう id 単独では比較しない）。
-
-## MCP Channel
-
-### stdio と WebSocket の二段構え
-
-Claude Code とは MCP（stdio）、外部イベント受信は gateway への WebSocket。Claude から直接外部サービスを触らせない、gateway から直接 Claude に書かない。
-
-### 接続ゲートは FUNNEL_CHANNEL_ID
-
-未設定なら WebSocket には繋がず stdio の MCP サーバとしてだけ起動する。funnel 経由でない素の Claude Code 起動で副作用が出ないことを担保し、`.mcp.json` の自動書き込みを安全にする。
-
-### MCP server 名は動的解決
-
-`.mcp.json` は `claude mcp add` でユーザーが任意の key 名で追加することもある。`FunnelMcp.findInstalledName(cwd)` で `command: "funnel"` な entry を検索して、その key を `--dangerously-load-development-channels server:<key>` に渡す。funnel 側がハードコードした名前に依存しない。
-
-### experimental 依存を局所化
-
-`experimental: { "claude/channel": {} }` capability は Claude Code の実験的仕様。`lib/engine/mcp/channel-server.ts` に閉じ込めて他レイヤーに漏らさない。
-
-### 再接続は静かに
-
-gateway 切断を MCP クライアント側に漏らさない（system イベントとして明示的に送るもの以外）。gateway が落ちても Claude 自体は動き続ける前提を守る。
+0.72 は起動管理と暗黙のディレクトリを削除する破壊的変更。旧 API の互換 facade を重ねると同じ責任が本体へ戻るため設けない。

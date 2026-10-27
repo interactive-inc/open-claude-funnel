@@ -1,12 +1,5 @@
 import { z } from "zod"
 
-/**
- * Like slack, a discord connector holds either a literal `botToken` or a
- * `botTokenEnv` reference resolved from `process.env` at listener start. The
- * reference form keeps the secret out of settings.json, but is only set through
- * the engine API (`new Funnel(...)`); funnel.json and the `fnl` CLI produce
- * literals.
- */
 export const discordConnectorSchema = z.object({
   id: z.string(),
   name: z.string(),

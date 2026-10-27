@@ -211,9 +211,7 @@ describe("FunnelConnectorRegistry → FlumeSlackSource integration", () => {
 
     await expect(listener.start(async () => {})).rejects.toThrow("socket connection closed")
 
-    const statuses = diagnosticLog
-      .queryConnection({ type: "slack" })
-      .map((row) => row.status)
+    const statuses = diagnosticLog.queryConnection({ type: "slack" }).map((row) => row.status)
 
     expect(statuses).toContain("error")
     expect(statuses).not.toContain("auth-failed")

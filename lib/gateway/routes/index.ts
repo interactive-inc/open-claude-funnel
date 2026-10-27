@@ -12,10 +12,9 @@ import { listenersStopHandler } from "@/gateway/routes/listeners.stop"
 import { statusHandler } from "@/gateway/routes/status"
 
 /**
- * Top-level Hono app for the gateway daemon. Mounts every HTTP endpoint flat
+ * Hono routes for an embedded gateway. Mounts every HTTP endpoint flat
  * (the WebSocket /ws upgrade is handled directly by `Bun.serve`). Deps come
- * from the `deps` variable set by `FunnelGatewayServer`'s middleware — same
- * shape as CLI's `c.var.funnel`.
+ * from the `deps` variable set by `FunnelGatewayServer`'s middleware — host context.
  *
  * The RPC client type stays the full surface (`/health` included) — a host that
  * opts out of the built-in `/health` serves its own on that path, so the typed

@@ -39,7 +39,7 @@ export type FunnelEventRecord = {
  * any implementation assignable to the broadcaster's narrow `ReplaySource`.
  *
  * Implementations:
- *   - `SqliteFunnelEventLog` — the default; durable across daemon restarts.
+ *   - `SqliteFunnelEventLog` — optional host-selected durable storage.
  *   - `MemoryFunnelEventLog` — an in-process double for tests and embedders
  *     that do not need durability (replay is lost when the process exits).
  */
