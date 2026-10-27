@@ -17,7 +17,7 @@
 | schedule の保存ファイル | `scheduleConnector({ stateStore })`。既定はメモリ |
 | time channel の `persist` と channel directory | `timeChannel({ statePersister })`。指定しなければ保存・catch-up は無効 |
 | `/status` / `/health` の pid / funnelDir | 削除。プロセス・作業場所の識別はホストで行う |
-| `/debug` の `claudeClients` と CLI 案内 | `subscribers` とホスト向けの操作案内 |
+| `/debug` の単一 listener・診断・CLI 案内 | `listeners` 全件、`subscribers`、取得した履歴。解釈と次の操作はホストが判断 |
 
 再起動後も再送するホストは、イベントログだけでなく設定ストアのチャネル ID とコネクタ ID も維持する。ホスト所有のログはホストが閉じる。
 

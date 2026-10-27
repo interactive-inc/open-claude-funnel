@@ -6,6 +6,50 @@ import { MemoryFunnelSettingsStore } from "@/engine/settings/memory-settings-sto
 import { resolve, dirname } from "node:path"
 
 describe("connection library", () => {
+  test("debug exposes every listener and leaves connection interpretation to the host", async () => {
+    const funnel = new Funnel({
+      connectors: [scheduleConnector()],
+      channels: [
+        {
+          name: "ops",
+          connectors: [
+            { name: "first", type: "schedule" },
+            { name: "second", type: "schedule" },
+          ],
+        },
+        { name: "other" },
+      ],
+    })
+    const gateway = funnel.gatewayModule({ token: "test" })
+    try {
+      await gateway.start()
+      const response = await gateway.app.request("/debug?channel=ops", {
+        headers: { authorization: "Bearer test" },
+      })
+      expect(response.status).toBe(200)
+      const result = (await response.json()) as {
+        diagnosticsEnabled: boolean
+        channels: {
+          listeners: { connected: boolean }[]
+          subscribers: number
+          recentEvents: unknown[]
+        }[]
+      }
+      expect(result.diagnosticsEnabled).toBe(false)
+      expect(result.channels).toHaveLength(1)
+      const channel = result.channels[0]!
+      expect(channel.listeners).toHaveLength(2)
+      expect(
+        channel.listeners.every((listener: { connected: boolean }) => listener.connected),
+      ).toBe(true)
+      expect(channel.subscribers).toBe(0)
+      expect(channel.recentEvents).toEqual([])
+      expect(channel).not.toHaveProperty("diagnosis")
+    } finally {
+      await gateway.stop()
+    }
+  })
+
   test("host cancellation stops listeners without leaving recovery running", async () => {
     const controller = new AbortController()
     const funnel = new Funnel({

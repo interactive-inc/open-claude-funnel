@@ -154,7 +154,8 @@ describe.skipIf(!isBun)("FunnelGatewayServer auth integration", () => {
 
     expect(res.status).toBe(200)
     expect(body).toContain("custom payload")
-    expect(body).toContain('"message":"no subscribers connected to this channel"')
+    expect(body).toContain('"diagnosticsEnabled":true')
+    expect(body).not.toContain('"diagnosis"')
     expect(body).not.toContain("no connectors configured")
   })
 
