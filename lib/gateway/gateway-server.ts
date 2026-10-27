@@ -12,6 +12,7 @@ import {
   FunnelGatewayModule,
   type GatewayEventStore,
   type GatewayWsData,
+  type GatewayEventsOptions,
 } from "@/gateway/gateway-module"
 import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 
@@ -206,6 +207,11 @@ export class FunnelGatewayServer {
    */
   onEvent(handler: BroadcastSubscriber): () => void {
     return this.module.onEvent(handler)
+  }
+
+  events(options: GatewayEventsOptions) {
+    if (this.stopPromise || this.signal?.aborted) throw new Error("gateway is stopped")
+    return this.module.events(options)
   }
 
   /**

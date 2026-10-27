@@ -2,6 +2,11 @@ import type { ServerWebSocket } from "bun"
 import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
+import {
+  FunnelEventStream,
+  type EventStreamOptions,
+  type FunnelEventSubscription,
+} from "@/gateway/event-stream"
 
 const byteLengthOf = (event: { content: string; meta?: Record<string, string> }): number => {
   let bytes = Buffer.byteLength(event.content, "utf-8")
@@ -34,6 +39,13 @@ type ClientData = {
    */
   subscriberId?: string
 }
+
+type Recipient = {
+  data: ClientData
+} & (
+  | { kind: "socket"; target: ServerWebSocket<unknown> }
+  | { kind: "stream"; target: FunnelEventStream }
+)
 
 export type BroadcastEvent = {
   content: string
@@ -117,6 +129,7 @@ type BroadcasterMetrics = {
  */
 export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
+  private readonly streams = new Map<FunnelEventStream, ClientData>()
   private readonly subscribers: Set<BroadcastSubscriber> = new Set()
   private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
@@ -154,7 +167,7 @@ export class FunnelBroadcaster {
   getMetrics(): BroadcasterMetrics {
     return {
       clients: this.clients.size,
-      subscribers: this.subscribers.size,
+      subscribers: this.subscribers.size + this.streams.size,
       eventsBroadcast: this.eventsBroadcast,
       droppedSlowClients: this.droppedSlowClients,
       lastBroadcastAt: this.lastBroadcastAt ? new Date(this.lastBroadcastAt).toISOString() : null,
@@ -241,16 +254,16 @@ export class FunnelBroadcaster {
   }
 
   /**
-   * Returns the list of WS clients that should receive `event`. For each per-channel group:
+   * Selects socket and in-process recipients together. For each per-channel group:
    *   - fanout → every matching client receives
    *   - exclusive → exactly one client receives, picked round-robin per channel
    *
    * `meta.target` narrows the recipient set via `matchesClient`: only the subscriber
    * whose `subscriberId` equals `target` receives a targeted event.
    */
-  private pickRecipients(event: ReplayableEvent): ServerWebSocket<unknown>[] {
-    const exclusiveByChannel = new Map<string, ServerWebSocket<unknown>[]>()
-    const recipients: ServerWebSocket<unknown>[] = []
+  private pickRecipients(event: ReplayableEvent): Recipient[] {
+    const exclusiveByChannel = new Map<string, Recipient[]>()
+    const recipients: Recipient[] = []
     const channelId = event.meta?.channelId
     const exclusive: Record<string, string | null> = {}
 
@@ -258,19 +271,20 @@ export class FunnelBroadcaster {
       if (delivery === "exclusive" && (!channelId || channelId === id)) exclusive[id] = null
     }
 
-    for (const [ws, data] of this.clients) {
+    for (const recipient of this.deliveryRecipients()) {
+      const { data } = recipient
       if (!this.matchesClient(event, data)) continue
 
       if (data.delivery === "exclusive") {
         exclusive[data.channel] = null
         const list = exclusiveByChannel.get(data.channel) ?? []
 
-        list.push(ws)
+        list.push(recipient)
         exclusiveByChannel.set(data.channel, list)
         continue
       }
 
-      recipients.push(ws)
+      recipients.push(recipient)
     }
 
     for (const [channel, candidates] of exclusiveByChannel) {
@@ -281,13 +295,8 @@ export class FunnelBroadcaster {
 
       if (picked) {
         recipients.push(picked)
-        const data = this.clients.get(picked)
-
-        if (data) {
-          const subscriberId = data.subscriberId || randomUUID()
-          this.clients.set(picked, { ...data, subscriberId })
-          exclusive[channel] = subscriberId
-        }
+        picked.data.subscriberId ||= randomUUID()
+        exclusive[channel] = picked.data.subscriberId
       }
 
       this.exclusiveCursor.set(channel, cursor + 1)
@@ -302,16 +311,55 @@ export class FunnelBroadcaster {
     this.clients.set(ws, data)
   }
 
+  /** Channel-scoped native input for SDKs and host-owned MCP notification loops. */
+  events(
+    data: ClientData,
+    options: EventStreamOptions & { since?: number } = {},
+  ): FunnelEventSubscription {
+    if (data.delivery === "exclusive" && !data.subscriberId)
+      throw new Error("exclusive event streams require a stable subscriber id")
+    if (options.since !== undefined && (!Number.isSafeInteger(options.since) || options.since < 0))
+      throw new Error("since must be a non-negative safe integer")
+    let stream: FunnelEventStream | undefined
+    stream = new FunnelEventStream(options, () => {
+      if (stream) this.streams.delete(stream)
+    })
+    if (stream.isClosed) return stream
+    this.streams.set(stream, { ...data })
+    try {
+      if (options.since !== undefined) {
+        for (const event of this.replaySince(options.since, data)) {
+          stream.push(event)
+          if (stream.isClosed) break
+        }
+      }
+    } catch (error) {
+      stream.close()
+      throw error
+    }
+    return stream
+  }
+
+  closeEventStreams(): void {
+    for (const stream of this.streams.keys()) stream.close()
+  }
+
+  private deliveryRecipients(): Recipient[] {
+    return [
+      ...[...this.clients].map(([target, data]): Recipient => ({ kind: "socket", target, data })),
+      ...[...this.streams].map(([target, data]): Recipient => ({ kind: "stream", target, data })),
+    ]
+  }
+
   updateChannel(
     channelId: string,
     subscription: Pick<ClientData, "connectors" | "connectorIds" | "delivery">,
   ): void {
     this.channelDelivery.set(channelId, subscription.delivery ?? "fanout")
-    for (const [ws, data] of this.clients) {
+    for (const { data } of this.deliveryRecipients()) {
       if (data.channel !== channelId) continue
 
-      this.clients.set(ws, {
-        ...data,
+      Object.assign(data, {
         connectors: subscription.connectors,
         connectorIds: subscription.connectorIds,
         delivery: subscription.delivery,
@@ -328,7 +376,7 @@ export class FunnelBroadcaster {
   }
 
   listChannels(): { channel: string; connectors: string[] }[] {
-    return [...this.clients.values()].map((d) => ({ ...d }))
+    return this.deliveryRecipients().map(({ data }) => ({ ...data }))
   }
 
   subscribe(handler: BroadcastSubscriber): () => void {
@@ -370,7 +418,12 @@ export class FunnelBroadcaster {
       }
     }
 
-    for (const ws of recipients) {
+    for (const recipient of recipients) {
+      if (recipient.kind === "stream") {
+        recipient.target.push(event)
+        continue
+      }
+      const ws = recipient.target
       const buffered = ws.getBufferedAmount()
 
       if (buffered > this.maxBufferedBytes) {

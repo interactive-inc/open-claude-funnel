@@ -1,6 +1,6 @@
 # Open Claude Funnel
 
-外部サービスの接続をチャネルにまとめ、購読者へイベントを配信するライブラリです。受信プロトコルと再接続は [Flume](https://github.com/interactive-inc/open-flume) が担当し、Funnel は配信、再送、外部への返信を扱います。
+外部イベントを Claude Agent SDK や Claude Code Channels に組み込むための接続・配信ライブラリです。受信プロトコルと再接続は [Flume](https://github.com/interactive-inc/open-flume) が担当し、Funnel は配信、再送、外部への返信を扱います。
 
 CLI、エージェントの起動、作業ディレクトリ、設定ファイル、資格情報の保存は持ちません。設定と再送ログは既定でメモリ内に保持します。
 
@@ -42,6 +42,35 @@ await gateway.stop()
 
 ホスト自身が Bun の HTTP/WebSocket サーバーを持つ場合は、`gatewayModule({ token })` の `app`、`handleUpgrade`、`websocket` を組み込みます。Node.js では同一プロセスの配信 API と Hono の `app` を利用できます。`gatewayServer()` と WebSocket upgrade helper は Bun 専用です。
 
+## Agent SDK / Channels に組み込む
+
+SDK の `query()` と MCP の `Server` は利用側のものをそのまま使います。Funnel はそのインスタンスを受け取らず、入力と通知の値を返します。SDK・MCP を依存として追加することもありません。
+
+Agent SDK の `prompt` にイベント列を渡す例です。上の `funnel` を使い、HTTP を待ち受けない構成にします。
+
+```ts
+import { query } from "@anthropic-ai/claude-agent-sdk"
+import { agentSdkInput } from "@interactive-inc/claude-funnel/claude"
+
+const gateway = funnel.gatewayModule({ token: "" })
+const events = gateway.events({ channel: "ops", subscriberId: "assistant" })
+const input = agentSdkInput(events)
+try {
+  await gateway.start()
+  for await (const message of query({ prompt: input })) {
+    // SDK の応答をそのまま扱う。権限・セッション・ツールも SDK の API で設定する。
+    if (message.type === "result") console.log(message)
+  }
+} finally {
+  await input.return?.()
+  await gateway.stop()
+}
+```
+
+Claude Code Channels では、ホストの MCP `Server` に `claudeChannelCapabilities` を合成し、同じ `events` から取り出した値を `mcp.notification(claudeChannelNotification(event))` に渡します。既存のツール・transport・接続処理をそのまま使えます。
+
+[両方式の組み込み例と終了・返信の契約](.docs/embedding.md)を参照してください。`events()` はチャネル単位の配送先です。`onEvent()` は全イベントの監視用で、配送先の選択とは独立しています。
+
 ## 返信する
 
 ```ts
@@ -64,6 +93,8 @@ Slack、Discord、GitHub の接続は `/connectors/<type>` から必要なもの
 - 定期実行の発火状態も既定はメモリです。`scheduleConnector({ stateStore })`、または `/channel` の `timeChannel({ statePersister })` にホストの保存処理を渡せます。
 - `Funnel({ signal })` のキャンセルは接続の監視・復旧も停止します。Bun helper が所有する待受も閉じます。ホスト所有の待受はホストが閉じます。
 - 実行中に接続設定を変えた場合、ホストが `gateway.getRegistry().restart(channel, connector)` で対象の接続を更新します。
+- `events({ channel, subscriberId, since, signal })` は同一プロセスの購読を作ります。WebSocket と同じ fanout / exclusive・宛先指定・再送を使います。購読は呼び出した時点で始まり、`return()`・ループの `break`・abort・gateway 停止で解除します。
+- 未読キューは既定で200件・4 MiBまでです。超過は購読のエラーとして返し、停止時は未読入力を破棄します。最後に処理できた offset から、保持範囲内で再購読できます。
 
 明示停止した接続を監視が再開することはありません。再送が同じワーカーへ届いても、外部副作用の実行が一度だけになる保証とは別です。
 

@@ -15,6 +15,7 @@ export default defineConfig({
     entry: {
       index: "lib/index.ts",
       gateway: "lib/gateway.ts",
+      claude: "lib/claude.ts",
       channel: "lib/channel.ts",
       "event-log": "lib/event-log.ts",
       logger: "lib/logger.ts",

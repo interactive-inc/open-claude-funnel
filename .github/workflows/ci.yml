@@ -20,6 +20,20 @@ jobs:
       - run: bun run lint
       - run: make check
       - run: make build
-      - name: Import the library in Node without Bun or SQLite
+      - name: Compose SDK input and Channels notifications in Node
         run: |
-          node --input-type=module -e 'import { Funnel } from "./dist/index.js"; const f = new Funnel({ channels: [{ name: "smoke" }] }); const g = f.gatewayModule({ token: "smoke" }); g.emit({ channel: "smoke", content: "ok" }); await g.stop();'
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { Funnel } from "./dist/index.js";
+          import { agentSdkInput, claudeChannelNotification } from "./dist/claude.js";
+          const gateway = new Funnel({ channels: [{ name: "smoke" }] }).gatewayModule({ token: "" });
+          const events = gateway.events({ channel: "smoke" });
+          const input = agentSdkInput(events);
+          gateway.emit({ channel: "smoke", content: "ok" });
+          assert.equal(JSON.parse((await input.next()).value.message.content).content, "ok");
+          assert.equal(claudeChannelNotification({ content: "ok", offset: 1 }).params.meta.funnel_offset, "1");
+          const pending = input.next();
+          await gateway.stop();
+          assert.equal((await pending).done, true);
+          await input.return();
+          JS

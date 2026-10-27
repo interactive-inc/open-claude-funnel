@@ -40,6 +40,11 @@
       "import": "./dist/gateway.js",
       "default": "./dist/gateway.js"
     },
+    "./claude": {
+      "types": "./dist/claude.d.ts",
+      "import": "./dist/claude.js",
+      "default": "./dist/claude.js"
+    },
     "./channel": {
       "types": "./dist/channel.d.ts",
       "import": "./dist/channel.js",

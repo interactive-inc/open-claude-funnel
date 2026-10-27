@@ -13,6 +13,15 @@ import { FunnelEventLog } from "@/gateway/event-log/event-log"
 import { type Env, factory } from "@/gateway/factory"
 import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
+import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/event-stream"
+
+export type GatewayEventsOptions = EventStreamOptions & {
+  channel: string
+  /** Required for exclusive delivery; also receives meta.target addressed to this id. */
+  subscriberId?: string
+  /** Replay retained events strictly after this offset, then continue live. */
+  since?: number
+}
 
 export type GatewayEventStore = { eventLog?: FunnelEventLog }
 export type GatewayModuleDeps = GatewayEventStore & {
@@ -186,10 +195,8 @@ export class FunnelGatewayModule {
     this.signal?.throwIfAborted()
     if (this.disposed || this.stopPromise) {
       // Restarting after dispose() would boot listeners against a closed event
-      // log. emit() broadcasts before it records, so events would reach live
-      // subscribers and then vanish from the replay log — a silent durability
-      // hole. Surface it instead, matching FunnelGatewayServer's single-use
-      // contract.
+      // log. Surface this invalid lifecycle instead of starting listeners that
+      // cannot publish, matching FunnelGatewayServer's single-use contract.
       throw new Error("FunnelGatewayModule is single-use: construct a new instance to start again")
     }
 
@@ -210,6 +217,7 @@ export class FunnelGatewayModule {
   /** Close the event log if this module created it. Injected logs are left alone. */
   dispose(): void {
     if (this.disposed) return
+    this.broadcaster.closeEventStreams()
     this.signal?.removeEventListener("abort", this.onAbort)
     if (this.ownsEventLog) this.eventLog.close()
 
@@ -311,6 +319,26 @@ export class FunnelGatewayModule {
    */
   onEvent(handler: BroadcastSubscriber): () => void {
     return this.broadcaster.subscribe(handler)
+  }
+
+  /** Subscribe without HTTP or a WebSocket. return(), abort and gateway shutdown detach immediately. */
+  events(options: GatewayEventsOptions): FunnelEventSubscription {
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new Error("gateway is stopped")
+    const channel = this.resolveChannel(options.channel)
+    if (!channel) throw new FunnelChannelNotFoundError(options.channel)
+    this.broadcaster.updateChannel(channel.id, channel)
+    return this.broadcaster.events(
+      {
+        channel: channel.id,
+        channelName: channel.name,
+        connectors: channel.connectors,
+        connectorIds: channel.connectorIds,
+        delivery: channel.delivery,
+        subscriberId: options.subscriberId,
+      },
+      options,
+    )
   }
 
   /**
