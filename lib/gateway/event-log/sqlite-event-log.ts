@@ -9,6 +9,7 @@ import {
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-claims"
 import { eventSnapshot } from "@/gateway/event-snapshot"
+import { invokeCallback } from "@/gateway/invoke-callback"
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */
@@ -115,17 +116,21 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     // Datadog) sees the loss too — discarding the Error the sink returns
     // would mean the operator only sees missing replay rows after the fact.
     if (result instanceof Error) {
-      this.logger?.error("event log write failed", {
-        offset: record.offset,
-        error: result.message,
-      })
-      this.onError?.(result, {
-        component: "sqlite-event-log",
-        op: "record",
-        offset: record.offset,
-        channelId: record.channelId,
-        connectorId: record.connectorId,
-      })
+      invokeCallback(() =>
+        this.logger?.error("event log write failed", {
+          offset: record.offset,
+          error: result.message,
+        }),
+      )
+      invokeCallback(() =>
+        this.onError?.(result, {
+          component: "sqlite-event-log",
+          op: "record",
+          offset: record.offset,
+          channelId: record.channelId,
+          connectorId: record.connectorId,
+        }),
+      )
       throw result
     }
   }
