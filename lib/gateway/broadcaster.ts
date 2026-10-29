@@ -277,7 +277,10 @@ export class FunnelBroadcaster {
   private matchesReplay(event: PendingEvent, data: ClientData): boolean {
     if (!this.matchesClient(event, data)) return false
 
-    const assigned = event.exclusive?.[data.channel]
+    const assigned =
+      event.exclusive && Object.hasOwn(event.exclusive, data.channel)
+        ? event.exclusive[data.channel]
+        : undefined
 
     if (assigned === undefined) {
       // Legacy rows do not identify which exclusive worker already saw them.
@@ -332,7 +335,7 @@ export class FunnelBroadcaster {
     const exclusiveByChannel = new Map<string, Recipient[]>()
     const recipients: Recipient[] = []
     const channelId = event.meta?.channelId
-    const exclusive: Record<string, string | null> = {}
+    const exclusive: Record<string, string | null> = Object.create(null)
 
     for (const [id, delivery] of this.channelDelivery) {
       if (delivery === "exclusive" && (!channelId || channelId === id)) exclusive[id] = null
