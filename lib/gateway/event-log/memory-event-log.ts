@@ -2,6 +2,7 @@ import { requireIntegerLimit } from "@/require-limit"
 import type { ReplayableEvent } from "@/gateway/broadcaster"
 import { FunnelEventLog, type FunnelEventRecord } from "@/gateway/event-log/event-log"
 import { eventSnapshot } from "@/gateway/event-snapshot"
+import { replayRoutingMetadata } from "@/gateway/event-log/replay-routing"
 
 type StoredEvent = {
   offset: number
@@ -39,14 +40,16 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     const offset = record.offset
     if (!Number.isSafeInteger(offset) || offset < 1)
       throw new RangeError("event offset must be a positive safe integer")
-    const meta = record.meta
+    const channelId = record.channelId
+    const connectorId = record.connectorId
+    const meta = replayRoutingMetadata(channelId, connectorId, record.meta)
     const exclusive = record.exclusive
     const event: StoredEvent = {
       offset,
       content: record.content,
-      meta: meta ? { ...meta } : undefined,
-      channelId: record.channelId,
-      connectorId: record.connectorId,
+      meta,
+      channelId,
+      connectorId,
       ...(exclusive ? { exclusive: { ...exclusive } } : {}),
     }
     const bytes = this.sizeOf(event.content, event.meta)

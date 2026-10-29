@@ -22,6 +22,7 @@ export type FunnelEvent = z.infer<typeof funnelEventSchema>
 /** One broadcast event to persist, carrying the offset the broadcaster assigned. */
 export type FunnelEventRecord = {
   content: string
+  /** Canonical routing identities; replay fills missing metadata and rejects conflicting IDs. */
   channelId: string | null
   connectorId: string | null
   meta: Record<string, string> | null

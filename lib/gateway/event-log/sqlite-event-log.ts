@@ -11,6 +11,7 @@ import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-claims"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { invokeCallback } from "@/invoke-callback"
+import { replayRoutingMetadata } from "@/gateway/event-log/replay-routing"
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */
@@ -224,7 +225,11 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       Object.values(exclusive ?? {}).some((item) => item !== null && typeof item !== "string")
     )
       throw new Error("replay event data is invalid")
-    return { ...parsed.data, meta, ...(exclusive ? { exclusive } : {}) }
+    return {
+      ...parsed.data,
+      meta: replayRoutingMetadata(parsed.data.channel_id, parsed.data.connector_id, meta) ?? null,
+      ...(exclusive ? { exclusive } : {}),
+    }
   }
 
   private toReplay(offset: number, value: unknown): ReplayableEvent {

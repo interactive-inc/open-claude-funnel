@@ -76,6 +76,51 @@ test("valid metadata dictionary keys survive SQLite validation", () => {
   }
 })
 
+test("persisted routing omissions are restored but contradictory metadata is rejected", () => {
+  const directory = mkdtempSync(join(tmpdir(), "funnel-replay-routing-"))
+  const path = join(directory, "events.db")
+  const log = new SqliteFunnelEventLog({ path })
+  const db = new Database(path)
+  try {
+    log.record({
+      offset: 1,
+      content: "history",
+      channelId: "ops",
+      connectorId: "source",
+      meta: null,
+      exclusive: { ops: null },
+    })
+    const event = JSON.parse(
+      db.query<{ event: string }, []>("SELECT event FROM logs WHERE seq = 1").get()!.event,
+    )
+    event.meta = { detail: "legacy" }
+    db.run("UPDATE logs SET event = ? WHERE seq = 1", [JSON.stringify(event)])
+    expect(log.loadSince(0)[0]?.meta).toEqual({
+      channelId: "ops",
+      connectorId: "source",
+      detail: "legacy",
+    })
+    expect(log.loadForChannel({ channelId: "ops" })[0]?.meta).toEqual({
+      channelId: "ops",
+      connectorId: "source",
+      detail: "legacy",
+    })
+    event.meta = { channelId: "other" }
+    db.run("UPDATE logs SET event = ? WHERE seq = 1", [JSON.stringify(event)])
+    expect(() => log.loadSince(0)).toThrow("replay routing metadata conflicts")
+    expect(() => log.loadForChannel({ channelId: "ops" })).toThrow(
+      "replay routing metadata conflicts",
+    )
+    expect(() => log.claimExclusive(1, "ops", "worker")).toThrow(
+      "replay routing metadata conflicts",
+    )
+  } finally {
+    db.close()
+    log.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test("invalid replay writes are reported without advancing the durable offset", () => {
   const errors: Error[] = []
   const log = new SqliteFunnelEventLog({
