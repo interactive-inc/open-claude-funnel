@@ -1,4 +1,5 @@
 import { HTTPException } from "hono/http-exception"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import {
   FunnelChannelAmbiguousError,
   FunnelChannelNotFoundError,
@@ -53,7 +54,7 @@ function buildCoreRoutes() {
           return c.json({ error: error.message }, 404)
         }
 
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessageOf(error)
 
         return c.json({ error: message }, 500)
       })
