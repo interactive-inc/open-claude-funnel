@@ -1,4 +1,5 @@
 import { requireIntegerLimit } from "@/require-limit"
+import { requireTimestamp } from "@/require-timestamp"
 import {
   ConnectorDiagnosticLog,
   type ConnectorConnectionQuery,
@@ -35,17 +36,17 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   recordRaw(record: ConnectorRawRecord): void {
-    const event = { ...record, ts: this.now() }
+    const event = { ...record, ts: requireTimestamp(this.now()) }
     this.raws.push({ ...event, seq: ++this.sequences.raw })
   }
 
   recordProcessed(record: ConnectorProcessedRecord): void {
-    const event = { ...record, ts: this.now() }
+    const event = { ...record, ts: requireTimestamp(this.now()) }
     this.processeds.push({ ...event, seq: ++this.sequences.processed })
   }
 
   recordConnection(record: ConnectorConnectionRecord): void {
-    const event = { ...record, ts: this.now() }
+    const event = { ...record, ts: requireTimestamp(this.now()) }
     this.connections.push({ ...event, seq: ++this.sequences.connection })
   }
 
