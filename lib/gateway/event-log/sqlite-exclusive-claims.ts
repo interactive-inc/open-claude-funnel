@@ -1,3 +1,4 @@
+import { encodeSqliteText, SQLITE_TEXT_PARAMETER } from "@/event-log/sqlite-text"
 import type { Database } from "bun:sqlite"
 
 /** Keeps the first worker assignment stable across gateway restarts. */
@@ -24,15 +25,17 @@ export class SqliteExclusiveClaims {
   claim(offset: number, channelId: string, subscriberId: string): boolean {
     this.database
       .query(`INSERT OR IGNORE INTO funnel_exclusive_claims
-      (offset, channel_id, subscriber_id) VALUES (?, ?, ?)`)
-      .run(offset, channelId, subscriberId)
+      (offset, channel_id, subscriber_id) VALUES (?, ${SQLITE_TEXT_PARAMETER}, ${SQLITE_TEXT_PARAMETER})`)
+      .run(offset, encodeSqliteText(channelId), encodeSqliteText(subscriberId))
+    // Bun cannot round-trip unpaired surrogates through a TEXT result row.
     const owner = this.database
-      .query<{ subscriber_id: string }, [number, string]>(
-        "SELECT subscriber_id FROM funnel_exclusive_claims WHERE offset = ? AND channel_id = ?",
+      .query<{ owned: number }, [string, number, string]>(
+        `SELECT subscriber_id = ${SQLITE_TEXT_PARAMETER} AS owned FROM funnel_exclusive_claims
+        WHERE offset = ? AND channel_id = ${SQLITE_TEXT_PARAMETER}`,
       )
-      .get(offset, channelId)
+      .get(encodeSqliteText(subscriberId), offset, encodeSqliteText(channelId))
 
-    return owner?.subscriber_id === subscriberId
+    return owner?.owned === 1
   }
 
   pruneBefore(offset: number): void {

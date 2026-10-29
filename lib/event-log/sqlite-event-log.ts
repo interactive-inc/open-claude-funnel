@@ -1,3 +1,4 @@
+import { encodeSqliteText, SQLITE_TEXT_PARAMETER } from "@/event-log/sqlite-text"
 import { requireTimestamp } from "@/require-timestamp"
 import { invokeCallback } from "@/invoke-callback"
 import { normalizeError } from "@/engine/error/error-message-of"
@@ -237,7 +238,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       // Database.query owns its cached statements and finalizes them on close.
       // Unmanaged prepare() statements keep SQLite file handles alive after close_v2.
       const colsWithSeq = ["seq", ...cols]
-      const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
+      const placeholdersWithSeq = colsWithSeq
+        .map((column) =>
+          column === "seq" || column === "ts" || column === "event" ? "?" : SQLITE_TEXT_PARAMETER,
+        )
+        .join(", ")
       this.insertWithSeqStmt = this.db.query(
         `INSERT INTO logs (${colsWithSeq.map(quoteIdentifier).join(", ")}) VALUES (${placeholdersWithSeq})`,
       )
@@ -363,8 +368,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
     const type = props.type
     if (typeof type === "string") {
-      conditions.push("type = ?")
-      params.push(type)
+      conditions.push(`type = ${SQLITE_TEXT_PARAMETER}`)
+      params.push(encodeSqliteText(type))
     }
 
     const where = props.where
@@ -419,15 +424,15 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     requireTimestamp(ts)
     const type = extractType(event)
     const json = JSON.stringify(event)
-    if (this.indexes.length === 0) return [ts, type, json]
+    if (this.indexes.length === 0) return [ts, encodeSqliteText(type), json]
 
     // The user's typed Record<I[number], V> is structurally a string-keyed
     // object at runtime; widen so we can index by `col: string` from the loop.
     const values = this.extractIndexes
       ? (this.extractIndexes(event) as unknown as Record<string, string | null>)
       : null
-    const indexParams = this.indexes.map((col) => values?.[col] ?? null)
-    return [ts, type, json, ...indexParams]
+    const indexParams = this.indexes.map((col) => encodeSqliteText(values?.[col] ?? null))
+    return [ts, encodeSqliteText(type), json, ...indexParams]
   }
 
   /** Allocate under the same write transaction as the payload; failed writes roll back both. */
@@ -451,8 +456,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       if (value === null) {
         conditions.push(`${column} IS NULL`)
       } else {
-        conditions.push(`${column} = ?`)
-        params.push(value)
+        conditions.push(`${column} = ${SQLITE_TEXT_PARAMETER}`)
+        params.push(encodeSqliteText(value))
       }
     }
   }
@@ -466,8 +471,30 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const value = prefixes[col]
       if (value === undefined) continue
 
-      conditions.push(`instr(${quoteIdentifier(col)}, ?) = 1`)
-      params.push(value)
+      const column = quoteIdentifier(col)
+      const last = value.charCodeAt(value.length - 1)
+      if (last >= 0xd800 && last <= 0xdbff) {
+        // startsWith compares UTF-16 units: a final high surrogate also matches
+        // every supplementary character formed with that surrogate. Slice bytes
+        // after the complete prefix so embedded NULs do not truncate its length.
+        const leading = value.slice(0, -1)
+        const first = 0x10000 + (last - 0xd800) * 0x400
+        conditions.push(`(instr(${column}, ${SQLITE_TEXT_PARAMETER}) = 1 OR (
+          instr(${column}, ${SQLITE_TEXT_PARAMETER}) = 1 AND
+          unicode(CAST(substr(CAST(${column} AS BLOB), length(CAST(${SQLITE_TEXT_PARAMETER} AS BLOB)) + 1) AS TEXT))
+            BETWEEN ? AND ?
+        ))`)
+        params.push(
+          encodeSqliteText(value),
+          encodeSqliteText(leading),
+          encodeSqliteText(leading),
+          first,
+          first + 0x3ff,
+        )
+      } else {
+        conditions.push(`instr(${column}, ${SQLITE_TEXT_PARAMETER}) = 1`)
+        params.push(encodeSqliteText(value))
+      }
     }
   }
 
@@ -490,8 +517,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const column = quoteIdentifier(col)
 
       if (nonNull.length > 0) {
-        alternatives.push(`${column} IN (${nonNull.map(() => "?").join(", ")})`)
-        params.push(...nonNull)
+        alternatives.push(`${column} IN (${nonNull.map(() => SQLITE_TEXT_PARAMETER).join(", ")})`)
+        params.push(...nonNull.map(encodeSqliteText))
       }
 
       if (hasNull) alternatives.push(`${column} IS NULL`)
