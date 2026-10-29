@@ -7,11 +7,19 @@ import type {
 } from "@/engine/connectors/connector-descriptor"
 
 for (const kind of ["promise", "thenable"] as const) {
-  for (const stage of ["buildConfig", "applyUpdate", "operation"] as const) {
+  for (const stage of [
+    "buildConfig",
+    "applyUpdate",
+    "operation",
+    "createListener",
+    "createAdapter",
+    "secretTokens",
+  ] as const) {
     test(`${kind} connector ${stage} is rejected without changing settings or leaking its rejection`, async () => {
-      const descriptor = {
+      const descriptor: ConnectorDescriptor = {
         ...scheduleConnector(),
         operations: { ...scheduleConnector().operations },
+        createAdapter: () => ({ call: async () => "ok" }),
       }
       const original = { ...descriptor, operations: { ...descriptor.operations } }
       const funnel = new Funnel({
@@ -39,15 +47,28 @@ for (const kind of ["promise", "thenable"] as const) {
         descriptor.buildConfig = asynchronous as unknown as ConnectorDescriptor["buildConfig"]
       else if (stage === "applyUpdate")
         descriptor.applyUpdate = asynchronous as unknown as ConnectorDescriptor["applyUpdate"]
-      else descriptor.operations.run = asynchronous as unknown as ConnectorOperation
+      else if (stage === "operation")
+        descriptor.operations.run = asynchronous as unknown as ConnectorOperation
+      else if (stage === "createListener")
+        descriptor.createListener = asynchronous as unknown as ConnectorDescriptor["createListener"]
+      else if (stage === "createAdapter")
+        descriptor.createAdapter = asynchronous as unknown as ConnectorDescriptor["createAdapter"]
+      else descriptor.secretTokens = asynchronous as unknown as ConnectorDescriptor["secretTokens"]
       const run = () => {
         if (stage === "buildConfig")
           return funnel.channels.addConnector("channel", { type: "schedule", name: "next" })
         if (stage === "applyUpdate") return funnel.channels.updateConnector("channel", "source", {})
-        return funnel.channels.connectorOp("channel", "source", "run", null)
+        if (stage === "operation")
+          return funnel.channels.connectorOp("channel", "source", "run", null)
+        if (stage === "createListener") return funnel.channels.createListener("channel", "source")
+        if (stage === "createAdapter")
+          return funnel.channels.call("channel", "source", { method: "POST", path: "action" })
+        return funnel.channels.addConnector("channel", { type: "schedule", name: "next" })
       }
       try {
-        expect(run).toThrow(`connector ${stage} must be synchronous`)
+        if (stage === "createAdapter")
+          await expect(run()).rejects.toThrow(`connector ${stage} must be synchronous`)
+        else expect(run).toThrow(`connector ${stage} must be synchronous`)
         await Bun.sleep(0)
         expect(observed).toBe(1)
         expect(funnel.channels.list()).toEqual(before)
@@ -58,6 +79,9 @@ for (const kind of ["promise", "thenable"] as const) {
         funnel.channels.addConnector("channel", { type: "schedule", name: "next" }),
       ).not.toThrow()
       expect(funnel.channels.get("channel")?.connectors).toHaveLength(2)
+      expect(
+        await funnel.channels.call("channel", "source", { method: "POST", path: "action" }),
+      ).toBe("ok")
     })
   }
 }

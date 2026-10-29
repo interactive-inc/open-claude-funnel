@@ -72,7 +72,10 @@ export class FunnelConnectorRegistry {
   }
 
   createListener(channelId: string, config: BaseConnectorConfig): FunnelConnectorListener {
-    return this.require(config.type).createListener(config, this.listenerDeps(channelId))
+    return synchronousResult(
+      this.require(config.type).createListener(config, this.listenerDeps(channelId)),
+      "createListener",
+    )
   }
 
   createAdapter(config: BaseConnectorConfig): FunnelConnectorAdapter | null {
@@ -81,11 +84,14 @@ export class FunnelConnectorRegistry {
 
     if (!createAdapter) return null
 
-    return createAdapter.call(descriptor, config, this.adapterDeps())
+    return synchronousResult(
+      createAdapter.call(descriptor, config, this.adapterDeps()),
+      "createAdapter",
+    )
   }
 
   secretTokens(config: BaseConnectorConfig): string[] {
-    return this.require(config.type).secretTokens(config)
+    return synchronousResult(this.require(config.type).secretTokens(config), "secretTokens")
   }
 
   buildConfig(input: Record<string, unknown>, context: ConnectorBuildContext): BaseConnectorConfig {
@@ -153,7 +159,7 @@ export class FunnelConnectorRegistry {
   }
 }
 
-/** Configuration hooks participate in a synchronous settings transaction. */
+/** Descriptor hooks are synchronous; lifecycle and outbound calls own asynchronous work. */
 function synchronousResult<T>(value: T, operation: string): T {
   if (
     value !== null &&
