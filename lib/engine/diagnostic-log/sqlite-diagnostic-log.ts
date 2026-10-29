@@ -1,3 +1,4 @@
+import { requireSeparateDiagnosticPaths } from "@/engine/diagnostic-log/require-separate-paths"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { chmodSync } from "node:fs"
 import type { EventLogEntry } from "@/event-log/event-log-entry"
@@ -82,6 +83,10 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   constructor(props: Props) {
     super()
+    const rawPath = props.rawPath
+    const processedPath = props.processedPath
+    const connectionPath = props.connectionPath
+    requireSeparateDiagnosticPaths([rawPath, processedPath, connectionPath])
     if (props.maxRows !== undefined) requireIntegerLimit(props.maxRows, "maxRows")
     if (props.rawMaxRows !== undefined) requireIntegerLimit(props.rawMaxRows, "rawMaxRows")
     if (props.maxAgeMs !== undefined) requireDurationLimit(props.maxAgeMs, "maxAgeMs")
@@ -100,7 +105,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       ...(rawMax !== undefined ? { maxRows: rawMax } : {}),
     }
     this.raw = new SqliteEventLog<ConnectorRawEvent, RawIndexes>({
-      path: props.rawPath,
+      path: rawPath,
       indexes: ["event_id", "connector_id", "channel_id"],
       extractIndexes: (event) => ({
         event_id: event.event_id,
@@ -114,7 +119,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     // already open so a failed constructor does not leak handles.
     try {
       this.processed = new SqliteEventLog<ConnectorProcessedEvent, ProcessedIndexes>({
-        path: props.processedPath,
+        path: processedPath,
         indexes: ["event_id", "connector_id", "channel_id", "outcome"],
         extractIndexes: (event) => ({
           event_id: event.event_id,
@@ -127,7 +132,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       })
       try {
         this.connection = new SqliteEventLog<ConnectorConnectionEvent, ConnectionIndexes>({
-          path: props.connectionPath,
+          path: connectionPath,
           indexes: ["connector_id", "channel_id", "status"],
           extractIndexes: (event) => ({
             connector_id: event.connector_id,
@@ -149,9 +154,9 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     // These files hold untouched inbound payloads (Slack message text, user
     // ids). On a shared host /tmp is world-traversable, so lock the files to
     // the owner — same posture as the gateway token file.
-    restrictPermissions(props.rawPath)
-    restrictPermissions(props.processedPath)
-    restrictPermissions(props.connectionPath)
+    restrictPermissions(rawPath)
+    restrictPermissions(processedPath)
+    restrictPermissions(connectionPath)
 
     Object.freeze(this)
   }
