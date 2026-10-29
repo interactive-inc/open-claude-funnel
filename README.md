@@ -135,6 +135,8 @@ SQLite アダプターは Bun 専用です。通常の import では SQLite や�
 
 ## 開発と移行
 
+開発用の Vite+ は Node.js 22.18 以降の22系、24.11以降の24系、または26以降を使用します。
+
 ```sh
 bun install
 bun run typecheck
