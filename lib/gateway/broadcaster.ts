@@ -408,8 +408,17 @@ export class FunnelBroadcaster {
     subscription: Pick<ClientData, "connectors" | "connectorIds" | "delivery">,
   ): void {
     this.channelDelivery.set(channelId, subscription.delivery ?? "fanout")
-    for (const { data } of this.deliveryRecipients()) {
+    for (const recipient of this.deliveryRecipients()) {
+      const { data } = recipient
       if (data.channel !== channelId) continue
+      if (
+        subscription.delivery === "exclusive" &&
+        recipient.kind === "stream" &&
+        !data.subscriberId
+      ) {
+        recipient.target.close(new Error("exclusive event streams require a stable subscriber id"))
+        continue
+      }
 
       Object.assign(data, {
         connectors: subscription.connectors,
