@@ -1,5 +1,6 @@
 import { hasSafeJsonDepth } from "@/has-safe-json-depth"
 import { invokeCallback } from "@/invoke-callback"
+import { snapshotDiagnosticQuery } from "@/engine/diagnostic-log/query-snapshot"
 import { requireSeparateDiagnosticPaths } from "@/engine/diagnostic-log/require-separate-paths"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { chmodSync } from "node:fs"
@@ -224,7 +225,8 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     }
   }
 
-  queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
+  queryRaw(input: ConnectorRawQuery): StoredRawEvent[] {
+    const query = { ...snapshotDiagnosticQuery(input), eventId: input.eventId }
     const where: WhereClause & { event_id?: string } = buildWhere(query)
     if (query.eventId !== undefined) where.event_id = query.eventId
 
@@ -247,7 +249,13 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     }))
   }
 
-  queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[] {
+  queryProcessed(input: ConnectorProcessedQuery): StoredProcessedEvent[] {
+    const query = {
+      ...snapshotDiagnosticQuery(input),
+      eventId: input.eventId,
+      outcome: input.outcome,
+      outcomePrefix: input.outcomePrefix,
+    }
     const where: WhereClause & { event_id?: string; outcome?: string } = buildWhere(query)
     if (query.eventId !== undefined) where.event_id = query.eventId
     if (query.outcome !== undefined) where.outcome = query.outcome
@@ -275,7 +283,13 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     }))
   }
 
-  queryConnection(query: ConnectorConnectionQuery): StoredConnectionEvent[] {
+  queryConnection(input: ConnectorConnectionQuery): StoredConnectionEvent[] {
+    const query = {
+      ...snapshotDiagnosticQuery(input),
+      status: input.status,
+      statuses: input.statuses,
+    }
+    if (query.statuses !== undefined) query.statuses = [...query.statuses]
     const where: WhereClause & { status?: string } = buildWhere(query)
     if (query.status !== undefined) where.status = query.status
 

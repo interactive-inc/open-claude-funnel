@@ -322,35 +322,40 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   query(props: SqliteEventLogQuery<I> = {}): EventLogEntry<E>[] {
-    const limit = requireIntegerLimit(props.limit === undefined ? 1000 : props.limit, "limit")
+    const requestedLimit = props.limit
+    const limit = requireIntegerLimit(requestedLimit === undefined ? 1000 : requestedLimit, "limit")
     const conditions: string[] = []
     const params: SQLQueryBindings[] = []
 
-    if (props.seq !== undefined) {
+    const seq = props.seq
+    if (seq !== undefined) {
       conditions.push("seq = ?")
-      params.push(requireIntegerLimit(props.seq, "seq"))
+      params.push(requireIntegerLimit(seq, "seq"))
     } else {
       conditions.push("seq > ?")
-      params.push(
-        requireIntegerLimit(props.sinceSeq === undefined ? 0 : props.sinceSeq, "sinceSeq"),
-      )
+      const sinceSeq = props.sinceSeq
+      params.push(requireIntegerLimit(sinceSeq === undefined ? 0 : sinceSeq, "sinceSeq"))
     }
 
-    if (typeof props.type === "string") {
+    const type = props.type
+    if (typeof type === "string") {
       conditions.push("type = ?")
-      params.push(props.type)
+      params.push(type)
     }
 
-    if (props.where) {
-      this.appendWhereConditions(props.where, conditions, params)
+    const where = props.where
+    if (where) {
+      this.appendWhereConditions(where, conditions, params)
     }
 
-    if (props.wherePrefix) {
-      this.appendPrefixConditions(props.wherePrefix, conditions, params)
+    const wherePrefix = props.wherePrefix
+    if (wherePrefix) {
+      this.appendPrefixConditions(wherePrefix, conditions, params)
     }
 
-    if (props.whereIn) {
-      this.appendSetConditions(props.whereIn, conditions, params)
+    const whereIn = props.whereIn
+    if (whereIn) {
+      this.appendSetConditions(whereIn, conditions, params)
     }
 
     params.push(limit)

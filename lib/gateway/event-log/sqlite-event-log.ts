@@ -173,15 +173,16 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     sinceSeq?: number
     limit?: number
   }): ReplayableEvent[] {
+    const { channelId, connectorId, sinceSeq, limit } = props
     const where: { channel_id: string; connector_id?: string } = {
-      channel_id: props.channelId,
+      channel_id: channelId,
     }
-    if (props.connectorId !== undefined) where.connector_id = props.connectorId
+    if (connectorId !== undefined) where.connector_id = connectorId
 
     const records = this.sink.query({
       where,
-      ...(props.sinceSeq !== undefined ? { sinceSeq: props.sinceSeq } : {}),
-      ...(props.limit !== undefined ? { limit: props.limit } : {}),
+      ...(sinceSeq !== undefined ? { sinceSeq } : {}),
+      ...(limit !== undefined ? { limit } : {}),
     })
     return records.map((record) => this.toReplay(record.seq, record.event))
   }

@@ -1,4 +1,4 @@
-import { requireIntegerLimit } from "@/require-limit"
+import { snapshotDiagnosticQuery } from "@/engine/diagnostic-log/query-snapshot"
 import { requireTimestamp } from "@/require-timestamp"
 import {
   ConnectorDiagnosticLog,
@@ -69,7 +69,7 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
-    const options = { ...snapshotQuery(query), eventId: query.eventId }
+    const options = { ...snapshotDiagnosticQuery(query), eventId: query.eventId }
     const matched = this.raws.filter((event) => {
       if (!matches(event, options)) return false
       if (options.eventId !== undefined && event.eventId !== options.eventId) return false
@@ -82,7 +82,7 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[] {
     const options = {
-      ...snapshotQuery(query),
+      ...snapshotDiagnosticQuery(query),
       eventId: query.eventId,
       outcome: query.outcome,
       outcomePrefix: query.outcomePrefix,
@@ -102,7 +102,11 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryConnection(query: ConnectorConnectionQuery): StoredConnectionEvent[] {
-    const options = { ...snapshotQuery(query), status: query.status, statuses: query.statuses }
+    const options = {
+      ...snapshotDiagnosticQuery(query),
+      status: query.status,
+      statuses: query.statuses,
+    }
     if (options.statuses !== undefined) options.statuses = [...options.statuses]
     const matched = this.connections.filter((event) => {
       if (!matches(event, options)) return false
@@ -143,18 +147,4 @@ const matches = (
 const takeRecent = <T extends object>(events: T[], limit: number | undefined): T[] => {
   const selected = limit === undefined ? events : limit <= 0 ? [] : events.slice(-limit)
   return selected.map((event) => ({ ...event }))
-}
-
-/** Validate a stable view of bounds before inspecting any retained rows. */
-function snapshotQuery(query: ConnectorQuery): ConnectorQuery {
-  const options: ConnectorQuery = {
-    type: query.type,
-    connectorId: query.connectorId,
-    channelId: query.channelId,
-    seq: query.seq,
-    limit: query.limit,
-  }
-  if (options.seq !== undefined) requireIntegerLimit(options.seq, "seq")
-  if (options.limit !== undefined) requireIntegerLimit(options.limit, "limit")
-  return options
 }
