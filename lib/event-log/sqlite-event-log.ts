@@ -257,11 +257,12 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   insert(input: { ts: number; event: E }): EventLogEntry<E> | Error {
     try {
-      const params = this.buildInsertParams(input.ts, input.event)
+      const { ts, event } = input
+      const params = this.buildInsertParams(ts, event)
       const result = this.db.transaction(() => {
         const seq = this.nextSequence()
         this.insertWithSeqStmt.run(seq, ...params)
-        return { record: { seq, ts: input.ts, event: input.event }, compact: this.trim() }
+        return { record: { seq, ts, event }, compact: this.trim() }
       })()
       this.compact(result.compact)
       return result.record
@@ -277,13 +278,14 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const records: EventLogEntry<E>[] = []
       const apply = this.db.transaction((batch: ReadonlyArray<{ ts: number; event: E }>) => {
         for (const input of batch) {
-          const params = this.buildInsertParams(input.ts, input.event)
+          const { ts, event } = input
+          const params = this.buildInsertParams(ts, event)
           const seq = this.nextSequence()
           this.insertWithSeqStmt.run(seq, ...params)
           records.push({
             seq,
-            ts: input.ts,
-            event: input.event,
+            ts,
+            event,
           })
         }
         return this.trim()
@@ -297,15 +299,14 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   write(record: EventLogEntry<E>): void | Error {
     try {
-      if (!Number.isSafeInteger(record.seq) || record.seq < 1)
+      const seq = record.seq
+      if (!Number.isSafeInteger(seq) || seq < 1)
         throw new Error("event log sequence must be a positive safe integer")
-      const params: SQLQueryBindings[] = [
-        record.seq,
-        ...this.buildInsertParams(record.ts, record.event),
-      ]
+      const { ts, event } = record
+      const params: SQLQueryBindings[] = [seq, ...this.buildInsertParams(ts, event)]
       const compact = this.db.transaction(() => {
         this.insertWithSeqStmt.run(...params)
-        this.advanceSeqStmt.run(record.seq)
+        this.advanceSeqStmt.run(seq)
         return this.trim()
       })()
       this.compact(compact)
