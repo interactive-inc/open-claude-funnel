@@ -51,16 +51,14 @@ export const flumeLogHandler = (logger: FunnelLogger | undefined): FlumeLogHandl
     const meta = buildMeta(log)
 
     if (log.level === "error") {
-      logger.error(line, meta)
-      return
+      return logger.error(line, meta)
     }
 
     if (log.level === "warn") {
-      logger.warn(line, meta)
-      return
+      return logger.warn(line, meta)
     }
 
-    logger.info(line, meta)
+    return logger.info(line, meta)
   }
 }
 

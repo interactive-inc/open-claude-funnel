@@ -21,7 +21,7 @@ export class FunnelConnectorDiagnosticsRecorder {
   }
 
   recordRaw(eventId: string, payload: string): void {
-    this.props.log?.recordRaw({
+    return this.props.log?.recordRaw({
       eventId,
       type: this.props.type,
       connectorId: this.props.connectorId,
@@ -31,7 +31,7 @@ export class FunnelConnectorDiagnosticsRecorder {
   }
 
   recordProcessed(eventId: string, outcome: string, payload: string): void {
-    this.props.log?.recordProcessed({
+    return this.props.log?.recordProcessed({
       eventId,
       type: this.props.type,
       connectorId: this.props.connectorId,
@@ -42,7 +42,7 @@ export class FunnelConnectorDiagnosticsRecorder {
   }
 
   recordConnection(status: ConnectorConnectionStatus, detail: string): void {
-    this.props.log?.recordConnection({
+    return this.props.log?.recordConnection({
       type: this.props.type,
       connectorId: this.props.connectorId,
       channelId: this.props.channelId,

@@ -17,6 +17,7 @@ import { listenerSignal } from "@/engine/connectors/listener-signal"
 import type { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
+import { invokeCallback } from "@/invoke-callback"
 
 /**
  * Optional host hook: inspect the raw Slack event after envelope unwrap and
@@ -338,10 +339,16 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       // Reaction is post-delivery cosmetic — fire-and-forget so a ~300ms
       // round-trip to slack.com/api/reactions.add does not gate the next
       // event's notify. Notify ordering is the contract; reactions are not.
-      void this.postReaction(meta).catch((error: unknown) => {
-        this.diagnostics.recordProcessed(eventId, "emitted:reaction-failed", errorMessageOf(error))
-        this.logger?.warn("slack reaction failed", { error: errorMessageOf(error) })
-      })
+      invokeCallback(
+        () => this.postReaction(meta),
+        (error: unknown) => {
+          const message = errorMessageOf(error)
+          invokeCallback(() =>
+            this.diagnostics.recordProcessed(eventId, "emitted:reaction-failed", message),
+          )
+          invokeCallback(() => this.logger?.warn("slack reaction failed", { error: message }))
+        },
+      )
     }
   }
 
