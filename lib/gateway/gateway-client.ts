@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { invokeCallback } from "@/invoke-callback"
+import { readHttpErrorDetail } from "@/read-http-error-detail"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import {
   publishRequestSchema,
@@ -128,7 +129,10 @@ export class FunnelGatewayClient {
         },
       )
       if (!response.ok)
-        return { state: "error", reason: `HTTP ${response.status}: ${await response.text()}` }
+        return {
+          state: "error",
+          reason: `HTTP ${response.status}: ${await readHttpErrorDetail(response)}`,
+        }
       return { state: "ok", offset: publishResponseSchema.parse(await response.json()).offset }
     } catch (error) {
       return failure(error)

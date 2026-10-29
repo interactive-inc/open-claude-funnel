@@ -4,6 +4,7 @@ import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
 import type { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
+import { readHttpErrorDetail } from "@/read-http-error-detail"
 
 type Deps = { config: GhConnectorConfig; http?: FunnelHttpClient; env?: NodeJS.ProcessEnv }
 
@@ -43,7 +44,7 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
     const response = await this.http.fetch(request)
     signal?.throwIfAborted()
     if (!response.ok) {
-      const detail = await response.text()
+      const detail = await readHttpErrorDetail(response)
       signal?.throwIfAborted()
       throw new Error(`GitHub API failed (${response.status}): ${detail}`)
     }

@@ -4,6 +4,7 @@ import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
 import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
+import { readHttpErrorDetail } from "@/read-http-error-detail"
 
 const DISCORD_API_BASE = "https://discord.com/api/v10"
 
@@ -55,7 +56,7 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
     signal?.throwIfAborted()
 
     if (!res.ok) {
-      const detail = await res.text()
+      const detail = await readHttpErrorDetail(res)
       signal?.throwIfAborted()
       throw new Error(`Discord API failed (${res.status}): ${detail}`)
     }
