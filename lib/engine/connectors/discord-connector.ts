@@ -74,7 +74,7 @@ export const discordConnector = (options: DiscordConnectorOptions = {}): Connect
       type: "discord",
       createdAt: current.createdAt,
       updatedAt: context.now,
-      ...slotFields("botToken", "botTokenEnv", fields, current),
+      ...slotFields({ literalKey: "botToken", envKey: "botTokenEnv" }, fields, current),
     })
   },
   operations: {},

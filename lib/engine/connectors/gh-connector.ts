@@ -45,10 +45,10 @@ export const ghConnector = (): ConnectorDescriptor => ({
       name: current.name,
       type: "gh",
       pollInterval:
-        typeof fields.pollInterval === "number" ? fields.pollInterval : current.pollInterval,
+        ghConnectorSchema.shape.pollInterval.parse(fields.pollInterval) ?? current.pollInterval,
       createdAt: current.createdAt,
       updatedAt: context.now,
-      ...slotFields("token", "tokenEnv", fields, current),
+      ...slotFields({ literalKey: "token", envKey: "tokenEnv" }, fields, current),
     })
   },
   operations: {},

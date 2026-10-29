@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 /**
  * Resolves one token slot (e.g. botToken/botTokenEnv) for a connector update.
  * The literal and the env-ref form are mutually exclusive: if `fields` supplies
@@ -8,25 +10,30 @@
  * drops the stale literal instead of leaving both behind.
  */
 export const slotFields = (
-  literalKey: string,
-  envKey: string,
+  slot: { literalKey: string; envKey: string },
   fields: Record<string, unknown>,
   current: Record<string, unknown>,
 ): Record<string, string> => {
-  const literal = fields[literalKey]
+  const supplied = z
+    .object({
+      [slot.literalKey]: z.string().optional(),
+      [slot.envKey]: z.string().optional(),
+    })
+    .parse(fields)
+  const literal = supplied[slot.literalKey]
 
-  if (typeof literal === "string") return { [literalKey]: literal }
+  if (literal !== undefined) return { [slot.literalKey]: literal }
 
-  const envVar = fields[envKey]
+  const envVar = supplied[slot.envKey]
 
-  if (typeof envVar === "string") return { [envKey]: envVar }
+  if (envVar !== undefined) return { [slot.envKey]: envVar }
 
   const result: Record<string, string> = {}
-  const currentLiteral = current[literalKey]
-  const currentEnv = current[envKey]
+  const currentLiteral = current[slot.literalKey]
+  const currentEnv = current[slot.envKey]
 
-  if (typeof currentLiteral === "string") result[literalKey] = currentLiteral
-  if (typeof currentEnv === "string") result[envKey] = currentEnv
+  if (typeof currentLiteral === "string") result[slot.literalKey] = currentLiteral
+  if (typeof currentEnv === "string") result[slot.envKey] = currentEnv
 
   return result
 }

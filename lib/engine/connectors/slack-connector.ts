@@ -98,11 +98,13 @@ export const slackConnector = (options: SlackConnectorOptions = {}): ConnectorDe
       id: current.id,
       name: current.name,
       type: "slack",
-      minify: current.minify,
+      minify:
+        slackConnectorSchema.shape.minify.removeDefault().optional().parse(fields.minify) ??
+        current.minify,
       createdAt: current.createdAt,
       updatedAt: context.now,
-      ...slotFields("botToken", "botTokenEnv", fields, current),
-      ...slotFields("appToken", "appTokenEnv", fields, current),
+      ...slotFields({ literalKey: "botToken", envKey: "botTokenEnv" }, fields, current),
+      ...slotFields({ literalKey: "appToken", envKey: "appTokenEnv" }, fields, current),
     })
   },
   operations: {},
