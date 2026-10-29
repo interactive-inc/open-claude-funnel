@@ -73,6 +73,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
         connector_id: event.connector_id,
       }),
       now: this.now,
+      onMaintenanceError: (error) => this.reportMaintenanceError(error, "compact"),
       ...(props.maxRows !== undefined ? { maxRows: props.maxRows } : {}),
       ...(props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}),
       ...(props.maxBytes !== undefined ? { maxBytes: props.maxBytes } : {}),
@@ -105,9 +106,13 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     const result = this.sink.write({ seq: record.offset, ts: this.now(), event })
 
     if (this.hasRetention && !(result instanceof Error)) {
-      const oldest = this.sink.query({ limit: 1 })[0]?.seq
-      if (oldest === undefined) this.exclusiveClaims.clear()
-      else this.exclusiveClaims.pruneBefore(oldest)
+      try {
+        const oldest = this.sink.query({ limit: 1 })[0]?.seq
+        if (oldest === undefined) this.exclusiveClaims.clear()
+        else this.exclusiveClaims.pruneBefore(oldest)
+      } catch (error) {
+        this.reportMaintenanceError(error, "prune-claims")
+      }
     }
 
     // A dropped write (PK collision on a reused offset, disk-full, locked WAL)
@@ -133,6 +138,14 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       )
       throw result
     }
+  }
+
+  private reportMaintenanceError(error: unknown, op: "compact" | "prune-claims"): void {
+    const failure = error instanceof Error ? error : new Error(String(error))
+    invokeCallback(() =>
+      this.logger?.error("event log maintenance failed", { op, error: failure.message }),
+    )
+    invokeCallback(() => this.onError?.(failure, { component: "sqlite-event-log", op }))
   }
 
   /**

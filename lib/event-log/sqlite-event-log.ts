@@ -26,6 +26,8 @@ export type SqliteEventLogProps<E, I extends ReadonlyArray<string>> = I extends 
       maxBytes?: number
       targetBytes?: number
       now?: () => number
+      /** Post-commit compaction failure. Does not change the successful write result. */
+      onMaintenanceError?: (error: Error) => void
       indexes?: I
       extractIndexes?: never
     }
@@ -36,6 +38,8 @@ export type SqliteEventLogProps<E, I extends ReadonlyArray<string>> = I extends 
       maxBytes?: number
       targetBytes?: number
       now?: () => number
+      /** Post-commit compaction failure. Does not change the successful write result. */
+      onMaintenanceError?: (error: Error) => void
       indexes: I
       extractIndexes: (event: E) => IndexValues<I>
     }
@@ -135,7 +139,9 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
  * compile-time error rather than a silent miss at runtime.
  *
  * Retention is bounded by `maxRows` and/or `maxAgeMs`. Both run on every
- * insert as a single indexed DELETE that no-ops below the cap.
+ * insert as an indexed DELETE in the payload/sequence transaction. Byte-cap
+ * deletions use the same transaction; VACUUM runs after commit and reports
+ * compaction failures separately without changing the successful write result.
  *
  * Bulk inserts use `insertMany`, which wraps the batch in one transaction
  * for ~10–100x throughput at the cost of one fsync per batch instead of
@@ -150,6 +156,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private readonly maxBytes: number | null
   private readonly targetBytes: number | null
   private readonly now: () => number
+  private readonly onMaintenanceError: ((error: Error) => void) | undefined
   private readonly indexes: I
   private readonly extractIndexes: ((event: E) => IndexValues<I>) | null
   private readonly insertWithSeqStmt: Statement<unknown, SQLQueryBindings[]>
@@ -197,6 +204,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.targetBytes =
         props.targetBytes ?? (props.maxBytes !== undefined ? Math.floor(props.maxBytes / 4) : null)
       this.now = props.now ?? (() => Date.now())
+      this.onMaintenanceError = props.onMaintenanceError
 
       // The conditional `SqliteEventLogProps<E, I>` type widens to a union when `I` is a
       // generic, so TS can't narrow `props.indexes` back to `I` after the
@@ -243,13 +251,13 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   insert(input: { ts: number; event: E }): EventLogEntry<E> | Error {
     try {
       const params = this.buildInsertParams(input.ts, input.event)
-      const record = this.db.transaction(() => {
+      const result = this.db.transaction(() => {
         const seq = this.nextSequence()
         this.insertWithSeqStmt.run(seq, ...params)
-        return { seq, ts: input.ts, event: input.event }
+        return { record: { seq, ts: input.ts, event: input.event }, compact: this.trim() }
       })()
-      this.trim()
-      return record
+      this.compact(result.compact)
+      return result.record
     } catch (e) {
       return e instanceof Error ? e : new Error(String(e))
     }
@@ -271,9 +279,9 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
             event: input.event,
           })
         }
+        return this.trim()
       })
-      apply(inputs)
-      this.trim()
+      this.compact(apply(inputs))
       return records
     } catch (e) {
       return e instanceof Error ? e : new Error(String(e))
@@ -288,11 +296,12 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
         record.seq,
         ...this.buildInsertParams(record.ts, record.event),
       ]
-      this.db.transaction(() => {
+      const compact = this.db.transaction(() => {
         this.insertWithSeqStmt.run(...params)
         this.advanceSeqStmt.run(record.seq)
+        return this.trim()
       })()
-      this.trim()
+      this.compact(compact)
     } catch (e) {
       return e instanceof Error ? e : new Error(String(e))
     }
@@ -447,7 +456,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
   }
 
-  private trim(): void {
+  private trim(): boolean {
     if (this.maxRows !== null) {
       const row = this.countStmt.get()
       if (row && row.n > this.maxRows) this.trimRowsStmt.run(this.maxRows)
@@ -457,7 +466,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.trimAgeStmt.run(this.now() - this.maxAgeMs)
     }
 
-    this.maybeTrimBytes()
+    return this.maybeTrimBytes()
   }
 
   private indexKeys(): ReadonlyArray<I[number]> {
@@ -473,22 +482,22 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
    * overflow keeps the expensive rewrite rare — the file must refill the whole
    * maxBytes→targetBytes delta before the next overflow can trigger.
    */
-  private maybeTrimBytes(): void {
-    if (this.maxBytes === null || this.targetBytes === null) return
+  private maybeTrimBytes(): boolean {
+    if (this.maxBytes === null || this.targetBytes === null) return false
 
     this.insertsSinceByteCheck += 1
 
-    if (this.insertsSinceByteCheck < BYTE_CHECK_INTERVAL) return
+    if (this.insertsSinceByteCheck < BYTE_CHECK_INTERVAL) return false
 
     this.insertsSinceByteCheck = 0
 
     const bytes = this.byteSize()
 
-    if (bytes <= this.maxBytes) return
+    if (bytes <= this.maxBytes) return false
 
     const rows = this.countStmt.get()?.n ?? 0
 
-    if (rows === 0) return
+    if (rows === 0) return false
 
     // Drop enough of the oldest rows to bring the file to ~targetBytes, by the
     // current average bytes-per-row. Over/undershoot self-corrects next check.
@@ -497,7 +506,20 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     const rowsToDrop = Math.min(rows, Math.ceil(bytesToFree / bytesPerRow))
 
     this.trimOldestStmt.run(rowsToDrop)
-    this.db.run("VACUUM")
+    return true
+  }
+
+  /** VACUUM cannot run in a transaction; failure must not relabel a committed write. */
+  private compact(needed: boolean): void {
+    if (!needed) return
+    try {
+      this.db.run("VACUUM")
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error))
+      try {
+        void Promise.resolve(this.onMaintenanceError?.(failure)).catch(() => {})
+      } catch {}
+    }
   }
 
   private byteSize(): number {
@@ -510,7 +532,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   /** Drop every row and reclaim the file space. Used by `<log>.clear()`. */
   clear(): void {
     this.db.run("DELETE FROM logs")
-    this.db.run("VACUUM")
+    this.compact(true)
     this.insertsSinceByteCheck = 0
   }
 

@@ -104,6 +104,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
         channel_id: event.channel_id,
       }),
       ...rawCap,
+      onMaintenanceError: (error) => this.report("raw", error, "compaction"),
     })
     // Opening is three separate files; if a later one fails, close the ones
     // already open so a failed constructor does not leak handles.
@@ -118,6 +119,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
           outcome: event.outcome,
         }),
         ...verdictCap,
+        onMaintenanceError: (error) => this.report("processed", error, "compaction"),
       })
       try {
         this.connection = new SqliteEventLog<ConnectorConnectionEvent, ConnectionIndexes>({
@@ -129,6 +131,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
             status: event.status,
           }),
           ...verdictCap,
+          onMaintenanceError: (error) => this.report("connection", error, "compaction"),
         })
       } catch (error) {
         this.processed.close()
@@ -185,9 +188,20 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   // A diagnostic store that swallows its own write failures is the one thing
   // it must not do: surface the error so a disk-full or locked WAL is visible.
-  private report(table: string, result: EventLogEntry<unknown> | Error): void {
+  private report(
+    table: string,
+    result: EventLogEntry<unknown> | Error,
+    operation = "insert",
+  ): void {
     if (result instanceof Error) {
-      this.logger?.error("diagnostic log insert failed", { table, error: result.message })
+      try {
+        void Promise.resolve(
+          this.logger?.error(`diagnostic log ${operation} failed`, {
+            table,
+            error: result.message,
+          }),
+        ).catch(() => {})
+      } catch {}
     }
   }
 
