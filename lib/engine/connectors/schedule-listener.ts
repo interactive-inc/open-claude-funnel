@@ -5,6 +5,7 @@ import {
 import { listenerSignal } from "@/engine/connectors/listener-signal"
 import { snapshotScheduleState } from "@/engine/connectors/schedule-state-snapshot"
 import { requireTimestamp } from "@/require-timestamp"
+import { requireSynchronous } from "@/require-synchronous"
 import { invokeCallback } from "@/invoke-callback"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
@@ -226,9 +227,15 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
   private async tickEntries(notify: NotifyFn, run: number): Promise<void> {
     const now = this.truncateToMinute(this.readNow())
-    const state = snapshotScheduleState(this.lastFiredStore.load())
+    const state = snapshotScheduleState(
+      requireSynchronous(
+        this.lastFiredStore.load(),
+        "schedule state load must be synchronous",
+        (error) => this.recordTickError(error),
+      ),
+    )
     if (!this.isCurrent(run)) return
-    if (this.pruneRemovedEntries(state)) this.lastFiredStore.save(snapshotScheduleState(state))
+    if (this.pruneRemovedEntries(state)) this.saveState(state)
 
     for (const entry of this.config.entries) {
       if (!this.isCurrent(run)) break
@@ -268,7 +275,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (entry.catchupPolicy === "skip" && lateness >= 60_000) {
       state.set(entry.id, runAt)
-      this.lastFiredStore.save(snapshotScheduleState(state))
+      this.saveState(state)
       return true
     }
 
@@ -345,7 +352,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     if (lastFired !== undefined) return false
 
     state.set(entryId, now)
-    this.lastFiredStore.save(snapshotScheduleState(state))
+    this.saveState(state)
     return true
   }
 
@@ -407,7 +414,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     // Preserve successful delivery even if a later fire or host callback fails.
     props.state.set(entry.id, firedAt)
-    this.lastFiredStore.save(snapshotScheduleState(props.state))
+    this.saveState(props.state)
     this.observeDiagnostic(() => this.diagnostics.recordProcessed(eventId, "emitted", entry.prompt))
 
     if (this.onFired) {
@@ -423,6 +430,14 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
         )
       }
     }
+  }
+
+  private saveState(state: ReadonlyMap<string, Date>): void {
+    requireSynchronous(
+      this.lastFiredStore.save(snapshotScheduleState(state)),
+      "schedule state save must be synchronous",
+      (error) => this.recordTickError(error),
+    )
   }
 
   private findMostRecentMatch(cron: string, from: Date, until: Date, entryId: string): Date | null {
