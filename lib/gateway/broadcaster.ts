@@ -1,3 +1,4 @@
+import { requireIntegerLimit } from "@/require-limit"
 import type { ServerWebSocket } from "bun"
 import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
@@ -166,12 +167,20 @@ export class FunnelBroadcaster {
   constructor(deps: Deps = {}) {
     this.logger = deps.logger
     this.onError = deps.onError ?? defaultOnError
-    this.maxBufferedBytes = deps.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES
+    this.maxBufferedBytes = requireIntegerLimit(
+      deps.maxBufferedBytes === undefined ? DEFAULT_MAX_BUFFERED_BYTES : deps.maxBufferedBytes,
+      "maxBufferedBytes",
+    )
     this.now = deps.now ?? (() => Date.now())
-    this.replayBufferSize = Math.max(0, deps.replayBufferSize ?? DEFAULT_REPLAY_BUFFER_SIZE)
-    this.replayBufferMaxBytes = Math.max(
-      0,
-      deps.replayBufferMaxBytes ?? DEFAULT_REPLAY_BUFFER_MAX_BYTES,
+    this.replayBufferSize = requireIntegerLimit(
+      deps.replayBufferSize === undefined ? DEFAULT_REPLAY_BUFFER_SIZE : deps.replayBufferSize,
+      "replayBufferSize",
+    )
+    this.replayBufferMaxBytes = requireIntegerLimit(
+      deps.replayBufferMaxBytes === undefined
+        ? DEFAULT_REPLAY_BUFFER_MAX_BYTES
+        : deps.replayBufferMaxBytes,
+      "replayBufferMaxBytes",
     )
     this.persistentReplay = deps.persistentReplay ?? null
     this.channels = deps.channels

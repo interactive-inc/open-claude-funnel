@@ -1,3 +1,4 @@
+import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { chmodSync } from "node:fs"
 import type { EventLogEntry } from "@/event-log/event-log-entry"
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
@@ -81,6 +82,9 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   constructor(props: Props) {
     super()
+    if (props.maxRows !== undefined) requireIntegerLimit(props.maxRows, "maxRows")
+    if (props.rawMaxRows !== undefined) requireIntegerLimit(props.rawMaxRows, "rawMaxRows")
+    if (props.maxAgeMs !== undefined) requireDurationLimit(props.maxAgeMs, "maxAgeMs")
     this.now = props.now ?? (() => Date.now())
     this.logger = props.logger
     const ageCap = props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}

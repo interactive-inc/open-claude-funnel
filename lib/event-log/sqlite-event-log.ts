@@ -1,3 +1,4 @@
+import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { Database } from "bun:sqlite"
 import { applySqliteBusyTimeout } from "@/event-log/sqlite-busy-timeout"
 import type { SQLQueryBindings, Statement } from "bun:sqlite"
@@ -176,6 +177,20 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private insertsSinceByteCheck = 0
 
   constructor(props: SqliteEventLogProps<E, I>) {
+    this.maxRows =
+      props.maxRows === undefined ? null : requireIntegerLimit(props.maxRows, "maxRows")
+    this.maxAgeMs =
+      props.maxAgeMs === undefined ? null : requireDurationLimit(props.maxAgeMs, "maxAgeMs")
+    this.maxBytes =
+      props.maxBytes === undefined ? null : requireIntegerLimit(props.maxBytes, "maxBytes")
+    this.targetBytes =
+      props.targetBytes === undefined
+        ? this.maxBytes === null
+          ? null
+          : Math.floor(this.maxBytes / 4)
+        : requireIntegerLimit(props.targetBytes, "targetBytes")
+    if (this.targetBytes !== null && (this.maxBytes === null || this.targetBytes > this.maxBytes))
+      throw new RangeError("targetBytes requires maxBytes and must not exceed it")
     // `bun:sqlite` does not create the parent directory on open, so a fresh
     // environment errors out with an opaque `unable to open database file`.
     // Create it here. `:memory:` is a sentinel handled by SQLite, not a path,
@@ -196,13 +211,6 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.db.run("PRAGMA journal_mode = WAL")
       this.migrate()
 
-      this.maxRows = props.maxRows ?? null
-      this.maxAgeMs = props.maxAgeMs ?? null
-      this.maxBytes = props.maxBytes ?? null
-      // Default the shrink target to a quarter of the cap when only maxBytes is
-      // given, so a sink with a byte cap always has somewhere to shrink to.
-      this.targetBytes =
-        props.targetBytes ?? (props.maxBytes !== undefined ? Math.floor(props.maxBytes / 4) : null)
       this.now = props.now ?? (() => Date.now())
       this.onMaintenanceError = props.onMaintenanceError
 

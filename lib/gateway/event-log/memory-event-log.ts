@@ -1,3 +1,4 @@
+import { requireIntegerLimit } from "@/require-limit"
 import type { ReplayableEvent } from "@/gateway/broadcaster"
 import { FunnelEventLog, type FunnelEventRecord } from "@/gateway/event-log/event-log"
 import { eventSnapshot } from "@/gateway/event-snapshot"
@@ -23,8 +24,15 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
   private latestOffset = 0
   private bytes = 0
 
-  constructor(private readonly options: { maxRows?: number; maxBytes?: number } = {}) {
+  private readonly maxRows: number
+  private readonly maxBytes: number
+
+  constructor(options: { maxRows?: number; maxBytes?: number } = {}) {
     super()
+    this.maxRows =
+      options.maxRows === undefined ? Infinity : requireIntegerLimit(options.maxRows, "maxRows")
+    this.maxBytes =
+      options.maxBytes === undefined ? Infinity : requireIntegerLimit(options.maxBytes, "maxBytes")
   }
 
   record(record: FunnelEventRecord): void {
@@ -52,8 +60,7 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     this.bytes += bytes
     while (
       this.events.length > 0 &&
-      (this.events.length > (this.options.maxRows ?? Infinity) ||
-        this.bytes > (this.options.maxBytes ?? Infinity))
+      (this.events.length > this.maxRows || this.bytes > this.maxBytes)
     ) {
       const removed = this.events.shift()
       if (removed) this.bytes -= this.sizeOf(removed.content, removed.meta)
