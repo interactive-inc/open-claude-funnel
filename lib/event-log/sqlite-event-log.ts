@@ -1,3 +1,4 @@
+import { requireTimestamp } from "@/require-timestamp"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { Database } from "bun:sqlite"
 import { applySqliteBusyTimeout } from "@/event-log/sqlite-busy-timeout"
@@ -378,6 +379,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   private buildInsertParams(ts: number, event: E): SQLQueryBindings[] {
+    requireTimestamp(ts)
     const type = extractType(event)
     const json = JSON.stringify(event)
     if (this.indexes.length === 0) return [ts, type, json]
@@ -466,7 +468,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
 
     if (this.maxAgeMs !== null) {
-      this.trimAgeStmt.run(this.now() - this.maxAgeMs)
+      this.trimAgeStmt.run(requireTimestamp(this.now()) - this.maxAgeMs)
     }
 
     return this.maybeTrimBytes()

@@ -18,7 +18,7 @@ import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/even
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { invokeCallback } from "@/invoke-callback"
 import { logInfo } from "@/gateway/log-info"
-import { requireTimestamp } from "@/engine/time/require-timestamp"
+import { requireTimestamp } from "@/require-timestamp"
 
 export type GatewayEventsOptions = EventStreamOptions & {
   channel: string

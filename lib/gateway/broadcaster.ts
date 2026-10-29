@@ -7,7 +7,7 @@ import { eventSnapshot } from "@/gateway/event-snapshot"
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { sendWsPayload } from "@/gateway/send-ws-payload"
 import { invokeCallback } from "@/invoke-callback"
-import { requireTimestamp } from "@/engine/time/require-timestamp"
+import { requireTimestamp } from "@/require-timestamp"
 import {
   FunnelEventStream,
   type EventStreamOptions,
