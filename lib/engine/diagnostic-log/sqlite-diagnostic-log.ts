@@ -238,7 +238,10 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       order: "desc",
     })
 
-    for (const record of records) requireMatchingIdentity(record.event, query)
+    for (const record of records) {
+      requireMatchingIdentity(record.event, query)
+      requireMatchingFilter(query.eventId === undefined || record.event.event_id === query.eventId)
+    }
     return records.map((record) => ({
       seq: record.seq,
       ts: record.ts,
@@ -272,7 +275,16 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       order: "desc",
     })
 
-    for (const record of records) requireMatchingIdentity(record.event, query)
+    for (const record of records) {
+      requireMatchingIdentity(record.event, query)
+      requireMatchingFilter(
+        (query.eventId === undefined || record.event.event_id === query.eventId) &&
+          (query.outcome === undefined || record.event.outcome === query.outcome) &&
+          (query.outcomePrefix === undefined ||
+            (typeof record.event.outcome === "string" &&
+              record.event.outcome.startsWith(query.outcomePrefix))),
+      )
+    }
     return records.map((record) => ({
       seq: record.seq,
       ts: record.ts,
@@ -304,7 +316,13 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       order: "desc",
     })
 
-    for (const record of records) requireMatchingIdentity(record.event, query)
+    for (const record of records) {
+      requireMatchingIdentity(record.event, query)
+      requireMatchingFilter(
+        (query.status === undefined || record.event.status === query.status) &&
+          (query.statuses === undefined || query.statuses.includes(record.event.status)),
+      )
+    }
     return records.map((record) => ({
       seq: record.seq,
       ts: record.ts,
@@ -362,6 +380,10 @@ const requireMatchingIdentity = (
     (query.connectorId !== undefined && event.connector_id !== query.connectorId)
   )
     throw new Error("diagnostic routing index conflicts with stored identity")
+}
+
+const requireMatchingFilter = (matches: boolean): void => {
+  if (!matches) throw new Error("diagnostic filter index conflicts with stored event")
 }
 
 // Narrow the stored string back to the union without `as`, validating against

@@ -53,3 +53,55 @@ for (const table of ["raw", "processed", "connection"] as const) {
     })
   }
 }
+
+for (const scenario of [
+  { table: "raw", column: "event_id", value: "other", filter: { eventId: "other" } },
+  { table: "processed", column: "event_id", value: "other", filter: { eventId: "other" } },
+  { table: "processed", column: "outcome", value: "skip:other", filter: { outcome: "skip:other" } },
+  {
+    table: "processed",
+    column: "outcome",
+    value: "skip:other",
+    filter: { outcomePrefix: "skip:" },
+  },
+  { table: "connection", column: "status", value: "error", filter: { status: "error" } },
+  { table: "connection", column: "status", value: "error", filter: { statuses: ["error"] } },
+] as const) {
+  test(`${scenario.table} diagnostics reject inconsistent ${Object.keys(scenario.filter)[0]} filtering`, () => {
+    const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-filter-"))
+    const paths = {
+      rawPath: join(directory, "raw.db"),
+      processedPath: join(directory, "processed.db"),
+      connectionPath: join(directory, "connection.db"),
+    }
+    const log = new SqliteConnectorDiagnosticLog(paths)
+    const database = new Database(paths[`${scenario.table}Path`])
+    try {
+      const scope = { type: "example", channelId: "channel", connectorId: "connector" }
+      log.recordRaw({ ...scope, eventId: "original", payload: "{}" })
+      log.recordProcessed({ ...scope, eventId: "original", outcome: "emitted", payload: "{}" })
+      log.recordConnection({ ...scope, status: "connected", detail: "original" })
+      const query = () =>
+        scenario.table === "raw"
+          ? log.queryRaw(scenario.filter)
+          : scenario.table === "processed"
+            ? log.queryProcessed(scenario.filter)
+            : log.queryConnection(scenario.filter)
+      expect(query()).toEqual([])
+      database.query(`UPDATE logs SET ${scenario.column} = ?`).run(scenario.value)
+      expect(query).toThrow("diagnostic filter index conflicts with stored event")
+      const original =
+        scenario.column === "event_id"
+          ? "original"
+          : scenario.column === "outcome"
+            ? "emitted"
+            : "connected"
+      database.query(`UPDATE logs SET ${scenario.column} = ?`).run(original)
+      expect(query()).toEqual([])
+    } finally {
+      database.close()
+      log.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+}
