@@ -161,14 +161,14 @@ export class FunnelGatewayServer {
   }
 
   stop(): Promise<void> {
-    this.stopPromise ??= (async () => {
+    const stopping = this.module.stop()
+    this.stopPromise ??= Promise.resolve().then(async () => {
       this.signal?.removeEventListener("abort", this.onAbort)
-      await this.module.stopListeners()
       this.server?.stop(true)
       this.server = null
-      this.module.dispose()
+      await stopping
       this.disposed = true
-    })()
+    })
     return this.stopPromise
   }
 

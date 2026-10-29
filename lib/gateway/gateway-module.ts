@@ -1,5 +1,6 @@
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun"
 import type { Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
@@ -15,6 +16,7 @@ import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
 import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/event-stream"
 import { WebSocketBackpressureError } from "@/gateway/errors"
+import { invokeCallback } from "@/gateway/invoke-callback"
 
 export type GatewayEventsOptions = EventStreamOptions & {
   channel: string
@@ -215,23 +217,40 @@ export class FunnelGatewayModule {
     await this.registry.stopAll()
   }
 
-  /** Close the event log if this module created it. Injected logs are left alone. */
+  /** Seal the gateway and release subscriptions/owned storage. Use stop() to await source cleanup. */
   dispose(): void {
     if (this.disposed) return
+    this.disposed = true
+    invokeCallback(
+      () => this.registry.close(),
+      (error) =>
+        this.onError(error instanceof Error ? error : new Error(String(error)), {
+          component: "gateway-dispose",
+        }),
+    )
     this.broadcaster.closeEventStreams()
+    this.broadcaster.closeClients()
     this.signal?.removeEventListener("abort", this.onAbort)
     if (this.ownsEventLog) this.eventLog.close()
-
-    this.disposed = true
   }
 
   /** Stop listeners and release the owned event log. */
   stop(): Promise<void> {
-    this.stopPromise ??= (async () => {
-      await this.stopListeners()
-      this.dispose()
+    if (this.stopPromise) return this.stopPromise
+    const completion = Promise.withResolvers<void>()
+    this.stopPromise = completion.promise
+    const stopping = (async () => {
+      try {
+        const closing = this.registry.close()
+        this.broadcaster.closeEventStreams()
+        this.broadcaster.closeClients()
+        await closing
+      } finally {
+        this.dispose()
+      }
     })()
-    return this.stopPromise
+    void stopping.then(completion.resolve, completion.reject)
+    return completion.promise
   }
 
   /**
@@ -248,6 +267,9 @@ export class FunnelGatewayModule {
 
     if (this.token && !this.tokenMatchesUpgrade(request)) {
       return { handled: true, response: new Response("unauthorized", { status: 401 }) }
+    }
+    if (this.disposed || this.stopPromise || this.signal?.aborted) {
+      return { handled: true, response: new Response("gateway is stopped", { status: 503 }) }
     }
 
     const requestedChannel = url.searchParams.get("channel") ?? ""
@@ -365,6 +387,8 @@ export class FunnelGatewayModule {
     content: string
     meta?: Record<string, string>
   }): { offset: number } {
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new Error("gateway is stopped")
     const channel = this.resolveChannel(input.channel)
 
     if (!channel) throw new FunnelChannelNotFoundError(input.channel)
@@ -397,6 +421,7 @@ export class FunnelGatewayModule {
         channels: this.channels,
         uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
         emit: (input) => this.emit(input),
+        assertActive: () => this.assertHttpActive(),
         diagnosticLog: this.diagnosticLog,
       })
 
@@ -410,11 +435,25 @@ export class FunnelGatewayModule {
       base.use("/channels/*", requireBearerToken({ expected: this.token }))
     }
 
+    const requireActive = factory.createMiddleware(async (_context, next) => {
+      this.assertHttpActive()
+      await next()
+    })
+    base.use("/listeners/*", requireActive)
+    base.use("/channels/*", requireActive)
+    base.use("/status", requireActive)
+    base.use("/debug", requireActive)
+    if (this.healthRoute) base.use("/health", requireActive)
+
     const withExtras = extraRoutes ? base.route("/", extraRoutes) : base
     return withExtras.route("/", this.healthRoute ? gatewayRoutes : gatewayRoutesWithoutHealth)
   }
 
   private handleWsOpen(ws: ServerWebSocket<GatewayWsData>): void {
+    if (this.disposed || this.stopPromise || this.signal?.aborted) {
+      ws.close(1001, "gateway stopped")
+      return
+    }
     if (typeof ws.data.since === "number") {
       // A partial replay must close the subscription so the consumer can resume
       // from its last handled offset rather than wait forever for live input.
@@ -526,5 +565,12 @@ export class FunnelGatewayModule {
     const channel = this.channels.getById(channelId)
 
     return channel?.connectors.find((c) => c.name === connectorName)?.id ?? null
+  }
+
+  private assertHttpActive(): void {
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new HTTPException(503, {
+        res: Response.json({ ok: false, reason: "gateway is stopped" }, { status: 503 }),
+      })
   }
 }

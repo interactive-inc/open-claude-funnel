@@ -16,5 +16,6 @@ export type GatewayRouteDeps = {
   channels: FunnelChannels
   uptimeMs: () => number
   emit: (input: GatewayEmitInput) => { offset: number }
+  assertActive: () => void
   diagnosticLog?: ConnectorDiagnosticLog
 }

@@ -38,6 +38,7 @@ export const channelsConnectorsCallHandler = factory.createHandlers(
       throw new HTTPException(400, { message: parsed.error.issues[0]?.message ?? "invalid body" })
     }
 
+    c.var.deps.assertActive()
     const result = await c.var.deps.channels.call(param.channel, param.connector, {
       method: parsed.data.method,
       path: parsed.data.path,

@@ -111,6 +111,8 @@ export class FunnelListenerRegistry {
   private readonly recoveryWaits = new Map<string, AbortController>()
   private lifecycle = 0
   private isStopped = false
+  private closed = false
+  private closePromise: Promise<void> | null = null
   private stoppingAll: Promise<void> | null = null
   private readonly nonRetriable = new Set<string>()
   private readonly stats = new Map<string, ListenerStats>()
@@ -186,6 +188,7 @@ export class FunnelListenerRegistry {
     channelName: string,
     connectorName: string,
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
+    if (this.closed) return { ok: false, reason: "registry is closed" }
     const key = this.resolveKey(channelName, connectorName)
 
     if (!this.configured(key))
@@ -473,6 +476,7 @@ export class FunnelListenerRegistry {
     channelName: string,
     connectorName: string,
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
+    if (this.closed) return { ok: false, reason: "registry is closed" }
     if (this.stoppingAll) return { ok: false, reason: "registry is stopping" }
     const key = this.resolveKey(channelName, connectorName)
     const lifecycle = this.lifecycle
@@ -494,7 +498,9 @@ export class FunnelListenerRegistry {
   }
 
   async startAll(): Promise<void> {
+    if (this.closed) return
     if (this.stoppingAll) await this.stoppingAll
+    if (this.closed) return
 
     this.isStopped = false
     const lifecycle = this.lifecycle
@@ -557,6 +563,13 @@ export class FunnelListenerRegistry {
     } finally {
       if (this.stoppingAll === completion) this.stoppingAll = null
     }
+  }
+
+  /** Permanently release this registry; stopAll alone remains restartable. */
+  close(): Promise<void> {
+    this.closed = true
+    this.closePromise ??= this.stopAll()
+    return this.closePromise
   }
 
   private async finishStopAll(): Promise<void> {

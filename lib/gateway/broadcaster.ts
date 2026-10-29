@@ -386,6 +386,16 @@ export class FunnelBroadcaster {
     for (const stream of this.streams.keys()) stream.close()
   }
 
+  closeClients(): void {
+    // oxlint-disable-next-line unicorn/no-useless-spread -- Close callbacks may mutate the client registry.
+    for (const ws of [...this.clients.keys()]) {
+      this.clients.delete(ws)
+      try {
+        ws.close(1001, "gateway stopped")
+      } catch {}
+    }
+  }
+
   private deliveryRecipients(): Recipient[] {
     return [
       ...[...this.clients].map(([target, data]): Recipient => ({ kind: "socket", target, data })),

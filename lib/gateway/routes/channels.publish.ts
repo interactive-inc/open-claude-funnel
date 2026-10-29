@@ -32,6 +32,7 @@ export const channelsPublishHandler = factory.createHandlers(
 
     const meta = body.target ? { ...body.meta, target: body.target } : body.meta
 
+    c.var.deps.assertActive()
     const event = c.var.deps.emit({
       channel: param.channel,
       connector: body.connector,

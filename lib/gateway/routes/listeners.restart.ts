@@ -8,6 +8,7 @@ export const listenersRestartHandler = factory.createHandlers(
   async (c) => {
     const param = c.req.valid("param")
 
+    c.var.deps.assertActive()
     const result = await c.var.deps.registry.restart(param.channel, param.connector)
 
     return c.json(result, result.ok ? 200 : 400)

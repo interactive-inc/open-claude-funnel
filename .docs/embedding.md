@@ -83,6 +83,7 @@ await client.publish("ops", { content: "host event" })
 - 未読キューは `maxQueuedEvents`（既定200件）と `maxQueuedBytes`（既定4 MiB、JSON全体のUTF-8バイト数）で制限する。超過すると当該購読を解除し、`next()` がエラーになる。他の購読は継続する。
 - `return()`、`break`、購読の `signal` の abort、gateway の停止で未読入力を破棄し、待機中の `next()` を終了する。使用しなくなった列は、読み始めていなくても解除する。`agentSdkInput` の `return()` も元の列へ解除を伝える。
 - gateway の停止は SDK の実行中タスクやホストの MCP サーバーを閉じない。それぞれの既存 API で終了する。
+- `gateway.stop()` の開始後は gateway の HTTP 操作と新たな WebSocket 購読を HTTP 503 で拒否する。認証が必要な入口では認証を先に確認する。既存の WebSocket 購読も閉じ、取得済みの registry は接続を再開できなくなる。ホストの独自ルートと `healthRoute: false` でホストが持つ health は継続できる。
 - 返信は利用側が登録した SDK / MCP ツールから `funnel.channels.call(channel, connector, request)` を呼ぶ。受信時のサービス固有メタデータを使って返信先を指定する。投稿可否・送信者の許可・対象ツールの公開はホストで決める。
 
 Discord / GitHub の JSON 送信では、本文の省略と空配列・空オブジェクト・`null` を区別する。GET / HEAD は本文を送らず、成功した HEAD と HTTP 204 の戻り値は `null` とする。空の応答を JSON として読み取らない。
