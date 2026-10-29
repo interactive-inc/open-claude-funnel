@@ -42,6 +42,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
   private tickScheduled = false
+  private ticking = false
 
   constructor(deps: Deps) {
     super()
@@ -91,6 +92,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       this.recordTickError(error)
     }
 
+    if (this.stopped) return
+
     // Connection lifecycle parity with the flume-backed listeners: the timer
     // is armed, so the connector is "connected" for diagnostic purposes.
     this.diagnostics.recordConnection("connected", "")
@@ -125,19 +128,27 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   async tick(notify: NotifyFn): Promise<void> {
+    if (this.stopped || this.ticking) return
+    this.ticking = true
+
+    try {
+      await this.tickEntries(notify)
+    } finally {
+      this.ticking = false
+    }
+  }
+
+  private async tickEntries(notify: NotifyFn): Promise<void> {
     const now = this.truncateToMinute(this.now())
     const state = this.lastFiredStore.load()
-    const changes = [this.pruneRemovedEntries(state)]
+    if (this.pruneRemovedEntries(state)) this.lastFiredStore.save(state)
 
     for (const entry of this.config.entries) {
+      if (this.stopped) break
       if (!entry.enabled) continue
 
-      const fired = await this.fireEntry(entry, now, state, notify)
-
-      changes.push(fired)
+      await this.fireEntry(entry, now, state, notify)
     }
-
-    if (changes.includes(true)) this.lastFiredStore.save(state)
   }
 
   private async fireEntry(
@@ -168,11 +179,11 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (entry.catchupPolicy === "skip" && lateness >= 60_000) {
       state.set(entry.id, runAt)
+      this.lastFiredStore.save(state)
       return true
     }
 
-    await this.notifyOne(entry, runAt, notify, lateness > 0)
-    state.set(entry.id, runAt)
+    await this.notifyOne({ entry, firedAt: runAt, notify, catchup: lateness > 0, state })
     return true
   }
 
@@ -196,8 +207,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
         return false
       }
 
-      await this.notifyOne(entry, now, notify, false)
-      state.set(entry.id, now)
+      await this.notifyOne({ entry, firedAt: now, notify, catchup: false, state })
       return true
     }
 
@@ -207,10 +217,16 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       if (matches.length === 0) return this.seedSearchWatermark(entry.id, lastFired, now, state)
 
       for (const match of matches) {
-        await this.notifyOne(entry, match, notify, match.getTime() !== now.getTime())
+        if (this.stopped) break
+        await this.notifyOne({
+          entry,
+          firedAt: match,
+          notify,
+          catchup: match.getTime() !== now.getTime(),
+          state,
+        })
       }
 
-      state.set(entry.id, matches[matches.length - 1] ?? now)
       return true
     }
 
@@ -218,8 +234,13 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (!match) return this.seedSearchWatermark(entry.id, lastFired, now, state)
 
-    await this.notifyOne(entry, match, notify, match.getTime() !== now.getTime())
-    state.set(entry.id, match)
+    await this.notifyOne({
+      entry,
+      firedAt: match,
+      notify,
+      catchup: match.getTime() !== now.getTime(),
+      state,
+    })
     return true
   }
 
@@ -232,15 +253,20 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     if (lastFired !== undefined) return false
 
     state.set(entryId, now)
+    this.lastFiredStore.save(state)
     return true
   }
 
-  private async notifyOne(
-    entry: ScheduleEntry,
-    firedAt: Date,
-    notify: NotifyFn,
-    catchup: boolean,
-  ): Promise<void> {
+  private async notifyOne(props: {
+    entry: ScheduleEntry
+    firedAt: Date
+    notify: NotifyFn
+    catchup: boolean
+    state: Map<string, Date>
+  }): Promise<void> {
+    const entry = props.entry
+    const firedAt = props.firedAt
+    const catchup = props.catchup
     const meta: Record<string, string> = {
       event_type: "schedule",
       schedule_id: entry.id,
@@ -274,12 +300,15 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     )
 
     try {
-      await notify(entry.prompt, meta)
+      await props.notify(entry.prompt, meta)
     } catch (error) {
       this.diagnostics.recordProcessed(eventId, "emitted:delivery-failed", entry.prompt)
       throw error
     }
 
+    // Preserve successful delivery even if a later fire or host callback fails.
+    props.state.set(entry.id, firedAt)
+    this.lastFiredStore.save(props.state)
     this.diagnostics.recordProcessed(eventId, "emitted", entry.prompt)
 
     if (this.onFired) {
@@ -316,14 +345,18 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private findAllMatches(cron: string, from: Date, until: Date, entryId: string): Date[] {
+    const searchStart = Math.max(
+      from.getTime(),
+      until.getTime() - (MAX_CATCHUP_MINUTES - 1) * 60_000,
+    )
     const maxIterations = Math.min(
       MAX_CATCHUP_MINUTES,
-      Math.floor((until.getTime() - from.getTime()) / 60_000) + 1,
+      Math.floor((until.getTime() - searchStart) / 60_000) + 1,
     )
     const matches: Date[] = []
 
     for (let i = 0; i < maxIterations; i++) {
-      const candidate = new Date(from.getTime() + i * 60_000)
+      const candidate = new Date(searchStart + i * 60_000)
 
       if (candidate.getTime() > until.getTime()) break
 
