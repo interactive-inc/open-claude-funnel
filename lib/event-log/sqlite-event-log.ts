@@ -263,6 +263,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
   }
 
+  /** Related tables share this store's transaction and connection lifetime. */
+  get database(): Database {
+    return this.db
+  }
+
   insert(input: { ts: number; event: E }): EventLogEntry<E> | Error {
     try {
       this.requireIdleWriter()
@@ -516,7 +521,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
   }
 
-  private requireIdleWriter(): void {
+  /** Related-table writes must not acknowledge changes inside an unfinished payload write. */
+  requireIdleWriter(): void {
     if (this.writing) throw new Error("event log write is already in progress")
   }
 

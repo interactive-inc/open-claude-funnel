@@ -84,7 +84,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       ...(targetBytes !== undefined ? { targetBytes } : {}),
     })
     try {
-      this.exclusiveClaims = new SqliteExclusiveClaims(path)
+      this.exclusiveClaims = new SqliteExclusiveClaims(this.sink.database)
     } catch (error) {
       this.sink.close()
       throw error
@@ -201,6 +201,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
 
   override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
     if (!isValidExclusiveClaim(offset, channelId, subscriberId)) return false
+    this.sink.requireIdleWriter()
     const stored = this.sink.query({ seq: offset, limit: 1 })[0]
     if (!stored) return false
     const event = parseReplayEvent(stored.event)
@@ -228,11 +229,9 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
 
   clear(): void {
     this.sink.clear()
-    this.exclusiveClaims.clear()
   }
 
   close(): void {
     this.sink.close()
-    this.exclusiveClaims.close()
   }
 }

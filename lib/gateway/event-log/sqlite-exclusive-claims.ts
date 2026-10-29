@@ -1,25 +1,24 @@
-import { Database } from "bun:sqlite"
-import { applySqliteBusyTimeout } from "@/event-log/sqlite-busy-timeout"
+import type { Database } from "bun:sqlite"
 
 /** Keeps the first worker assignment stable across gateway restarts. */
 export class SqliteExclusiveClaims {
-  private readonly database: Database
-
-  constructor(path: string) {
-    this.database = new Database(path)
-    try {
-      applySqliteBusyTimeout(this.database)
-      this.database.run("PRAGMA journal_mode = WAL")
-      this.database.run(`CREATE TABLE IF NOT EXISTS funnel_exclusive_claims (
-        offset INTEGER NOT NULL,
-        channel_id TEXT NOT NULL,
-        subscriber_id TEXT NOT NULL,
-        PRIMARY KEY (offset, channel_id)
-      )`)
-    } catch (error) {
-      this.database.close()
-      throw error
-    }
+  constructor(private readonly database: Database) {
+    this.database.run(`CREATE TABLE IF NOT EXISTS funnel_exclusive_claims (
+      offset INTEGER NOT NULL,
+      channel_id TEXT NOT NULL,
+      subscriber_id TEXT NOT NULL,
+      PRIMARY KEY (offset, channel_id)
+    )`)
+    // Bind claims to a retained row's lifetime, including offset reuse after
+    // retention or cleanup failures from an older store implementation.
+    this.database.run(`CREATE TRIGGER IF NOT EXISTS funnel_exclusive_claims_insert
+      AFTER INSERT ON logs BEGIN
+        DELETE FROM funnel_exclusive_claims WHERE offset = NEW.seq;
+      END`)
+    this.database.run(`CREATE TRIGGER IF NOT EXISTS funnel_exclusive_claims_delete
+      AFTER DELETE ON logs BEGIN
+        DELETE FROM funnel_exclusive_claims WHERE offset = OLD.seq;
+      END`)
   }
 
   claim(offset: number, channelId: string, subscriberId: string): boolean {
@@ -42,9 +41,5 @@ export class SqliteExclusiveClaims {
 
   clear(): void {
     this.database.run("DELETE FROM funnel_exclusive_claims")
-  }
-
-  close(): void {
-    this.database.close()
   }
 }
