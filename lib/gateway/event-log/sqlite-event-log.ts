@@ -4,6 +4,7 @@ import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import {
   type FunnelEvent,
   FunnelEventLog,
+  funnelEventSchema,
   type FunnelEventRecord,
 } from "@/gateway/event-log/event-log"
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
@@ -103,7 +104,16 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       meta: record.meta,
       ...(record.exclusive ? { exclusive: record.exclusive } : {}),
     }
-    const result = this.sink.write({ seq: record.offset, ts: this.now(), event })
+    let result: Error | void
+    try {
+      result = this.sink.write({
+        seq: record.offset,
+        ts: this.now(),
+        event: this.parseEvent(event),
+      })
+    } catch (error) {
+      result = error instanceof Error ? error : new Error(String(error))
+    }
 
     if (this.hasRetention && !(result instanceof Error)) {
       try {
@@ -155,18 +165,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
    */
   loadSince(since: number, limit = Number.MAX_SAFE_INTEGER): ReplayableEvent[] {
     const records = this.sink.query({ sinceSeq: since, limit })
-    const out: ReplayableEvent[] = []
-    for (const record of records) {
-      out.push(
-        eventSnapshot({
-          content: record.event.content,
-          meta: record.event.meta ?? undefined,
-          offset: record.seq,
-          ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
-        }),
-      )
-    }
-    return out
+    return records.map((record) => this.toReplay(record.seq, record.event))
   }
 
   /**
@@ -190,18 +189,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       ...(props.sinceSeq !== undefined ? { sinceSeq: props.sinceSeq } : {}),
       ...(props.limit !== undefined ? { limit: props.limit } : {}),
     })
-    const out: ReplayableEvent[] = []
-    for (const record of records) {
-      out.push(
-        eventSnapshot({
-          content: record.event.content,
-          meta: record.event.meta ?? undefined,
-          offset: record.seq,
-          ...(record.event.exclusive ? { exclusive: record.event.exclusive } : {}),
-        }),
-      )
-    }
-    return out
+    return records.map((record) => this.toReplay(record.seq, record.event))
   }
 
   findMaxOffset(): number {
@@ -209,13 +197,44 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
   }
 
   override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
-    const event = this.sink.query({ seq: offset, limit: 1 })[0]?.event
-    const assigned = event?.exclusive?.[channelId]
+    const stored = this.sink.query({ seq: offset, limit: 1 })[0]
+    if (!stored) return false
+    const event = this.parseEvent(stored.event)
+    const assigned =
+      event.exclusive && Object.hasOwn(event.exclusive, channelId)
+        ? event.exclusive[channelId]
+        : undefined
 
     if (assigned === undefined) return false
     if (assigned !== null) return assigned === subscriberId
 
     return this.exclusiveClaims.claim(offset, channelId, subscriberId)
+  }
+
+  private parseEvent(value: unknown): FunnelEvent {
+    const parsed = funnelEventSchema.safeParse(value)
+    if (!parsed.success) throw new Error("replay event data is invalid")
+    // Zod record outputs omit __proto__. Preserve every own key and validate
+    // the copied values too, including keys skipped by the record parser.
+    const original = value as FunnelEvent
+    const meta = original.meta === null ? null : { ...original.meta }
+    const exclusive = original.exclusive ? { ...original.exclusive } : undefined
+    if (
+      Object.values(meta ?? {}).some((item) => typeof item !== "string") ||
+      Object.values(exclusive ?? {}).some((item) => item !== null && typeof item !== "string")
+    )
+      throw new Error("replay event data is invalid")
+    return { ...parsed.data, meta, ...(exclusive ? { exclusive } : {}) }
+  }
+
+  private toReplay(offset: number, value: unknown): ReplayableEvent {
+    const event = this.parseEvent(value)
+    return eventSnapshot({
+      content: event.content,
+      meta: event.meta ?? undefined,
+      offset,
+      ...(event.exclusive ? { exclusive: event.exclusive } : {}),
+    })
   }
 
   clear(): void {
