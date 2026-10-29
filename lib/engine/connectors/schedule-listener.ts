@@ -1,3 +1,5 @@
+import { requireTimestamp } from "@/require-timestamp"
+import { invokeCallback } from "@/invoke-callback"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { matchCron } from "@/engine/connectors/match-cron"
@@ -69,9 +71,18 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     const scheduleNext = () => {
       if (this.stopped) return
 
-      const date = this.now()
+      let date: Date
+      try {
+        date = this.readNow()
+      } catch (error) {
+        this.stopped = true
+        this.tickScheduled = false
+        this.timer = null
+        throw error
+      }
       const msUntilNextMinute = 60_000 - (date.getSeconds() * 1000 + date.getMilliseconds())
       this.timer = setTimeout(async () => {
+        this.timer = null
         if (this.stopped) return
 
         try {
@@ -80,7 +91,11 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
           this.recordTickError(error)
         }
 
-        scheduleNext()
+        try {
+          scheduleNext()
+        } catch (error) {
+          this.recordTickError(error)
+        }
       }, msUntilNextMinute)
 
       this.timer.unref()
@@ -95,11 +110,16 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (this.stopped) return
 
+    try {
+      scheduleNext()
+    } catch (error) {
+      this.recordTickError(error)
+      throw error
+    }
+
     // Connection lifecycle parity with the flume-backed listeners: the timer
     // is armed, so the connector is "connected" for diagnostic purposes.
-    this.diagnostics.recordConnection("connected", "")
-
-    scheduleNext()
+    invokeCallback(() => this.diagnostics.recordConnection("connected", ""))
   }
 
   async stop(): Promise<void> {
@@ -117,11 +137,13 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
   private recordTickError(error: unknown): void {
     const message = errorMessageOf(error)
-    this.diagnostics.recordConnection("error", `tick: ${message}`)
-    this.logger?.error("schedule tick failed", {
-      connector: this.config.name,
-      error: message,
-    })
+    invokeCallback(() => this.diagnostics.recordConnection("error", `tick: ${message}`))
+    invokeCallback(() =>
+      this.logger?.error("schedule tick failed", {
+        connector: this.config.name,
+        error: message,
+      }),
+    )
   }
 
   override isAlive(): boolean {
@@ -140,7 +162,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private async tickEntries(notify: NotifyFn): Promise<void> {
-    const now = this.truncateToMinute(this.now())
+    const now = this.truncateToMinute(this.readNow())
     const state = this.lastFiredStore.load()
     if (this.pruneRemovedEntries(state)) this.lastFiredStore.save(state)
 
@@ -385,6 +407,10 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       cron: entry.cron,
       error: message,
     })
+  }
+
+  private readNow(): Date {
+    return new Date(requireTimestamp(this.now().getTime()))
   }
 
   private truncateToMinute(date: Date): Date {
