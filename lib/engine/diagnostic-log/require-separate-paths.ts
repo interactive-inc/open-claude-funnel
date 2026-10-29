@@ -3,24 +3,36 @@ import { dirname, join, parse, sep } from "node:path"
 
 /** Reject shared files before any diagnostic store can migrate or write them. */
 export function requireSeparateDiagnosticPaths(paths: readonly string[]): void {
-  const names = new Set<string>()
-  const files = new Set<string>()
-  for (const path of paths) {
-    if (path === ":memory:") continue
+  const names = new Map<string, string>()
+  const files = new Map<string, string>()
+  const reserve = (path: string, owner: string): void => {
     const canonical = canonicalPath(path)
-    if (names.has(canonical))
+    const previous = names.get(canonical)
+    if (previous !== undefined && previous !== owner)
       throw new Error("diagnostic database paths must identify separate files")
-    names.add(canonical)
+    names.set(canonical, owner)
     try {
       const stat = statSync(canonical, { bigint: true })
       const identity = `${stat.dev}:${stat.ino}`
-      if (files.has(identity))
+      const previousFile = files.get(identity)
+      if (previousFile !== undefined && previousFile !== owner)
         throw new Error("diagnostic database paths must identify separate files")
-      files.add(identity)
+      files.set(identity, owner)
     } catch (error) {
       if (!isMissing(error)) throw error
     }
   }
+  paths.forEach((path, index) => {
+    if (path === ":memory:") return
+    const canonical = canonicalPath(path)
+    for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+      // Reserve both the caller's spelling and the resolved database name:
+      // SQLite sidecars must not overwrite any other store's primary file.
+      const owner = `${index}:${suffix}`
+      reserve(`${path}${suffix}`, owner)
+      reserve(`${canonical}${suffix}`, owner)
+    }
+  })
 }
 
 function canonicalPath(path: string): string {

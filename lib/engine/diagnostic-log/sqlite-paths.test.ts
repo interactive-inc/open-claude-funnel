@@ -1,3 +1,4 @@
+import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { expect, test } from "bun:test"
 import {
   existsSync,
@@ -166,6 +167,53 @@ test("lexically similar paths through a symlink may still identify separate data
     } finally {
       log.close()
     }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+for (const suffix of ["-wal", "-shm", "-journal"]) {
+  test(`diagnostic database paths cannot overlap SQLite ${suffix} files`, () => {
+    const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-paths-"))
+    const processedPath = join(directory, "events.db")
+    const rawPath = `${processedPath}${suffix}`
+    const connectionPath = join(directory, "connection.db")
+    try {
+      writeFileSync(rawPath, "preserved")
+      expect(
+        () => new SqliteConnectorDiagnosticLog({ rawPath, processedPath, connectionPath }),
+      ).toThrow("diagnostic database paths must identify separate files")
+      expect(existsSync(processedPath)).toBe(false)
+      expect(existsSync(connectionPath)).toBe(false)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+}
+
+test("a database occupying another store's WAL name keeps its existing history intact", () => {
+  const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-paths-"))
+  const processedPath = join(directory, "events.db")
+  const rawPath = `${processedPath}-wal`
+  const seed = new SqliteEventLog<string>({ path: rawPath })
+  seed.insert({ ts: 0, event: "preserved" })
+  seed.close()
+  try {
+    expect(
+      () =>
+        new SqliteConnectorDiagnosticLog({
+          rawPath,
+          processedPath,
+          connectionPath: join(directory, "connection.db"),
+        }),
+    ).toThrow("diagnostic database paths must identify separate files")
+    const reopened = new SqliteEventLog<string>({ path: rawPath })
+    try {
+      expect(reopened.query().map((row) => row.event)).toEqual(["preserved"])
+    } finally {
+      reopened.close()
+    }
+    expect(existsSync(processedPath)).toBe(false)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
