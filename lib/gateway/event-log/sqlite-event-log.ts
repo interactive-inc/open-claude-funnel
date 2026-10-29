@@ -4,14 +4,13 @@ import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import {
   type FunnelEvent,
   FunnelEventLog,
-  funnelEventSchema,
   type FunnelEventRecord,
 } from "@/gateway/event-log/event-log"
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-claims"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { invokeCallback } from "@/invoke-callback"
-import { replayRoutingMetadata } from "@/gateway/event-log/replay-routing"
+import { parseReplayEvent, replayEventFromRecord } from "@/gateway/event-log/replay-event"
 import { isValidExclusiveClaim } from "@/gateway/event-log/exclusive-claim"
 
 type Props = {
@@ -98,20 +97,12 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
    * so this store and the broadcaster's in-memory ring stay aligned.
    */
   record(record: FunnelEventRecord): void {
-    const event: FunnelEvent = {
-      type: record.meta?.event_type ?? "unknown",
-      content: record.content,
-      channel_id: record.channelId,
-      connector_id: record.connectorId,
-      meta: record.meta,
-      ...(record.exclusive ? { exclusive: record.exclusive } : {}),
-    }
     let result: Error | void
     try {
       result = this.sink.write({
         seq: record.offset,
         ts: this.now(),
-        event: this.parseEvent(event),
+        event: replayEventFromRecord(record),
       })
     } catch (error) {
       result = error instanceof Error ? error : new Error(String(error))
@@ -202,7 +193,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     if (!isValidExclusiveClaim(offset, channelId, subscriberId)) return false
     const stored = this.sink.query({ seq: offset, limit: 1 })[0]
     if (!stored) return false
-    const event = this.parseEvent(stored.event)
+    const event = parseReplayEvent(stored.event)
     if (event.channel_id !== null && event.channel_id !== channelId) return false
     const assigned =
       event.exclusive && Object.hasOwn(event.exclusive, channelId)
@@ -215,28 +206,8 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
     return this.exclusiveClaims.claim(offset, channelId, subscriberId)
   }
 
-  private parseEvent(value: unknown): FunnelEvent {
-    const parsed = funnelEventSchema.safeParse(value)
-    if (!parsed.success) throw new Error("replay event data is invalid")
-    // Zod record outputs omit __proto__. Preserve every own key and validate
-    // the copied values too, including keys skipped by the record parser.
-    const original = value as FunnelEvent
-    const meta = original.meta === null ? null : { ...original.meta }
-    const exclusive = original.exclusive ? { ...original.exclusive } : undefined
-    if (
-      Object.values(meta ?? {}).some((item) => typeof item !== "string") ||
-      Object.values(exclusive ?? {}).some((item) => item !== null && typeof item !== "string")
-    )
-      throw new Error("replay event data is invalid")
-    return {
-      ...parsed.data,
-      meta: replayRoutingMetadata(parsed.data.channel_id, parsed.data.connector_id, meta) ?? null,
-      ...(exclusive ? { exclusive } : {}),
-    }
-  }
-
   private toReplay(offset: number, value: unknown): ReplayableEvent {
-    const event = this.parseEvent(value)
+    const event = parseReplayEvent(value)
     return eventSnapshot({
       content: event.content,
       meta: event.meta ?? undefined,
