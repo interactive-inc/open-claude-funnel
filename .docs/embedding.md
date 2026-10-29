@@ -117,6 +117,8 @@ SQLite の `indexes` は生成時にコピーして検証する。呼び出し�
 
 保持件数・期限・バイト上限の行削除が失敗した場合は、同じ transaction の保存と採番を取り消す。commit 後の VACUUM 失敗は `onError` の `op: "compact"`、古い exclusive 割当の掃除の失敗は `op: "prune-claims"` で通知する。保守処理の失敗で保存済みのイベントの配送を止めたり、保存失敗として再試行させたりしない。診断ログの圧縮失敗は、そのログに注入した logger へ通知する。
 
+SQLite の書き込み transaction 中に、同じログへ書き込み・clear・close を再入させると `event log write is already in progress` で拒否する。内側の保存を成功と返した後で外側の失敗に巻き込んで取り消さない。transaction 開始前や commit 後の保守通知からの書き込みは可能。
+
 配信されたイベントの本文・メタデータ・exclusive 割当は読み取り専用で凍結される。値を加工する場合は自分のコピーを作り、Funnel が保持する履歴を変更しない。
 
 公開入力の `channel` / `channelId` / `connector` / `connectorId` は gateway が所有する識別情報で、入力の `meta` からは上書きできない。`connector` 引数を省略した入力は接続の識別情報を持たず、未登録の接続ラベルを渡した場合も `meta` の既存 ID を借りない。登録済みの接続を指定した場合だけ、その接続の ID を付ける。その他のメタデータと入力オブジェクトは維持する。

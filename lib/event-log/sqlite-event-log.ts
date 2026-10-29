@@ -179,6 +179,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   // gap between maxBytes and targetBytes means that check runs rarely (the file
   // has to refill the whole delta before the next overflow).
   private insertsSinceByteCheck = 0
+  private writing = false
 
   constructor(props: SqliteEventLogProps<E, I>) {
     const maxRows = props.maxRows
@@ -264,6 +265,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   insert(input: { ts: number; event: E }): EventLogEntry<E> | Error {
     try {
+      this.requireIdleWriter()
       const { ts, event } = input
       const params = this.buildInsertParams(ts, event)
       const result = this.writeTransaction(() => {
@@ -279,9 +281,9 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   insertMany(inputs: ReadonlyArray<{ ts: number; event: E }>): EventLogEntry<E>[] | Error {
-    if (inputs.length === 0) return []
-
     try {
+      this.requireIdleWriter()
+      if (inputs.length === 0) return []
       const records: EventLogEntry<E>[] = []
       const compact = this.writeTransaction(() => {
         for (const input of inputs) {
@@ -306,6 +308,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   write(record: EventLogEntry<E>): void | Error {
     try {
+      this.requireIdleWriter()
       const seq = record.seq
       if (!Number.isSafeInteger(seq) || seq < 1)
         throw new Error("event log sequence must be a positive safe integer")
@@ -403,6 +406,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   close(): void {
+    this.requireIdleWriter()
     this.db.close()
   }
 
@@ -493,6 +497,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   /** The byte-check cadence advances only with committed payload changes. */
   private writeTransaction<T>(write: () => T): T {
+    this.requireIdleWriter()
+    this.writing = true
     const count = this.insertsSinceByteCheck
     try {
       // Lock before reading so concurrent WAL writers cannot invalidate the snapshot upgrade.
@@ -507,7 +513,13 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     } catch (error) {
       this.insertsSinceByteCheck = count
       throw error
+    } finally {
+      this.writing = false
     }
+  }
+
+  private requireIdleWriter(): void {
+    if (this.writing) throw new Error("event log write is already in progress")
   }
 
   private trim(insertedRows = 1): boolean {
@@ -583,6 +595,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   /** Drop every row and reclaim the file space. Used by `<log>.clear()`. */
   clear(): void {
+    this.requireIdleWriter()
     this.db.run("DELETE FROM logs")
     this.insertsSinceByteCheck = 0
     this.compact(true)
