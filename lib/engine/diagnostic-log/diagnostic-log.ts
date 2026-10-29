@@ -188,7 +188,7 @@ export abstract class ConnectorDiagnosticLog {
 
   abstract recordConnection(record: ConnectorConnectionRecord): void
 
-  /** Queries return detached rows; editing a result cannot change stored diagnostic facts. */
+  /** Queries complete synchronously and return detached rows; editing a result cannot change stored facts. */
   abstract queryRaw(query: ConnectorRawQuery): StoredRawEvent[]
 
   abstract queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[]

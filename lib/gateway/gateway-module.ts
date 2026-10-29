@@ -534,6 +534,7 @@ export class FunnelGatewayModule {
         assertActive: () => this.assertHttpActive(),
         callSignal: this.callController.signal,
         diagnosticLog: this.diagnosticLog,
+        onError: this.onError,
       })
 
       return next()
