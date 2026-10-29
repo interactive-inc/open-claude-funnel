@@ -1,3 +1,4 @@
+import { invokeCallback } from "@/invoke-callback"
 import { ObservedFunnelLogger } from "@/engine/logger/observed-logger"
 import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import type { FunnelClock } from "@/engine/time/clock"
@@ -20,10 +21,26 @@ export class FunnelChannelSupervisor {
   private readonly channels = new Map<string, Channel>()
   private readonly registry: FunnelListenerRegistry
   private readonly logger: FunnelLogger
+  private readonly props: Props
+  private stopPromise: Promise<void> | null = null
+  private readonly onAbort = () =>
+    invokeCallback(
+      () => this.stop(),
+      (error) => this.logger.error("channel shutdown failed", { error: String(error) }),
+    )
   private started = false
   private closed = false
 
-  constructor(private readonly props: Props) {
+  constructor(input: Props) {
+    const props: Props = {
+      broadcaster: input.broadcaster,
+      logger: input.logger,
+      clock: input.clock,
+      deps: input.deps,
+      onError: input.onError,
+      signal: input.signal,
+    }
+    this.props = props
     this.logger = new ObservedFunnelLogger(props.logger, () => {})
     this.registry = new FunnelListenerRegistry({
       logger: this.logger,
@@ -51,15 +68,8 @@ export class FunnelChannelSupervisor {
         props.broadcaster.broadcast(content, meta)
       },
     })
-    props.signal?.addEventListener(
-      "abort",
-      () => {
-        void this.stop().catch((error: unknown) => {
-          this.logger.error("channel shutdown failed", { error: String(error) })
-        })
-      },
-      { once: true },
-    )
+    if (!props.signal?.aborted)
+      props.signal?.addEventListener("abort", this.onAbort, { once: true })
   }
 
   register(channel: Channel): void {
@@ -84,11 +94,16 @@ export class FunnelChannelSupervisor {
     await Promise.all([...this.channels.values()].map((channel) => this.startChannel(channel)))
   }
 
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise
+    const completion = Promise.withResolvers<void>()
+    this.stopPromise = completion.promise
     this.closed = true
     this.started = false
+    this.props.signal?.removeEventListener("abort", this.onAbort)
     this.channels.clear()
-    await this.registry.stopAll()
+    void this.registry.close().then(completion.resolve, completion.reject)
+    return completion.promise
   }
 
   ids(): ReadonlyArray<string> {
