@@ -52,7 +52,7 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
       connectorId,
       ...(exclusive ? { exclusive: { ...exclusive } } : {}),
     }
-    const bytes = this.sizeOf(event.content, event.meta)
+    const bytes = this.sizeOf(event)
     const index =
       offset <= this.latestOffset ? this.events.findIndex((stored) => stored.offset >= offset) : -1
     if (index >= 0 && this.events[index]?.offset === offset)
@@ -61,17 +61,25 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     this.events.splice(index < 0 ? this.events.length : index, 0, event)
     this.latestOffset = Math.max(this.latestOffset, offset)
     this.bytes += bytes
+    this.trim()
+  }
+
+  private trim(): void {
     while (
       this.events.length > 0 &&
       (this.events.length > this.maxRows || this.bytes > this.maxBytes)
     ) {
       const removed = this.events.shift()
-      if (removed) this.bytes -= this.sizeOf(removed.content, removed.meta)
+      if (removed) this.bytes -= this.sizeOf(removed)
     }
   }
 
-  private sizeOf(content: string, meta: Record<string, string> | null | undefined): number {
-    return Buffer.byteLength(content) + Buffer.byteLength(JSON.stringify(meta ?? {}))
+  private sizeOf(event: StoredEvent): number {
+    return (
+      Buffer.byteLength(event.content) +
+      Buffer.byteLength(JSON.stringify(event.meta ?? {})) +
+      (event.exclusive ? Buffer.byteLength(JSON.stringify(event.exclusive)) : 0)
+    )
   }
 
   loadSince(since: number, limit = Infinity): ReplayableEvent[] {
@@ -102,10 +110,14 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     const event = this.events.find((candidate) => candidate.offset === offset)
     const exclusive = event?.exclusive
 
-    if (!exclusive || exclusive[channelId] === undefined) return false
+    if (!event || !exclusive || !Object.hasOwn(exclusive, channelId)) return false
     if (exclusive[channelId] !== null) return exclusive[channelId] === subscriberId
 
-    exclusive[channelId] = subscriberId
+    const next = { ...exclusive, [channelId]: subscriberId }
+    const change = this.sizeOf({ ...event, exclusive: next }) - this.sizeOf(event)
+    event.exclusive = next
+    this.bytes += change
+    this.trim()
     return true
   }
 

@@ -14,7 +14,11 @@ import {
   type FunnelEventSubscription,
 } from "@/gateway/event-stream"
 
-const byteLengthOf = (event: { content: string; meta?: Record<string, string> }): number => {
+const byteLengthOf = (event: {
+  content: string
+  meta?: Record<string, string>
+  exclusive?: Record<string, string | null>
+}): number => {
   let bytes = Buffer.byteLength(event.content, "utf-8")
 
   if (event.meta) {
@@ -23,6 +27,7 @@ const byteLengthOf = (event: { content: string; meta?: Record<string, string> })
     }
   }
 
+  if (event.exclusive) bytes += Buffer.byteLength(JSON.stringify(event.exclusive), "utf-8")
   return bytes
 }
 
@@ -294,14 +299,38 @@ export class FunnelBroadcaster {
     if (assigned !== null) return assigned === data.subscriberId
 
     if (this.persistentReplay) {
-      return (
+      const claimed =
         this.persistentReplay.claimExclusive?.(event.offset, data.channel, data.subscriberId) ??
         false
-      )
+      if (!claimed) return false
+      // Store pages are immutable snapshots. Only cache ownership in an event
+      // still owned by this broadcaster's replay buffer.
+      if (!this.replayBuffer.includes(event)) return true
     }
 
-    if (event.exclusive) event.exclusive[data.channel] = data.subscriberId
+    if (event.exclusive) {
+      const retained = this.replayBuffer.includes(event)
+      const before = retained ? byteLengthOf(event) : 0
+      const exclusive = { ...event.exclusive, [data.channel]: data.subscriberId }
+      const after = retained ? byteLengthOf({ ...event, exclusive }) : 0
+      event.exclusive = exclusive
+      if (retained) {
+        this.replayBufferBytes += after - before
+        this.trimReplayBuffer()
+      }
+    }
     return true
+  }
+
+  private trimReplayBuffer(): void {
+    while (
+      (this.replayBuffer.length > this.replayBufferSize ||
+        this.replayBufferBytes > this.replayBufferMaxBytes) &&
+      this.replayBuffer.length > 0
+    ) {
+      const dropped = this.replayBuffer.shift()
+      if (dropped) this.replayBufferBytes -= byteLengthOf(dropped)
+    }
   }
 
   private matchesClient(event: BroadcastEvent, data: ClientData): boolean {
@@ -542,15 +571,7 @@ export class FunnelBroadcaster {
       this.replayBuffer.push(event)
       this.replayBufferBytes += eventBytes
 
-      while (
-        (this.replayBuffer.length > this.replayBufferSize ||
-          this.replayBufferBytes > this.replayBufferMaxBytes) &&
-        this.replayBuffer.length > 0
-      ) {
-        const dropped = this.replayBuffer.shift()
-
-        if (dropped) this.replayBufferBytes -= byteLengthOf(dropped)
-      }
+      this.trimReplayBuffer()
     }
 
     for (const recipient of recipients) {
