@@ -4,6 +4,46 @@ import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-p
 const make = () => new FunnelDiscordEventProcessor({ ownUserId: "UBOT" })
 
 describe("FunnelDiscordEventProcessor", () => {
+  for (const [name, raw] of [
+    ["undefined", undefined],
+    ["function", () => "unused"],
+    ["symbol", Symbol("event")],
+    ["empty toJSON result", { toJSON: () => undefined }],
+  ] as const) {
+    test(`rejects ${name} instead of emitting undefined content`, () => {
+      const processor = make()
+      const input = {
+        authorId: "U1",
+        authorIsBot: false,
+        channelId: "C1",
+        guildId: null,
+        mentionedUserIds: [],
+        raw,
+      }
+      expect(() => processor.process(input)).toThrow("Discord event could not be serialized")
+      expect(processor.process({ ...input, raw: { content: "retry" } })).toMatchObject({
+        skip: false,
+        content: '{"content":"retry"}',
+      })
+      expect(processor.process({ ...input, authorIsBot: true })).toEqual({ skip: true })
+    })
+  }
+
+  test("retains valid falsy JSON content", () => {
+    for (const raw of [null, false, 0, ""]) {
+      expect(
+        make().process({
+          authorId: "U1",
+          authorIsBot: false,
+          channelId: "C1",
+          guildId: null,
+          mentionedUserIds: [],
+          raw,
+        }),
+      ).toMatchObject({ skip: false, content: JSON.stringify(raw) })
+    }
+  })
+
   test("skips messages from bots", () => {
     const result = make().process({
       authorId: "OTHERBOT",

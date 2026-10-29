@@ -33,10 +33,12 @@ export class FunnelDiscordEventProcessor {
       return { skip: true }
 
     const mentioned = this.ownUserId ? message.mentionedUserIds.includes(this.ownUserId) : false
+    const content = JSON.stringify(message.raw)
+    if (content === undefined) throw new Error("Discord event could not be serialized")
 
     return {
       skip: false,
-      content: JSON.stringify(message.raw),
+      content,
       meta: {
         event_type: "discord",
         channel_id: message.channelId,
