@@ -1,4 +1,5 @@
 import type { ReplayableEvent } from "@/gateway/broadcaster"
+import { errorMessageOf, normalizeError } from "@/engine/error/error-message-of"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import {
@@ -105,7 +106,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
         event: replayEventFromRecord(record),
       })
     } catch (error) {
-      result = error instanceof Error ? error : new Error(String(error))
+      result = normalizeError(error)
     }
 
     if (this.hasRetention && !(result instanceof Error)) {
@@ -127,7 +128,7 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       invokeCallback(() =>
         this.logger?.error("event log write failed", {
           offset: record.offset,
-          error: result.message,
+          error: errorMessageOf(result),
         }),
       )
       invokeCallback(() =>
@@ -144,9 +145,9 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
   }
 
   private reportMaintenanceError(error: unknown, op: "compact" | "prune-claims"): void {
-    const failure = error instanceof Error ? error : new Error(String(error))
+    const failure = normalizeError(error)
     invokeCallback(() =>
-      this.logger?.error("event log maintenance failed", { op, error: failure.message }),
+      this.logger?.error("event log maintenance failed", { op, error: errorMessageOf(failure) }),
     )
     invokeCallback(() => this.onError?.(failure, { component: "sqlite-event-log", op }))
   }

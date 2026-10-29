@@ -1,5 +1,16 @@
 import { expect, test } from "bun:test"
-import { errorMessageOf } from "@/engine/error/error-message-of"
+import { errorMessageOf, normalizeError } from "@/engine/error/error-message-of"
+
+test("error normalization preserves identity and safely wraps unprintable values", () => {
+  const original = new Error("original")
+  expect(normalizeError(original)).toBe(original)
+  const revoked = Proxy.revocable({}, {})
+  revoked.revoke()
+  for (const value of [Object.create(null), revoked.proxy]) {
+    expect(normalizeError(value)).toBeInstanceOf(Error)
+    expect(normalizeError(value).message).toBe("Unprintable thrown value")
+  }
+})
 
 test("error messages retain ordinary errors and primitive thrown values", () => {
   expect(errorMessageOf(new Error("failed"))).toBe("failed")

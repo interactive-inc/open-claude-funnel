@@ -1,5 +1,5 @@
 import { requireTimestamp } from "@/require-timestamp"
-import { errorMessageOf } from "@/engine/error/error-message-of"
+import { errorMessageOf, normalizeError } from "@/engine/error/error-message-of"
 import { requireDurationLimit } from "@/require-limit"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
@@ -60,13 +60,6 @@ type Deps = {
   startTimeoutMs?: number
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
   now?: () => number
-}
-
-const normalizeError = (error: unknown): Error => {
-  try {
-    if (error instanceof Error) return error
-  } catch {}
-  return new Error(errorMessageOf(error))
 }
 
 const defaultOnError: OnFunnelError = () => {}

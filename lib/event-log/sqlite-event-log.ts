@@ -1,4 +1,5 @@
 import { requireTimestamp } from "@/require-timestamp"
+import { normalizeError } from "@/engine/error/error-message-of"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { Database } from "bun:sqlite"
 import { applySqliteBusyTimeout } from "@/event-log/sqlite-busy-timeout"
@@ -267,7 +268,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.compact(result.compact)
       return result.record
     } catch (e) {
-      return e instanceof Error ? e : new Error(String(e))
+      return normalizeError(e)
     }
   }
 
@@ -293,7 +294,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.compact(apply(inputs))
       return records
     } catch (e) {
-      return e instanceof Error ? e : new Error(String(e))
+      return normalizeError(e)
     }
   }
 
@@ -311,7 +312,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       })()
       this.compact(compact)
     } catch (e) {
-      return e instanceof Error ? e : new Error(String(e))
+      return normalizeError(e)
     }
   }
 
@@ -526,7 +527,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     try {
       this.db.run("VACUUM")
     } catch (error) {
-      const failure = error instanceof Error ? error : new Error(String(error))
+      const failure = normalizeError(error)
       try {
         void Promise.resolve(this.onMaintenanceError?.(failure)).catch(() => {})
       } catch {}

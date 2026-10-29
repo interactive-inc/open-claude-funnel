@@ -12,3 +12,11 @@ export const errorMessageOf = (error: unknown): string => {
     return "Unprintable thrown value"
   }
 }
+
+/** Preserve real error identity and safely wrap other thrown values. */
+export const normalizeError = (error: unknown): Error => {
+  try {
+    if (error instanceof Error) return error
+  } catch {}
+  return new Error(errorMessageOf(error))
+}
