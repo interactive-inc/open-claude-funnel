@@ -29,7 +29,8 @@ export class FunnelDiscordEventProcessor {
   }
 
   process(message: DiscordInboundMessage): DiscordProcessed {
-    if (message.authorIsBot) return { skip: true }
+    if (message.authorIsBot || (this.ownUserId !== "" && message.authorId === this.ownUserId))
+      return { skip: true }
 
     const mentioned = this.ownUserId ? message.mentionedUserIds.includes(this.ownUserId) : false
 
