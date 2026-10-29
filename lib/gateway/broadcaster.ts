@@ -249,7 +249,12 @@ export class FunnelBroadcaster {
       isCancelled,
     )) {
       if (isCancelled?.()) return
-      sendWsPayload(ws, JSON.stringify(event), this.maxBufferedBytes)
+      sendWsPayload(
+        ws,
+        JSON.stringify(event),
+        this.maxBufferedBytes,
+        isCancelled ? () => !isCancelled() : undefined,
+      )
     }
   }
 
@@ -655,10 +660,16 @@ export class FunnelBroadcaster {
       const ws = recipient.target
       if (this.clients.get(ws) !== recipient.data) continue
       try {
-        sendWsPayload(ws, payload, this.maxBufferedBytes)
+        sendWsPayload(
+          ws,
+          payload,
+          this.maxBufferedBytes,
+          () => this.clients.get(ws) === recipient.data,
+        )
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
-        const data = this.clients.get(ws)
+        if (this.clients.get(ws) !== recipient.data) continue
+        const data = recipient.data
         this.clients.delete(ws)
         if (err instanceof WebSocketBackpressureError) {
           this.droppedSlowClients += 1

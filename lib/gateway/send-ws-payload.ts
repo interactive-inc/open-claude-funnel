@@ -6,8 +6,13 @@ export function sendWsPayload(
   socket: ServerWebSocket<unknown>,
   payload: string,
   maxBufferedBytes: number,
+  canSend?: () => boolean,
 ): void {
+  if (canSend && !canSend()) return
   const buffered = socket.getBufferedAmount()
+  if (canSend && !canSend()) return
   if (buffered > maxBufferedBytes) throw new WebSocketBackpressureError(buffered)
-  if (socket.send(payload) === 0) throw new Error("WebSocket send dropped the message")
+  const send = socket.send
+  if (canSend && !canSend()) return
+  if (send.call(socket, payload) === 0) throw new Error("WebSocket send dropped the message")
 }
