@@ -162,6 +162,8 @@ export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
   private readonly streams = new Map<FunnelEventStream, ClientData>()
   private readonly subscribers: Set<BroadcastSubscriber> = new Set()
+  private observerQueue: { event: ReplayableEvent; observers: BroadcastSubscriber[] }[] = []
+  private notifyingObservers = false
   private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
   private readonly maxBufferedBytes: number
@@ -530,28 +532,47 @@ export class FunnelBroadcaster {
       this.publishing = false
     }
 
-    for (const handler of observers) {
-      if (!this.subscribers.has(handler)) continue
-      invokeCallback(
-        () => handler(delivered),
-        (error) => {
-          const err = error instanceof Error ? error : new Error(String(error))
+    this.observerQueue.push({ event: delivered, observers })
+    this.notifyObservers()
 
-          invokeCallback(() =>
-            this.logger?.error("broadcast subscriber threw", { error: err.message }),
-          )
-          invokeCallback(() =>
-            this.onError(err, {
-              component: "broadcaster.subscriber",
-              offset: delivered.offset,
-              connector: delivered.meta?.connector ?? null,
-              channel: delivered.meta?.channel ?? null,
-            }),
-          )
-        },
-      )
-    }
     return delivered
+  }
+
+  /** Drain derived publications after every observer has seen the preceding event. */
+  private notifyObservers(): void {
+    if (this.notifyingObservers) return
+    this.notifyingObservers = true
+    try {
+      while (this.observerQueue.length > 0) {
+        const batch = this.observerQueue
+        this.observerQueue = []
+        for (const { event: delivered, observers } of batch) {
+          for (const handler of observers) {
+            if (!this.subscribers.has(handler)) continue
+            invokeCallback(
+              () => handler(delivered),
+              (error) => {
+                const err = error instanceof Error ? error : new Error(String(error))
+
+                invokeCallback(() =>
+                  this.logger?.error("broadcast subscriber threw", { error: err.message }),
+                )
+                invokeCallback(() =>
+                  this.onError(err, {
+                    component: "broadcaster.subscriber",
+                    offset: delivered.offset,
+                    connector: delivered.meta?.connector ?? null,
+                    channel: delivered.meta?.channel ?? null,
+                  }),
+                )
+              },
+            )
+          }
+        }
+      }
+    } finally {
+      this.notifyingObservers = false
+    }
   }
 
   /** Persist and complete live delivery before observers may publish derived input. */
