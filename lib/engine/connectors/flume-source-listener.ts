@@ -122,10 +122,10 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
         // Host observers may be async despite Flume's void callback type.
         // Observe their failure without making source shutdown await itself.
         void Promise.resolve(options.onLog?.(log)).catch((error) => {
-          this.reportObserverError(error)
+          this.reportError(error, "log observer")
         })
       } catch (error) {
-        this.reportObserverError(error)
+        this.reportError(error, "log observer")
       }
     }
 
@@ -156,7 +156,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     // listener half-started with a broken handle. `Error` is the documented
     // discriminant for the result union.
     if (result instanceof Error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(result))
+      this.reportError(result, "start")
       throw result
     }
 
@@ -167,7 +167,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
     void this.pumpDelivery(delivery, options.onEvent)
   }
 
-  private reportObserverError(error: unknown): void {
+  private reportError(error: unknown, context: string): void {
     const message = errorMessageOf(error)
     // Error observers are host code too. Neither sink may turn a handled
     // rejection into a second unhandled rejection or suppress the other sink.
@@ -175,7 +175,9 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       this.diagnostics.recordConnection("error", message)
     } catch {}
     try {
-      this.logger?.error(`${this.type} log observer error`, { error: message })
+      void Promise.resolve(
+        this.logger?.error(`${this.type} ${context} error`, { error: message }),
+      ).catch(() => {})
     } catch {}
   }
 
@@ -190,13 +192,11 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
         try {
           await onEvent(item.event)
         } catch (error) {
-          this.diagnostics.recordConnection("error", errorMessageOf(error))
-          this.logger?.error(`${this.type} delivery error`, { error: errorMessageOf(error) })
+          this.reportError(error, "delivery")
         }
       }
     } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      this.logger?.error(`${this.type} stream error`, { error: errorMessageOf(error) })
+      this.reportError(error, "stream")
     }
   }
 
@@ -225,13 +225,11 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       // Finish queued status/log callbacks before finalizing listener state.
       await running.drain()
       for (const { error } of closed.errors()) {
-        this.diagnostics.recordConnection("error", errorMessageOf(error))
-        this.logger?.error(`${this.type} stop error`, { error: errorMessageOf(error) })
+        this.reportError(error, "stop")
       }
       this.diagnostics.recordConnection("disconnected", "")
     } catch (error) {
-      this.diagnostics.recordConnection("error", errorMessageOf(error))
-      this.logger?.error(`${this.type} stop error`, { error: errorMessageOf(error) })
+      this.reportError(error, "stop")
     } finally {
       this.running = null
       this.onStop()
