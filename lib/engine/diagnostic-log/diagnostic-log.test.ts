@@ -57,6 +57,38 @@ const connection = (
 
 for (const impl of implementations) {
   describe(impl.name, () => {
+    test("editing query results cannot rewrite stored diagnostic facts or routing", () => {
+      const log = impl.build()
+      try {
+        log.recordRaw(raw({ payload: "original raw" }))
+        log.recordProcessed(processed({ payload: "original processed" }))
+        log.recordConnection(connection({ detail: "original connection" }))
+        const rawRows = log.queryRaw({})
+        const processedRows = log.queryProcessed({})
+        const connectionRows = log.queryConnection({})
+        const originalRaw = { ...rawRows[0]! }
+        const originalProcessed = { ...processedRows[0]! }
+        const originalConnection = { ...connectionRows[0]! }
+        for (const row of [rawRows[0]!, processedRows[0]!, connectionRows[0]!]) {
+          row.seq = 999
+          row.channelId = "different-channel"
+          row.connectorId = "different-connector"
+        }
+        rawRows[0]!.payload = "changed raw"
+        processedRows[0]!.outcome = "skip:changed"
+        connectionRows[0]!.status = "error"
+        connectionRows[0]!.detail = "changed connection"
+        expect(log.queryRaw({ channelId: "ch-1", seq: originalRaw.seq })).toEqual([originalRaw])
+        expect(log.queryProcessed({ outcome: "emitted" })).toEqual([originalProcessed])
+        expect(log.queryConnection({ status: "connected" })).toEqual([originalConnection])
+        expect(log.queryRaw({ channelId: "different-channel" })).toEqual([])
+        expect(log.queryProcessed({ connectorId: "different-connector" })).toEqual([])
+        expect(log.queryConnection({ seq: 999 })).toEqual([])
+      } finally {
+        log.close()
+      }
+    })
+
     test("records and reads back a raw event", () => {
       const log = impl.build()
 

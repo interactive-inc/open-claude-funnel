@@ -107,9 +107,7 @@ const matches = (
 // tail of the (insertion-ordered) matches, then keep them ascending. Guard
 // limit === 0 explicitly — slice(-0) is slice(0), which would return every
 // row, whereas SQL `LIMIT 0` returns none. The two impls must agree.
-const takeRecent = <T>(events: T[], limit: number | undefined): T[] => {
-  if (limit === undefined) return events
-  if (limit <= 0) return []
-
-  return events.slice(-limit)
+const takeRecent = <T extends object>(events: T[], limit: number | undefined): T[] => {
+  const selected = limit === undefined ? events : limit <= 0 ? [] : events.slice(-limit)
+  return selected.map((event) => ({ ...event }))
 }
