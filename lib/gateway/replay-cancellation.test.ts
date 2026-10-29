@@ -3,7 +3,7 @@ import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import type { FunnelEventSubscription } from "@/gateway/event-stream"
 
 for (const cancel of ["return", "close-all", "abort"] as const) {
-  for (const phase of ["load", "claim"] as const) {
+  for (const phase of ["load", "snapshot", "claim"] as const) {
     test(`${cancel} during replay ${phase} detaches immediately and cannot deliver after cancellation`, async () => {
       let subscription: FunnelEventSubscription
       let completion: Promise<unknown> | undefined
@@ -24,7 +24,18 @@ for (const cancel of ["return", "close-all", "abort"] as const) {
         persistentReplay: {
           loadSince(since) {
             if (phase === "load") cancelReplay()
-            return since < 1 ? [{ offset: 1, content: "history", exclusive: { ops: null } }] : []
+            return since < 1
+              ? [
+                  {
+                    offset: 1,
+                    get content() {
+                      if (phase === "snapshot") cancelReplay()
+                      return "history"
+                    },
+                    exclusive: { ops: null },
+                  },
+                ]
+              : []
           },
           claimExclusive() {
             claimed++
@@ -48,7 +59,7 @@ for (const cancel of ["return", "close-all", "abort"] as const) {
         expect(failures).toEqual([])
         await completion
         expect(broadcaster.getMetrics().subscribers).toBe(0)
-        expect(claimed).toBe(phase === "load" ? 0 : 1)
+        expect(claimed).toBe(phase === "claim" ? 1 : 0)
         broadcaster.broadcast("later")
         expect(await subscription.next()).toEqual({ done: true, value: undefined })
       } finally {

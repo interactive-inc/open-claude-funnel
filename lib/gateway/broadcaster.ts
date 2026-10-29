@@ -284,7 +284,9 @@ export class FunnelBroadcaster {
           const page = source.loadSince(cursor, 64)
           if (page.length === 0) break
           let atBoundary = false
-          for (const event of page) {
+          for (const record of page) {
+            if (isCancelled?.()) return
+            const event = eventSnapshot(record)
             if (isCancelled?.()) return
             if (!Number.isSafeInteger(event.offset) || event.offset <= cursor)
               throw new Error("event log replay must advance offsets in ascending order")
@@ -293,7 +295,7 @@ export class FunnelBroadcaster {
               break
             }
             cursor = event.offset
-            if (matches(event)) yield eventSnapshot(event)
+            if (matches(event)) yield event
           }
           if (atBoundary) break
         }
