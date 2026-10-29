@@ -341,11 +341,21 @@ const capPayload = (payload: string, type: string): string => {
   const size = Buffer.byteLength(payload, "utf8")
   if (size <= RAW_PAYLOAD_CAP) return payload
 
-  return JSON.stringify({
-    ...headFields(payload),
-    _funnel_oversized: size,
-    _funnel_type: type,
-  })
+  let summary: Record<string, unknown> = { _funnel_oversized: size }
+  let serialized = JSON.stringify(summary)
+  for (const [key, value] of Object.entries({ _funnel_type: type, ...headFields(payload) })) {
+    const candidate = { ...summary, [key]: value }
+    try {
+      const json = JSON.stringify(candidate)
+      if (Buffer.byteLength(json, "utf8") <= RAW_PAYLOAD_CAP) {
+        summary = candidate
+        serialized = json
+      }
+    } catch {
+      // Deeply nested head fields can exceed the serializer's stack limit.
+    }
+  }
+  return serialized
 }
 
 // Keep the few keys that answer "what kind of event was this, when, where",
@@ -356,6 +366,7 @@ const HEAD_KEYS = ["type", "subtype", "ts", "channel", "channel_type", "user", "
 
 const headFields = (payload: string): Record<string, unknown> => {
   try {
+    if (!hasSafeJsonDepth(payload)) return {}
     const parsed: unknown = JSON.parse(payload)
     if (typeof parsed !== "object" || parsed === null) return {}
 
@@ -370,4 +381,25 @@ const headFields = (payload: string): Record<string, unknown> => {
   } catch {
     return {}
   }
+}
+
+/** Avoid parser/serializer stack exhaustion while extracting optional diagnostics. */
+function hasSafeJsonDepth(payload: string): boolean {
+  let depth = 0
+  let quoted = false
+  let escaped = false
+  for (const character of payload) {
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (character === "\\") escaped = true
+      else if (character === '"') quoted = false
+      continue
+    }
+    if (character === '"') quoted = true
+    else if (character === "{" || character === "[") {
+      depth++
+      if (depth > 128) return false
+    } else if (character === "}" || character === "]") depth--
+  }
+  return true
 }

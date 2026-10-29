@@ -360,6 +360,64 @@ describe.skipIf(!isBun)("SqliteConnectorDiagnosticLog oversize handling", () => 
     log.close()
   })
 
+  test("oversized retained head fields cannot bypass the raw payload byte cap", () => {
+    const log = buildSqlite()
+    const cap = 256 * 1024
+    try {
+      for (const fields of [
+        { user: "x".repeat(cap + 1) },
+        { user: { data: "x".repeat(cap + 1) } },
+        { type: "x".repeat(150 * 1024), subtype: "x".repeat(150 * 1024) },
+        { user: "あ".repeat(100_000) },
+        { user: '[\\"{'.repeat(100_000) },
+      ]) {
+        const payload = JSON.stringify({ ...fields, channel: "C1", text: "x".repeat(cap) })
+        log.recordRaw(raw({ payload }))
+        const stored = log.queryRaw({ limit: 1 })[0]!.payload
+        expect(Buffer.byteLength(stored)).toBeLessThanOrEqual(cap)
+        const summary = JSON.parse(stored)
+        expect(summary._funnel_oversized).toBe(Buffer.byteLength(payload))
+        expect(summary.channel).toBe("C1")
+      }
+    } finally {
+      log.close()
+    }
+  })
+
+  test("deep retained head fields cannot prevent an oversized raw diagnostic from being recorded", () => {
+    const log = buildSqlite()
+    try {
+      const payload =
+        '{"user":' +
+        "[".repeat(20_000) +
+        "0" +
+        "]".repeat(20_000) +
+        ',"channel":"C1","text":"' +
+        "x".repeat(300 * 1024) +
+        '"}'
+      expect(() => log.recordRaw(raw({ payload }))).not.toThrow()
+      const summary = JSON.parse(log.queryRaw({ limit: 1 })[0]!.payload)
+      expect(summary.channel).toBeUndefined()
+      expect(summary.user).toBeUndefined()
+      expect(summary._funnel_oversized).toBe(Buffer.byteLength(payload))
+    } finally {
+      log.close()
+    }
+  })
+
+  test("oversized connector type metadata cannot bypass the summary cap", () => {
+    const log = buildSqlite()
+    try {
+      const payload = "x".repeat(300 * 1024)
+      log.recordRaw(raw({ type: "x".repeat(300 * 1024), payload }))
+      const stored = log.queryRaw({ limit: 1 })[0]!.payload
+      expect(Buffer.byteLength(stored)).toBeLessThanOrEqual(256 * 1024)
+      expect(JSON.parse(stored)._funnel_oversized).toBe(Buffer.byteLength(payload))
+    } finally {
+      log.close()
+    }
+  })
+
   test("keeps a payload under the cap verbatim", () => {
     const log = buildSqlite()
     const payload = JSON.stringify({ type: "message", text: "small" })
