@@ -102,6 +102,7 @@ Slack、Discord、GitHub の接続は `/connectors/<type>` から必要なもの
 - 既定のメモリ store は、通常のオブジェクトと配列で構成された設定データを読み書き時にコピーします。取得結果を加工しても保存内容は変わりません。変更にはチャネル API または同期的な `store.update` / `store.write` を使います。独自設定内の関数・クラスインスタンスなどのリソースはホスト所有の参照を維持します。
 - 定期実行の発火状態も既定はメモリです。`scheduleConnector({ stateStore })`、または `/channel` の `timeChannel({ statePersister })` にホストの保存処理を渡せます。
 - `Funnel({ signal })` のキャンセルは接続の監視・復旧も停止します。Bun helper が所有する待受も閉じます。ホスト所有の待受はホストが閉じます。
+- HTTP の公開・コネクタ呼び出しは、JSON 本文のネストが128段を超える場合に解析・外部通信・保存前に400を返します。文字列内の括弧は深さに数えません。
 - gateway の停止・破棄は、HTTP 経由で進行中のコネクタ呼び出しも取り消します。受信した `Request.signal` の取消も外部通信へ伝えます。直接の `funnel.channels.call` と組み込み adapter は `CallInput.signal` で取り消せます。独自 adapter や HTTP クライアントもこの signal を通信と応答本文の読み取りへ渡してください。
 - 接続の所有権・起動ロック・停止意図はチャネル ID とコネクタ ID で保持します。改名だけでは接続を開き直さず、配送時に現在の名前を使います。同じ名前で新しい ID の接続を作っても、以前の接続からは配信しません。
 - 認証情報など接続内容を変えた場合、ホストが `gateway.getRegistry().restart(channel, connector)` で対象を更新します。設定から削除した接続は次の監視処理で停止します。直ちに停止したい場合は削除前に `stop(channel, connector)` を呼びます。

@@ -1,3 +1,4 @@
+import { jsonBodyDepth } from "@/gateway/routes/json-body-depth"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { factory } from "@/gateway/factory"
@@ -18,6 +19,7 @@ import { zParam } from "@/gateway/routes/validator"
  */
 export const channelsPublishHandler = factory.createHandlers(
   zParam(z.object({ channel: z.string().min(1) })),
+  jsonBodyDepth,
   zValidator("json", publishRequestSchema, (result, c) => {
     if (result.success) return
 

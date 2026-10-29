@@ -1,3 +1,4 @@
+import { hasSafeJsonDepth } from "@/has-safe-json-depth"
 import { requireSeparateDiagnosticPaths } from "@/engine/diagnostic-log/require-separate-paths"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { chmodSync } from "node:fs"
@@ -381,25 +382,4 @@ const headFields = (payload: string): Record<string, unknown> => {
   } catch {
     return {}
   }
-}
-
-/** Avoid parser/serializer stack exhaustion while extracting optional diagnostics. */
-function hasSafeJsonDepth(payload: string): boolean {
-  let depth = 0
-  let quoted = false
-  let escaped = false
-  for (const character of payload) {
-    if (quoted) {
-      if (escaped) escaped = false
-      else if (character === "\\") escaped = true
-      else if (character === '"') quoted = false
-      continue
-    }
-    if (character === '"') quoted = true
-    else if (character === "{" || character === "[") {
-      depth++
-      if (depth > 128) return false
-    } else if (character === "}" || character === "]") depth--
-  }
-  return true
 }

@@ -1,3 +1,4 @@
+import { jsonBodyDepth } from "@/gateway/routes/json-body-depth"
 import { HTTPException } from "hono/http-exception"
 import { z } from "zod"
 import type { JsonValue } from "@/engine/connectors/connector-adapter"
@@ -24,6 +25,7 @@ const bodySchema = z.object({
 /** Forward an authenticated subscriber call to the external connector. */
 export const channelsConnectorsCallHandler = factory.createHandlers(
   zParam(z.object({ channel: z.string().min(1), connector: z.string().min(1) })),
+  jsonBodyDepth,
   async (c) => {
     const param = c.req.valid("param")
     let raw: unknown = null
