@@ -1,3 +1,5 @@
+import { requireIntegerLimit } from "@/require-limit"
+
 /**
  * Builds the WebSocket URL a client uses to subscribe to a gateway channel.
  *
@@ -29,12 +31,14 @@ export function channelWsUrl(input: ChannelWsUrlInput): string {
 
   url.searchParams.set("channel", input.channel)
 
-  if (input.subscriberId !== undefined) {
-    url.searchParams.set("id", input.subscriberId)
+  const subscriberId = input.subscriberId
+  if (subscriberId !== undefined) {
+    url.searchParams.set("id", subscriberId)
   }
 
-  if (input.since !== undefined) {
-    url.searchParams.set("since", String(input.since))
+  const since = input.since
+  if (since !== undefined) {
+    url.searchParams.set("since", String(requireIntegerLimit(since, "since")))
   }
 
   return url.toString()

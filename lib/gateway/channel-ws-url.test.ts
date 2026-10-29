@@ -55,6 +55,41 @@ describe("channelWsUrl", () => {
     expect(parsed.searchParams.get("channel")).toBe("a b&c")
     expect(parsed.searchParams.get("id")).toBe("x/y")
   })
+
+  for (const field of ["subscriberId", "since"] as const) {
+    test(`captures ${field} once when building the subscription URL`, () => {
+      let reads = 0
+      const input = { base: "ws://localhost/ws", channel: "channel" }
+      Object.defineProperty(input, field, {
+        get() {
+          reads++
+          return reads === 1 ? (field === "subscriberId" ? "worker" : 0) : undefined
+        },
+      })
+      const url = new URL(channelWsUrl(input))
+      expect(url.searchParams.get(field === "subscriberId" ? "id" : "since")).toBe(
+        field === "subscriberId" ? "worker" : "0",
+      )
+      expect(reads).toBe(1)
+    })
+  }
+
+  for (const since of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    test(`rejects invalid replay cursor ${since} before creating a subscription URL`, () => {
+      expect(() => channelWsUrl({ base: "ws://localhost/ws", channel: "channel", since })).toThrow(
+        "since must be a non-negative safe integer",
+      )
+    })
+  }
+
+  test("preserves the largest valid replay cursor", () => {
+    const url = channelWsUrl({
+      base: "ws://localhost/ws",
+      channel: "channel",
+      since: Number.MAX_SAFE_INTEGER,
+    })
+    expect(new URL(url).searchParams.get("since")).toBe(String(Number.MAX_SAFE_INTEGER))
+  })
 })
 
 describe("channelWsProtocols", () => {
