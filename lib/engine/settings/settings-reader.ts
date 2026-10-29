@@ -4,6 +4,6 @@ import type { Settings } from "@/engine/settings/settings-schema"
 export abstract class FunnelSettingsReader {
   abstract read(): Settings
   abstract write(settings: Settings): void
-  /** Apply an update atomically relative to other writers using this store. */
+  /** Apply a synchronous update atomically relative to other writers using this store. */
   abstract update<T>(mutator: (settings: Settings) => T): T
 }
