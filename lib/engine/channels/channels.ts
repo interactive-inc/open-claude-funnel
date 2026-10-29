@@ -12,10 +12,11 @@ import { NodeFunnelClock } from "@/engine/time/node-clock"
 import { FunnelIdGenerator } from "@/engine/id/id-generator"
 import { NodeFunnelIdGenerator } from "@/engine/id/node-id-generator"
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
-import type {
-  ChannelConfig,
-  ChannelDeliveryMode,
-  Settings,
+import {
+  settingsSchema,
+  type ChannelConfig,
+  type ChannelDeliveryMode,
+  type Settings,
 } from "@/engine/settings/settings-schema"
 
 type Deps = {
@@ -67,7 +68,7 @@ export class FunnelChannels {
   }
 
   list(): ChannelConfig[] {
-    return this.store.read().channels
+    return settingsSchema.parse(this.store.read()).channels
   }
 
   get(name: string): ChannelConfig | null {
@@ -84,8 +85,12 @@ export class FunnelChannels {
         throw new FunnelChannelAlreadyExistsError(input.name)
       }
 
+      const id = this.idGenerator.generate()
+      if (!id || settings.channels.some((channel) => channel.id === id))
+        throw new Error("channel ID must be non-empty and unique")
+
       const channel: ChannelConfig = {
-        id: this.idGenerator.generate(),
+        id,
         name: input.name,
         delivery: input.delivery ?? "fanout",
         connectors: [],
@@ -128,7 +133,9 @@ export class FunnelChannels {
   }
 
   listConnectors(channelName: string): BaseConnectorConfig[] {
-    return this.requireChannel(this.store.read(), channelName).connectors
+    const channel = this.get(channelName)
+    if (!channel) throw new FunnelChannelNotFoundError(channelName)
+    return channel.connectors
   }
 
   getConnector(channelName: string, connectorName: string): BaseConnectorConfig | null {
@@ -163,6 +170,9 @@ export class FunnelChannels {
         id: this.idGenerator.generate(),
         now: this.clock.iso(),
       })
+
+      if (!candidate.id || channel.connectors.some((connector) => connector.id === candidate.id))
+        throw new Error("connector ID must be non-empty and unique within a channel")
 
       this.assertNoTokenCollision(settings, candidate)
 
@@ -351,6 +361,7 @@ export class FunnelChannels {
   }
 
   private requireChannel(settings: Settings, name: string): ChannelConfig {
+    settingsSchema.parse(settings)
     const channel = settings.channels.find((c) => c.name === name)
 
     if (!channel) throw new FunnelChannelNotFoundError(name)
