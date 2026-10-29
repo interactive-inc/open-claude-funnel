@@ -92,6 +92,8 @@ type PendingEvent = {
 
 export type BroadcastSubscriber = (event: ReplayableEvent) => void
 
+type ObserverRegistration = { handler: BroadcastSubscriber }
+
 /**
  * Optional persistent replay source. Wired in by the gateway-server with a
  * host-supplied `FunnelEventLog` so reconnects across daemon
@@ -163,8 +165,8 @@ type BroadcasterMetrics = {
 export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
   private readonly streams = new Map<FunnelEventStream, ClientData>()
-  private readonly subscribers: Set<BroadcastSubscriber> = new Set()
-  private observerQueue: { event: ReplayableEvent; observers: BroadcastSubscriber[] }[] = []
+  private readonly subscribers = new Map<BroadcastSubscriber, ObserverRegistration>()
+  private observerQueue: { event: ReplayableEvent; observers: ObserverRegistration[] }[] = []
   private notifyingObservers = false
   private readonly logger: FunnelLogger | undefined
   private readonly onError: OnFunnelError
@@ -547,16 +549,17 @@ export class FunnelBroadcaster {
   }
 
   subscribe(handler: BroadcastSubscriber): () => void {
-    this.subscribers.add(handler)
+    const registration = this.subscribers.get(handler) ?? { handler }
+    this.subscribers.set(handler, registration)
 
     return () => {
-      this.subscribers.delete(handler)
+      if (this.subscribers.get(handler) === registration) this.subscribers.delete(handler)
     }
   }
 
   broadcast(content: string, meta?: Record<string, string>): ReplayableEvent {
     if (this.publishing) throw new Error("cannot broadcast during event persistence or delivery")
-    const observers = [...this.subscribers]
+    const observers = [...this.subscribers.values()]
     let delivered: ReplayableEvent
     this.publishing = true
     try {
@@ -580,8 +583,9 @@ export class FunnelBroadcaster {
         const batch = this.observerQueue
         this.observerQueue = []
         for (const { event: delivered, observers } of batch) {
-          for (const handler of observers) {
-            if (!this.subscribers.has(handler)) continue
+          for (const registration of observers) {
+            const { handler } = registration
+            if (this.subscribers.get(handler) !== registration) continue
             invokeCallback(
               () => handler(delivered),
               (error) => {

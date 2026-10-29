@@ -117,6 +117,61 @@ test("an observer unsubscribed before its turn does not receive the active event
   expect(seen).toEqual([])
 })
 
+test("an old unsubscribe cannot remove a later registration of the same observer", () => {
+  const broadcaster = new FunnelBroadcaster()
+  const seen: string[] = []
+  const handler = (event: { content: string }) => {
+    seen.push(event.content)
+  }
+  const old = broadcaster.subscribe(handler)
+  old()
+  const current = broadcaster.subscribe(handler)
+  old()
+  expect(broadcaster.getMetrics().subscribers).toBe(1)
+  broadcaster.broadcast("current")
+  expect(seen).toEqual(["current"])
+  current()
+  expect(broadcaster.getMetrics().subscribers).toBe(0)
+})
+
+test("duplicate subscriptions of an active observer still share one registration", () => {
+  const broadcaster = new FunnelBroadcaster()
+  let calls = 0
+  const handler = () => {
+    calls++
+  }
+  const first = broadcaster.subscribe(handler)
+  const second = broadcaster.subscribe(handler)
+  expect(broadcaster.getMetrics().subscribers).toBe(1)
+  broadcaster.broadcast("input")
+  expect(calls).toBe(1)
+  first()
+  second()
+  expect(broadcaster.getMetrics().subscribers).toBe(0)
+})
+
+for (const queued of [false, true]) {
+  test(`replacing an observer before its turn skips prior ${queued ? "queued" : "active"} notifications`, () => {
+    const broadcaster = new FunnelBroadcaster()
+    const seen: string[] = []
+    const handler = (event: { content: string }) => {
+      seen.push(event.content)
+    }
+    broadcaster.subscribe((event) => {
+      if (event.content !== "original") return
+      if (queued) broadcaster.broadcast("queued")
+      unsubscribe()
+      unsubscribe = broadcaster.subscribe(handler)
+    })
+    let unsubscribe = broadcaster.subscribe(handler)
+    broadcaster.broadcast("original")
+    expect(seen).toEqual([])
+    broadcaster.broadcast("next")
+    expect(seen).toEqual(["next"])
+    unsubscribe()
+  })
+}
+
 test("async observer and error-sink failures do not produce unhandled rejections", async () => {
   const dir = mkdtempSync(join(tmpdir(), "funnel-observer-errors-"))
   const script = join(dir, "observer-errors.ts")
