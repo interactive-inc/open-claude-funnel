@@ -5,6 +5,7 @@ import type { JsonValue } from "@/engine/connectors/connector-adapter"
 import { factory } from "@/gateway/factory"
 import { zParam } from "@/gateway/routes/validator"
 import { withHttpErrorBoundary } from "@/gateway/routes/with-http-error-boundary"
+import { recordSchema } from "@/gateway/record-schema"
 
 const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([
@@ -13,7 +14,7 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
     z.boolean(),
     z.null(),
     z.array(jsonValueSchema),
-    z.record(z.string(), jsonValueSchema),
+    recordSchema(jsonValueSchema),
   ]),
 )
 

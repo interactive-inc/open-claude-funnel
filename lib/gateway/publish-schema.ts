@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { recordSchema } from "@/gateway/record-schema"
 
 /**
  * Shared schema for `POST /channels/:channel/publish` — used by both the
@@ -8,7 +9,7 @@ import { z } from "zod"
  */
 export const publishRequestSchema = z.object({
   content: z.string().min(1),
-  meta: z.record(z.string(), z.string()).optional(),
+  meta: recordSchema(z.string()).optional(),
   connector: z.string().min(1).optional(),
   /**
    * Address the event to a single subscriber. When set, only the WS client that
