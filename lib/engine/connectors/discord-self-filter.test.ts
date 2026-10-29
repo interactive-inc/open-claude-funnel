@@ -1,3 +1,4 @@
+import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { expect, test } from "bun:test"
 import type { FlumeRuntimeDeps } from "@interactive-inc/flume"
@@ -203,6 +204,87 @@ test("a replacement READY can use user_id when nested user.id is empty", async (
     await listener.flush()
     expect(delivered.map((content) => JSON.parse(content).id)).toEqual(["other"])
     expect(diagnostics.queryProcessed({ outcome: "skip:ready-missing-user-id" })).toEqual([])
+  } finally {
+    await listener.stop()
+  }
+})
+
+for (const stage of ["raw", "processed", "connection"] as const) {
+  test(`failed Discord ${stage} diagnostics cannot suppress startup, delivery or shutdown`, async () => {
+    class Diagnostics extends MemoryConnectorDiagnosticLog {
+      override recordRaw(): void {
+        if (stage === "raw") throw new Error("diagnostic failed")
+      }
+      override recordProcessed(): void {
+        if (stage === "processed") throw new Error("diagnostic failed")
+      }
+      override recordConnection(): void {
+        if (stage === "connection") throw new Error("diagnostic failed")
+      }
+    }
+    const logger = new MemoryFunnelLogger()
+    const listener = new Listener({
+      config: { id: "source", name: "events", type: "discord", botToken: "example-token" },
+      diagnosticLog: new Diagnostics(),
+      logger,
+      flumeDeps: { WebSocket: Socket as unknown as NonNullable<FlumeRuntimeDeps["WebSocket"]> },
+    })
+    const delivered: string[] = []
+    try {
+      await listener.start(async (content) => {
+        delivered.push(content)
+      })
+      await listener.flush()
+      Socket.latest.emit({
+        op: 0,
+        t: "MESSAGE_CREATE",
+        s: 2,
+        d: { id: "message", channel_id: "channel", author: { id: "USER" } },
+      })
+      await listener.flush()
+      expect(delivered.map((content) => JSON.parse(content).id)).toEqual(["message"])
+      await listener.stop()
+      expect(listener.isAlive()).toBe(false)
+      expect(logger.entries.some((entry) => entry.meta?.error === "diagnostic failed")).toBe(true)
+    } finally {
+      await listener.stop()
+    }
+  })
+}
+
+test("Discord delivery failures stay visible when the processed diagnostic write also fails", async () => {
+  class Diagnostics extends MemoryConnectorDiagnosticLog {
+    override recordProcessed(): void {
+      throw new Error("diagnostic failed")
+    }
+  }
+  const logger = new MemoryFunnelLogger()
+  const listener = new Listener({
+    config: { id: "source", name: "events", type: "discord", botToken: "example-token" },
+    logger,
+    diagnosticLog: new Diagnostics(),
+    flumeDeps: { WebSocket: Socket as unknown as NonNullable<FlumeRuntimeDeps["WebSocket"]> },
+  })
+  const delivered: string[] = []
+  let calls = 0
+  try {
+    await listener.start(async (content) => {
+      if (++calls === 1) throw new Error("notification failed")
+      delivered.push(content)
+    })
+    await listener.flush()
+    for (const [index, id] of ["first", "second"].entries()) {
+      Socket.latest.emit({
+        op: 0,
+        t: "MESSAGE_CREATE",
+        s: index + 2,
+        d: { id, channel_id: "channel", author: { id: "USER" } },
+      })
+    }
+    await listener.flush()
+    expect(delivered.map((content) => JSON.parse(content).id)).toEqual(["second"])
+    expect(logger.entries.some((entry) => entry.meta?.error === "notification failed")).toBe(true)
+    expect(logger.entries.some((entry) => entry.meta?.error === "diagnostic failed")).toBe(true)
   } finally {
     await listener.stop()
   }

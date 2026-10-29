@@ -7,7 +7,9 @@ type Props = {
   type: string
   connectorId: string | null
   channelId: string | null
-  log: ConnectorDiagnosticLog | undefined
+  log:
+    | Pick<ConnectorDiagnosticLog, "recordRaw" | "recordProcessed" | "recordConnection">
+    | undefined
 }
 
 /**

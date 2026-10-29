@@ -77,7 +77,8 @@ test("failed delivery reporters cannot stop later events or leak promise rejecti
       cases: ["throwing logger", "rejecting logger", "throwing diagnostic"].map((mode) => ({
         mode,
         calls: 2,
-        logged: 3,
+        // A diagnostic write failure is logged alongside each original error.
+        logged: mode === "throwing diagnostic" ? 6 : 3,
         recorded: 3,
         startFailure: true,
       })),

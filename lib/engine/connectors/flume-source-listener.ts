@@ -1,3 +1,5 @@
+import { invokeCallback } from "@/invoke-callback"
+import { ObservedFunnelLogger } from "@/engine/logger/observed-logger"
 import {
   Flume,
   FlumeRunning,
@@ -87,12 +89,28 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   constructor(props: Props) {
     super()
     this.type = props.type
-    this.logger = props.logger
+    const logger = props.logger
+    this.logger = logger ? new ObservedFunnelLogger(logger, () => {}) : undefined
+    const diagnosticLog = props.diagnosticLog
+    const context = { connectorId: props.connectorId, channelId: props.channelId }
+    const reportDiagnosticError = (error: unknown) =>
+      this.logger?.error(`${this.type} diagnostic callback failed`, {
+        ...context,
+        error: errorMessageOf(error),
+      })
     this.diagnostics = new FunnelConnectorDiagnosticsRecorder({
-      type: props.type,
-      connectorId: props.connectorId,
-      channelId: props.channelId,
-      log: props.diagnosticLog,
+      type: this.type,
+      ...context,
+      log: diagnosticLog
+        ? {
+            recordRaw: (record) =>
+              invokeCallback(() => diagnosticLog.recordRaw(record), reportDiagnosticError),
+            recordProcessed: (record) =>
+              invokeCallback(() => diagnosticLog.recordProcessed(record), reportDiagnosticError),
+            recordConnection: (record) =>
+              invokeCallback(() => diagnosticLog.recordConnection(record), reportDiagnosticError),
+          }
+        : undefined,
     })
   }
 
