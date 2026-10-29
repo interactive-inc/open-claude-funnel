@@ -15,6 +15,8 @@ Funnel のジョブは外部の接続を共有し、Agent SDK・Claude Code Chan
 
 `new Funnel()` はメモリ内の設定を作る。ファイルを読まず、フォルダを作らず、ポートを開かない。コネクタと待受ポートと認証は明示する。SQLite は任意の sub-entry に隔離する。
 
+Funnel の生成時に options の値を取得し、registry・チャネル操作・後から作る gateway に同じ時計・logger・停止 signal 等の参照を渡す。元の options オブジェクトを後から差し替えても、生成済み Funnel の依存先を変更しない。注入した時計を進めるなど、依存オブジェクト自身の操作は引き続き反映する。
+
 ## 構造
 
 `lib/funnel.ts` が設定ストアとコネクタ registry を組み立てる。engine は接続・チャネルの規則を、gateway は購読・配信・HTTP/WebSocket 境界を持つ。CLI・Claude 起動・設定ファイル同期・ファイル IO の既定実装は持たない。

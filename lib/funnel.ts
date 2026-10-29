@@ -53,8 +53,21 @@ export type GatewayServerOptions = GatewayModuleOptions & {
 /** Connect external sources to channel subscribers. No directories, processes or agent runtime. */
 export class Funnel {
   readonly channels: FunnelChannels
+  private readonly options: FunnelOptions
 
-  constructor(private readonly options: FunnelOptions = {}) {
+  constructor(input: FunnelOptions = {}) {
+    const options: FunnelOptions = {
+      channels: input.channels,
+      connectors: input.connectors,
+      store: input.store,
+      clock: input.clock,
+      http: input.http,
+      logger: input.logger,
+      diagnosticLog: input.diagnosticLog,
+      onError: input.onError,
+      signal: input.signal,
+    }
+    this.options = options
     if (options.store && options.channels) throw new Error("pass channels or store, not both")
     const store = options.store ?? new MemoryFunnelSettingsStore()
     const registry = new FunnelConnectorRegistry({
