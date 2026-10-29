@@ -95,10 +95,12 @@ export class FunnelChannelSupervisor {
   }
 
   async unregister(id: string): Promise<void> {
+    const channel = this.channels.get(id)
+    if (channel === undefined) return
     // Keep the name reserved until stop completes, so a new registration cannot
     // lose its start to the old instance's pending stop.
     await this.registry.stop(id, id)
-    this.channels.delete(id)
+    if (this.channels.get(id) === channel) this.channels.delete(id)
   }
 
   start(): Promise<void> {

@@ -11,6 +11,35 @@ const create = () =>
     clock: new MemoryFunnelClock(),
   })
 
+for (const started of [false, true]) {
+  test(`unregistering an absent ID cannot remove a later registration (started=${started})`, async () => {
+    const supervisor = create()
+    let builds = 0
+    try {
+      if (started) await supervisor.start()
+      const pending = supervisor.unregister("source")
+      supervisor.register({
+        id: "source",
+        build() {
+          builds++
+          return { sources: [] }
+        },
+      })
+      await pending
+      expect(supervisor.has("source")).toBe(true)
+      if (!started) await supervisor.start()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(builds).toBe(1)
+      expect(supervisor.ids()).toContain("source")
+      await supervisor.unregister("source")
+      expect(supervisor.has("source")).toBe(false)
+      expect(supervisor.ids()).not.toContain("source")
+    } finally {
+      await supervisor.stop()
+    }
+  })
+}
+
 test("registered manifest identity and factory survive caller mutation", async () => {
   const supervisor = create()
   const contexts: string[][] = []
