@@ -1,3 +1,4 @@
+import { listenerSignal } from "@/engine/connectors/listener-signal"
 import { snapshotScheduleState } from "@/engine/connectors/schedule-state-snapshot"
 import { requireTimestamp } from "@/require-timestamp"
 import { invokeCallback } from "@/invoke-callback"
@@ -32,6 +33,7 @@ type Deps = {
    * Errors from this callback are caught and logged; they do not abort the tick.
    */
   onFired?: ScheduleOnFired
+  signal?: AbortSignal
 }
 
 const MAX_CATCHUP_MINUTES = 60 * 24
@@ -46,7 +48,10 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
   private tickScheduled = false
-  private ticking = false
+  private tickCompletion: Promise<void> | null = null
+  private run = 0
+  private readonly signal: AbortSignal | undefined
+  private abortBinding: { signal: AbortSignal; abort: () => void } | null = null
 
   constructor(deps: Deps) {
     super()
@@ -61,79 +66,110 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     })
     this.now = deps.now ?? (() => new Date())
     this.onFired = deps.onFired ?? null
+    this.signal = deps.signal
   }
 
-  async start(notify: NotifyFn): Promise<void> {
+  async start(notify: NotifyFn, startupSignal?: AbortSignal): Promise<void> {
+    const signal = listenerSignal(this.signal, startupSignal)
+    signal?.throwIfAborted()
+    if (this.isAlive()) throw new Error("schedule listener is already started")
+    const run = ++this.run
+    const isCurrent = () => this.isCurrent(run)
     this.stopped = false
     this.tickScheduled = true
+    if (signal) {
+      const abort = () => {
+        if (isCurrent()) invokeCallback(() => this.stop())
+      }
+      this.abortBinding = { signal, abort }
+      signal.addEventListener("abort", abort, { once: true })
+    }
 
-    this.diagnostics.recordConnection("started", "")
+    invokeCallback(() => this.diagnostics.recordConnection("started", ""))
 
     const scheduleNext = () => {
-      if (this.stopped) return
-
+      if (!isCurrent()) return
       let date: Date
       try {
         date = this.readNow()
       } catch (error) {
-        this.stopped = true
-        this.tickScheduled = false
-        this.timer = null
+        this.stopRun(run)
         throw error
       }
+      if (!isCurrent()) return
       const msUntilNextMinute = 60_000 - (date.getSeconds() * 1000 + date.getMilliseconds())
       this.timer = setTimeout(async () => {
+        if (!isCurrent()) return
         this.timer = null
-        if (this.stopped) return
-
         try {
           await this.tick(notify)
         } catch (error) {
           this.recordTickError(error)
         }
-
         try {
           scheduleNext()
         } catch (error) {
           this.recordTickError(error)
         }
       }, msUntilNextMinute)
-
       this.timer.unref()
-      this.tickScheduled = true
     }
 
-    try {
-      await this.tick(notify)
-    } catch (error) {
-      this.recordTickError(error)
-    }
-
-    if (this.stopped) return
-
-    try {
+    const connect = async () => {
+      if (!isCurrent()) return
+      try {
+        await this.tick(notify)
+      } catch (error) {
+        this.recordTickError(error)
+      }
+      if (!isCurrent()) return
       scheduleNext()
+      if (isCurrent()) invokeCallback(() => this.diagnostics.recordConnection("connected", ""))
+    }
+
+    // A stop/restart can be requested from inside notify/onFired. Do not wait
+    // for that callback here: defer this run's first tick until it unwinds.
+    const pending = this.tickCompletion
+    if (pending) {
+      invokeCallback(
+        () => pending.then(connect),
+        (error) => this.recordTickError(error),
+      )
+      signal?.throwIfAborted()
+      return
+    }
+    try {
+      await connect()
     } catch (error) {
       this.recordTickError(error)
       throw error
     }
-
-    // Connection lifecycle parity with the flume-backed listeners: the timer
-    // is armed, so the connector is "connected" for diagnostic purposes.
-    invokeCallback(() => this.diagnostics.recordConnection("connected", ""))
+    signal?.throwIfAborted()
   }
 
   async stop(): Promise<void> {
+    this.stopRun(this.run)
+    invokeCallback(() => this.diagnostics.recordConnection("disconnected", ""))
+    invokeCallback(() => this.diagnostics.recordConnection("stopped", ""))
+  }
+
+  private isCurrent(run: number): boolean {
+    return !this.stopped && run === this.run
+  }
+
+  private stopRun(run: number): void {
+    if (run !== this.run) return
+    this.run++
     this.stopped = true
     this.tickScheduled = false
-
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
     }
-
-    this.diagnostics.recordConnection("disconnected", "")
-    this.diagnostics.recordConnection("stopped", "")
+    if (this.abortBinding) {
+      this.abortBinding.signal.removeEventListener("abort", this.abortBinding.abort)
+      this.abortBinding = null
+    }
   }
 
   private recordTickError(error: unknown): void {
@@ -152,26 +188,29 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   async tick(notify: NotifyFn): Promise<void> {
-    if (this.stopped || this.ticking) return
-    this.ticking = true
-
+    if (this.stopped || this.tickCompletion) return
+    const completion = Promise.withResolvers<void>()
+    this.tickCompletion = completion.promise
+    const run = this.run
     try {
-      await this.tickEntries(notify)
+      await this.tickEntries(notify, run)
     } finally {
-      this.ticking = false
+      this.tickCompletion = null
+      completion.resolve()
     }
   }
 
-  private async tickEntries(notify: NotifyFn): Promise<void> {
+  private async tickEntries(notify: NotifyFn, run: number): Promise<void> {
     const now = this.truncateToMinute(this.readNow())
     const state = snapshotScheduleState(this.lastFiredStore.load())
+    if (!this.isCurrent(run)) return
     if (this.pruneRemovedEntries(state)) this.lastFiredStore.save(snapshotScheduleState(state))
 
     for (const entry of this.config.entries) {
-      if (this.stopped) break
+      if (!this.isCurrent(run)) break
       if (!entry.enabled) continue
 
-      await this.fireEntry(entry, now, state, notify)
+      await this.fireEntry(entry, now, state, notify, run)
     }
   }
 
@@ -180,12 +219,13 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     now: Date,
     state: Map<string, Date>,
     notify: NotifyFn,
+    run: number,
   ): Promise<boolean> {
     if (entry.kind === "once") {
-      return this.fireOnceEntry(entry, now, state, notify)
+      return this.fireOnceEntry(entry, now, state, notify, run)
     }
 
-    return this.fireCronEntry(entry, now, state, notify)
+    return this.fireCronEntry(entry, now, state, notify, run)
   }
 
   private async fireOnceEntry(
@@ -193,6 +233,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     now: Date,
     state: Map<string, Date>,
     notify: NotifyFn,
+    run: number,
   ): Promise<boolean> {
     if (state.has(entry.id)) return false
 
@@ -207,7 +248,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       return true
     }
 
-    await this.notifyOne({ entry, firedAt: runAt, notify, catchup: lateness > 0, state })
+    await this.notifyOne({ entry, firedAt: runAt, notify, catchup: lateness > 0, state, run })
     return true
   }
 
@@ -216,6 +257,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     now: Date,
     state: Map<string, Date>,
     notify: NotifyFn,
+    run: number,
   ): Promise<boolean> {
     const lastFired = state.get(entry.id)
     const createdAt = entry.createdAt ? this.truncateToMinute(new Date(entry.createdAt)) : now
@@ -231,7 +273,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
         return false
       }
 
-      await this.notifyOne({ entry, firedAt: now, notify, catchup: false, state })
+      await this.notifyOne({ entry, firedAt: now, notify, catchup: false, state, run })
       return true
     }
 
@@ -241,13 +283,14 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       if (matches.length === 0) return this.seedSearchWatermark(entry.id, lastFired, now, state)
 
       for (const match of matches) {
-        if (this.stopped) break
+        if (!this.isCurrent(run)) break
         await this.notifyOne({
           entry,
           firedAt: match,
           notify,
           catchup: match.getTime() !== now.getTime(),
           state,
+          run,
         })
       }
 
@@ -264,6 +307,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       notify,
       catchup: match.getTime() !== now.getTime(),
       state,
+      run,
     })
     return true
   }
@@ -287,7 +331,9 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     notify: NotifyFn
     catchup: boolean
     state: Map<string, Date>
+    run: number
   }): Promise<void> {
+    if (!this.isCurrent(props.run)) return
     const entry = props.entry
     const firedAt = props.firedAt
     const catchup = props.catchup
@@ -323,6 +369,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       }),
     )
 
+    if (!this.isCurrent(props.run)) return
     try {
       await props.notify(entry.prompt, meta)
     } catch (error) {

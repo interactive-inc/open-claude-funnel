@@ -50,6 +50,7 @@ export const scheduleConnector = (options: ScheduleConnectorOptions = {}): Conne
         logger: deps.logger,
         diagnosticLog: deps.diagnosticLog,
         onFired: options.onFired,
+        signal: deps.signal,
         // Funnel-injected clock so a memory clock controls tick selection in
         // tests; setTimeout still resolves against the real event loop because
         // the funnel has no scheduler boundary to inject.
