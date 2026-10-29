@@ -66,7 +66,7 @@ export class FunnelChannelSupervisor {
         },
       },
       notify: async (_channel, _connector, content, meta) => {
-        props.broadcaster.broadcast(content, meta)
+        await props.broadcaster.broadcast(content, meta)
       },
     })
     if (!props.signal?.aborted)
