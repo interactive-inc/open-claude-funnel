@@ -152,3 +152,47 @@ for (const operation of ["start", "stop", "restart"] as const) {
     expect(await client[operation]("ops", "source")).toEqual({ state: "ok" })
   })
 }
+
+test("invalid path names never send a gateway request or read credentials", async () => {
+  let requests = 0
+  let credentials = 0
+  const client = new FunnelGatewayClient({
+    baseUrl: "https://gateway.example",
+    token: () => {
+      credentials++
+      return "example-token"
+    },
+    fetch: async () => {
+      requests++
+      return Response.json({ ok: true, offset: 1 })
+    },
+  })
+  for (const name of ["", ".", ".."]) {
+    expect(await client.publish(name, { content: "input" })).toMatchObject({ state: "error" })
+    for (const operation of ["start", "stop", "restart"] as const) {
+      expect(await client[operation](name, "source")).toMatchObject({ state: "error" })
+      expect(await client[operation]("ops", name)).toMatchObject({ state: "error" })
+    }
+  }
+  expect(requests).toBe(0)
+  expect(credentials).toBe(0)
+})
+
+test("path validation preserves encoded separators, percent signs, and dotted names", async () => {
+  for (const name of [".hidden", "a/b", "../source", "%2e%2e", "a b", "a\\b"]) {
+    const client = new FunnelGatewayClient({
+      baseUrl: "https://gateway.example",
+      token: () => "example-token",
+      fetch: async (url) => {
+        const parts = new URL(String(url)).pathname.split("/")
+        expect(parts).toHaveLength(5)
+        expect(parts[1]).toBe("listeners")
+        expect(decodeURIComponent(parts[2]!)).toBe(name)
+        expect(decodeURIComponent(parts[3]!)).toBe(name)
+        expect(parts[4]).toBe("start")
+        return Response.json({ ok: true })
+      },
+    })
+    expect(await client.start(name, name)).toEqual({ state: "ok" })
+  }
+})

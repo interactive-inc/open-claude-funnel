@@ -89,7 +89,7 @@ export class FunnelGatewayClient {
     try {
       if (!this.available()) return { state: "offline" }
       const response = await this.request(
-        `/listeners/${encodeURIComponent(channel)}/${encodeURIComponent(connector)}${suffix}`,
+        `/listeners/${encodePathName(channel, "channel")}/${encodePathName(connector, "connector")}${suffix}`,
         { method },
       )
       if (response.ok) {
@@ -112,10 +112,13 @@ export class FunnelGatewayClient {
   async publish(channel: string, input: PublishRequest): Promise<PublishResult> {
     try {
       if (!this.available()) return { state: "offline" }
-      const response = await this.request(`/channels/${encodeURIComponent(channel)}/publish`, {
-        method: "POST",
-        body: JSON.stringify(publishRequestSchema.parse(input)),
-      })
+      const response = await this.request(
+        `/channels/${encodePathName(channel, "channel")}/publish`,
+        {
+          method: "POST",
+          body: JSON.stringify(publishRequestSchema.parse(input)),
+        },
+      )
       if (!response.ok)
         return { state: "error", reason: `HTTP ${response.status}: ${await response.text()}` }
       return { state: "ok", offset: publishResponseSchema.parse(await response.json()).offset }
@@ -124,6 +127,12 @@ export class FunnelGatewayClient {
     }
   }
 }
+function encodePathName(value: string, label: string): string {
+  if (value === "" || value === "." || value === "..")
+    throw new Error(`${label} cannot be empty or a dot path segment`)
+  return encodeURIComponent(value)
+}
+
 function failure(error: unknown): { state: "error"; reason: string } {
   return { state: "error", reason: error instanceof Error ? error.message : String(error) }
 }

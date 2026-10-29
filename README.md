@@ -46,6 +46,8 @@ gateway のチャネル指定は名前または ID で解決します。同じ�
 
 listener からの内部配送は確定済みのチャネル・接続 ID を使います。名前の衝突があっても元の配送先を維持します。`FunnelListenerRegistry` を直接組み込むホストには、`notify` の第5引数として `{ channelId, connectorId }` を渡します。
 
+`FunnelGatewayClient` は空文字・`.`・`..` のチャネル名とコネクタ名を送信前に拒否します。URL のパスとして正しく指定できないため、HTTP 操作には別の名前を使ってください。その他の名前に含まれる `/` などの区切り文字はエンコードします。
+
 ホスト自身が Bun の HTTP/WebSocket サーバーを持つ場合は、`gatewayModule({ token })` の `app`、`handleUpgrade`、`websocket` を組み込みます。Node.js では同一プロセスの配信 API と Hono の `app` を利用できます。`gatewayServer()` と WebSocket upgrade helper は Bun 専用です。
 
 ## Agent SDK / Channels に組み込む
