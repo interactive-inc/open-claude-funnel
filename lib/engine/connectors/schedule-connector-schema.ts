@@ -1,3 +1,7 @@
+import {
+  DUPLICATE_SCHEDULE_ENTRY_ID,
+  hasUniqueScheduleEntryIds,
+} from "@/engine/connectors/schedule-entry-ids"
 import { z } from "zod"
 import { validateCronExpression } from "@/engine/connectors/match-cron"
 
@@ -77,7 +81,9 @@ export const scheduleConnectorSchema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.literal("schedule"),
-  entries: z.array(scheduleEntrySchema).default([]),
+  entries: z.array(scheduleEntrySchema).default([]).refine(hasUniqueScheduleEntryIds, {
+    message: DUPLICATE_SCHEDULE_ENTRY_ID,
+  }),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 })

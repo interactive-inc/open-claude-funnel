@@ -66,7 +66,7 @@ export const scheduleConnector = (options: ScheduleConnectorOptions = {}): Conne
         id: context.id,
         type: "schedule",
         name: input.name,
-        entries: Array.isArray(input.entries) ? input.entries : [],
+        entries: input.entries,
         createdAt: context.now,
         updatedAt: context.now,
       })

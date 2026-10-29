@@ -1,3 +1,7 @@
+import {
+  DUPLICATE_SCHEDULE_ENTRY_ID,
+  hasUniqueScheduleEntryIds,
+} from "@/engine/connectors/schedule-entry-ids"
 import { listenerSignal } from "@/engine/connectors/listener-signal"
 import { snapshotScheduleState } from "@/engine/connectors/schedule-state-snapshot"
 import { requireTimestamp } from "@/require-timestamp"
@@ -64,6 +68,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
     }
+    if (!hasUniqueScheduleEntryIds(this.config.entries))
+      throw new Error(DUPLICATE_SCHEDULE_ENTRY_ID)
     this.lastFiredStore = deps.lastFiredStore
     this.logger = deps.logger
     this.diagnostics = new FunnelConnectorDiagnosticsRecorder({
