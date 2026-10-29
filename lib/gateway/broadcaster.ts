@@ -164,6 +164,10 @@ type BroadcasterMetrics = {
  */
 export class FunnelBroadcaster {
   private readonly clients: Map<ServerWebSocket<unknown>, ClientData> = new Map()
+  private readonly replayingClients = new Map<
+    ServerWebSocket<unknown>,
+    { registration: ClientData; payloads: string[]; bytes: number }
+  >()
   private readonly streams = new Map<FunnelEventStream, ClientData>()
   private readonly subscribers = new Map<BroadcastSubscriber, ObserverRegistration>()
   private observerQueue: { event: ReplayableEvent; observers: ObserverRegistration[] }[] = []
@@ -455,8 +459,33 @@ export class FunnelBroadcaster {
     return recipients
   }
 
-  addClient(ws: ServerWebSocket<unknown>, data: ClientData): void {
-    this.clients.set(ws, snapshotClientData(data))
+  /** Register before replay; bound and defer live input until history has been sent. */
+  addClient(
+    ws: ServerWebSocket<unknown>,
+    data: ClientData,
+    replay?: { since: number; isCancelled?: () => boolean },
+  ): void {
+    const registration = snapshotClientData(data)
+    this.replayingClients.delete(ws)
+    this.clients.set(ws, registration)
+    if (!replay) return
+    const pending = { registration, payloads: [] as string[], bytes: 0 }
+    this.replayingClients.set(ws, pending)
+    const isCancelled = () => this.clients.get(ws) !== registration || !!replay.isCancelled?.()
+    try {
+      this.replayToClient(ws, replay.since, registration, isCancelled)
+      while (pending.payloads.length > 0 && !isCancelled()) {
+        const payload = pending.payloads.shift()!
+        pending.bytes -= Buffer.byteLength(payload)
+        sendWsPayload(ws, payload, this.maxBufferedBytes, () => !isCancelled())
+      }
+      if (isCancelled() && this.clients.get(ws) === registration) this.removeClient(ws)
+    } catch (error) {
+      if (this.clients.get(ws) === registration) this.removeClient(ws)
+      throw error
+    } finally {
+      if (this.replayingClients.get(ws) === pending) this.replayingClients.delete(ws)
+    }
   }
 
   /** Channel-scoped native input for SDKs and host-owned MCP notification loops. */
@@ -500,7 +529,7 @@ export class FunnelBroadcaster {
   closeClients(): void {
     // oxlint-disable-next-line unicorn/no-useless-spread -- Close callbacks may mutate the client registry.
     for (const ws of [...this.clients.keys()]) {
-      this.clients.delete(ws)
+      this.removeClient(ws)
       try {
         ws.close(1001, "gateway stopped")
       } catch {}
@@ -539,6 +568,7 @@ export class FunnelBroadcaster {
 
   removeClient(ws: ServerWebSocket<unknown>): void {
     this.clients.delete(ws)
+    this.replayingClients.delete(ws)
   }
 
   getClientCount(): number {
@@ -660,6 +690,15 @@ export class FunnelBroadcaster {
       const ws = recipient.target
       if (this.clients.get(ws) !== recipient.data) continue
       try {
+        const pending = this.replayingClients.get(ws)
+        if (pending?.registration === recipient.data) {
+          const bytes = Buffer.byteLength(payload)
+          if (pending.bytes + bytes > this.maxBufferedBytes)
+            throw new WebSocketBackpressureError(pending.bytes + bytes)
+          pending.payloads.push(payload)
+          pending.bytes += bytes
+          continue
+        }
         sendWsPayload(
           ws,
           payload,
@@ -670,7 +709,7 @@ export class FunnelBroadcaster {
         const err = normalizeError(error)
         if (this.clients.get(ws) !== recipient.data) continue
         const data = recipient.data
-        this.clients.delete(ws)
+        this.removeClient(ws)
         if (err instanceof WebSocketBackpressureError) {
           this.droppedSlowClients += 1
           try {

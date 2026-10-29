@@ -44,6 +44,8 @@ await gateway.stop()
 
 `channel` の欠落や不正な `since` は HTTP 400 で拒否します。再送の読み取り・送信に失敗した接続は code 1011 で閉じるため、最後に処理できた offset から再接続してください。
 
+再送中の新着イベントは履歴の後に順番どおり送ります。待機列にも WebSocket の送信待ちバイト上限を適用し、超過した接続は code 1009 で閉じます。
+
 gateway のチャネル指定は名前または ID で解決します。同じ値が別々のチャネルの名前と ID に一致する場合は配送先を選ばず、同一プロセスでは `FunnelChannelAmbiguousError`（code: `channel-ambiguous`）、HTTP 公開と WebSocket 購読では HTTP 400 を返します。対象を一意に識別できる別の名前・IDを指定するか、衝突する名前を変更してください。
 
 listener からの内部配送は確定済みのチャネル・接続 ID を使います。名前の衝突があっても元の配送先を維持します。`FunnelListenerRegistry` を直接組み込むホストには、`notify` の第5引数として `{ channelId, connectorId }` を渡します。

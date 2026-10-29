@@ -564,7 +564,7 @@ export class FunnelGatewayModule {
     const isStopped = () => this.disposed || this.stopPromise !== null || !!this.signal?.aborted
     const isCancelled = () => isStopped() || ws.readyState !== 1
     const closeStopped = () => {
-      if (!isStopped()) return
+      if (!isStopped() || ws.readyState !== 1) return
       try {
         ws.close(1001, "gateway stopped")
       } catch {
@@ -579,7 +579,7 @@ export class FunnelGatewayModule {
       // A partial replay must close the subscription so the consumer can resume
       // from its last handled offset rather than wait forever for live input.
       try {
-        this.broadcaster.replayToClient(ws, ws.data.since, ws.data, isCancelled)
+        this.broadcaster.addClient(ws, ws.data, { since: ws.data.since, isCancelled })
       } catch (error) {
         if (isCancelled()) {
           closeStopped()
@@ -604,7 +604,7 @@ export class FunnelGatewayModule {
       closeStopped()
       return
     }
-    this.broadcaster.addClient(ws, ws.data)
+    if (typeof ws.data.since !== "number") this.broadcaster.addClient(ws, ws.data)
 
     logInfo(this.logger, this.onError, "channel connected", {
       event_type: "system",
