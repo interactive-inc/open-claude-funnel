@@ -25,6 +25,7 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
   private readonly maxQueuedBytes: number
   private readonly onAbort = () => this.close()
   private bytes = 0
+  private readingReplay = false
   private closed = false
   private failure: Error | undefined
 
@@ -55,13 +56,21 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
     if (this.failure) return Promise.reject(this.failure)
     if (this.closed) return Promise.resolve({ value: undefined, done: true })
     try {
+      this.readingReplay = true
       const item = this.replay?.next()
+      if (this.failure) return Promise.reject(this.failure)
+      if (this.closed) return Promise.resolve({ value: undefined, done: true })
       if (item && !item.done) return Promise.resolve(item)
       this.replay = undefined
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error))
-      this.close(failure)
-      return Promise.reject(failure)
+      if (!this.closed) this.close(failure)
+      return this.failure
+        ? Promise.reject(this.failure)
+        : Promise.resolve({ value: undefined, done: true })
+    } finally {
+      this.readingReplay = false
+      if (this.closed) this.finishReplay()
     }
     const queued = this.queue.shift()
     if (queued) {
@@ -98,8 +107,6 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
     this.closed = true
     this.failure = error
     this.options.signal?.removeEventListener("abort", this.onAbort)
-    this.replay?.return?.()
-    this.replay = undefined
     this.queue.length = 0
     this.bytes = 0
     this.onClose()
@@ -107,5 +114,14 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
       if (error) waiting.reject(error)
       else waiting.resolve({ value: undefined, done: true })
     }
+    // A store callback can cancel synchronously inside replay.next(). A running
+    // generator cannot be returned yet; next() finishes it once it unwinds.
+    if (!this.readingReplay) this.finishReplay()
+  }
+
+  private finishReplay(): void {
+    const replay = this.replay
+    this.replay = undefined
+    replay?.return?.()
   }
 }

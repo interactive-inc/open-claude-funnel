@@ -227,6 +227,7 @@ export class FunnelBroadcaster {
     since: number,
     data: ClientData,
     until?: number,
+    isCancelled?: () => boolean,
   ): Generator<ReplayableEvent> {
     const memory = this.replayBuffer.filter(
       (event) => event.offset > since && (until === undefined || event.offset <= until),
@@ -241,10 +242,12 @@ export class FunnelBroadcaster {
       let cursor = since
       if (source && since < cutoff - 1) {
         while (true) {
+          if (isCancelled?.()) return
           const page = source.loadSince(cursor, 64)
           if (page.length === 0) break
           let atBoundary = false
           for (const event of page) {
+            if (isCancelled?.()) return
             if (!Number.isSafeInteger(event.offset) || event.offset <= cursor)
               throw new Error("event log replay must advance offsets in ascending order")
             if (event.offset >= cutoff) {
@@ -258,6 +261,7 @@ export class FunnelBroadcaster {
         }
       }
       for (const event of memory) {
+        if (isCancelled?.()) return
         if (matches(event)) yield eventSnapshot(event)
       }
     })()
@@ -381,7 +385,12 @@ export class FunnelBroadcaster {
     const replay =
       options.since === undefined
         ? undefined
-        : this.replayEvents(options.since, subscription, this.latestOffset)
+        : this.replayEvents(
+            options.since,
+            subscription,
+            this.latestOffset,
+            () => stream?.isClosed ?? false,
+          )
     stream = new FunnelEventStream(
       options,
       () => {
