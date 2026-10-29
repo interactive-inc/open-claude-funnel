@@ -35,6 +35,10 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
       clock: this.props.clock,
     })
     combinedSignal.throwIfAborted()
+    const reportTransformError = (error: unknown) =>
+      this.props.logger.error(`channel "${channel.id}" transform threw`, {
+        error: errorMessageOf(error),
+      })
     await this.runStart({
       sources: runtime.sources,
       deps: this.props.deps,
@@ -51,11 +55,13 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
             transform === undefined
               ? { content: JSON.stringify(event.data), meta: event.meta }
               : transform.call(runtime, event)
-          payload = requireSynchronous(converted, "channel transform must be synchronous")
+          payload = requireSynchronous(
+            converted,
+            "channel transform must be synchronous",
+            reportTransformError,
+          )
         } catch (error) {
-          this.props.logger.error(`channel "${channel.id}" transform threw`, {
-            error: errorMessageOf(error),
-          })
+          reportTransformError(error)
           return
         }
         if (payload !== null) await notify(payload.content, payload.meta)

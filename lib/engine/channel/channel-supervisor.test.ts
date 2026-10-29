@@ -58,7 +58,7 @@ function freshSupervisor(options: { signal?: AbortSignal } = {}) {
 }
 
 describe("FunnelChannelSupervisor", () => {
-  for (const kind of ["promise", "thenable"] as const) {
+  for (const kind of ["promise", "hidden-then", "thenable"] as const) {
     it(`rejects a ${kind} transform result before delivery and observes its late failure`, async () => {
       const { supervisor, received, logger } = freshSupervisor()
       const source = new StubSource()
@@ -66,7 +66,12 @@ describe("FunnelChannelSupervisor", () => {
       const transform = (() => {
         if (++calls > 1) return { content: "good" }
         const failure = new Error("late transform failure")
-        if (kind === "promise") return Promise.reject(failure)
+        if (kind !== "thenable") {
+          const result = Promise.reject(failure)
+          // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied promise with a hidden then method.
+          if (kind === "hidden-then") Object.defineProperty(result, "then", { value: undefined })
+          return result
+        }
         return {
           // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
           then(_resolve: unknown, reject: (error: unknown) => void) {
@@ -93,6 +98,10 @@ describe("FunnelChannelSupervisor", () => {
           {
             message: 'channel "source" transform threw',
             meta: { error: "channel transform must be synchronous" },
+          },
+          {
+            message: 'channel "source" transform threw',
+            meta: { error: "late transform failure" },
           },
         ])
       } finally {
