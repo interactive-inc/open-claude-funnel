@@ -147,7 +147,7 @@ bun run check:package
 node scripts/check-node-composition.mjs
 ```
 
-CI は Linux と Windows で型検査、通信・再接続・SQLite を含むテスト、ビルド、配布検査、Node.js の組み込み検査を行います。`gatewayServer()` と SQLite はどちらの OS でも Bun が必要です。
+CI は Linux と Windows で型検査、通信・再接続・SQLite を含むテスト、ビルド、配布検査、Node.js の組み込み検査を行います。最小対応版 Bun でも全単体テストを実行し、旧版のテスト環境との干渉を避けるため HTTP 取消テストだけ別プロセスで確認します。`gatewayServer()` と SQLite はどちらの OS でも Bun が必要です。
 
 Node.js 22 以降または Bun 1.3 以降。設定、接続、配信の API は TypeScript の公開型を参照してください。0.71 系からの破壊的変更は [移行案内](.docs/migration-0.72.md)、設計は [設計メモ](.docs/design.md) にあります。
 

@@ -33,8 +33,8 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.0
-      - name: Check SQLite lifecycle on minimum Bun runtime
-        run: bun test lib/event-log lib/gateway/event-log lib/engine/diagnostic-log
+      - name: Check all tests on minimum Bun runtime
+        run: bun scripts/check-minimum-bun.mjs
       - name: Use minimum supported Node.js runtime
         uses: actions/setup-node@v4
         with:
