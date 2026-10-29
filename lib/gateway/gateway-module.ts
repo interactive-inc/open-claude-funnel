@@ -337,6 +337,9 @@ export class FunnelGatewayModule {
         return { handled: true, response: new Response(error.message, { status: 400 }) }
       throw error
     }
+    // A host settings reader can synchronously initiate shutdown.
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      return { handled: true, response: new Response("gateway is stopped", { status: 503 }) }
 
     if (!channel) {
       // Reject rather than upgrade: a client subscribing to a channel this
@@ -417,9 +420,11 @@ export class FunnelGatewayModule {
     if (this.disposed || this.stopPromise || this.signal?.aborted)
       throw new Error("gateway is stopped")
     const channel = this.resolveChannel(options.channel)
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new Error("gateway is stopped")
     if (!channel) throw new FunnelChannelNotFoundError(options.channel)
     this.broadcaster.updateChannel(channel.id, channel)
-    return this.broadcaster.events(
+    const subscription = this.broadcaster.events(
       {
         channel: channel.id,
         channelName: channel.name,
@@ -430,6 +435,12 @@ export class FunnelGatewayModule {
       },
       options,
     )
+    // Option getters can stop the gateway before the new stream is registered.
+    if (this.disposed || this.stopPromise || this.signal?.aborted) {
+      void subscription.return()
+      throw new Error("gateway is stopped")
+    }
+    return subscription
   }
 
   /**
