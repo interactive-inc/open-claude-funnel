@@ -121,6 +121,8 @@ SQLite の `indexes` は生成時にコピーして検証する。呼び出し�
 
 WebSocket の `/ws` 購読には `channel` が必要。`since` を指定する場合は、非負の安全な整数を十進数の数字列で渡す。空値・負数・小数・末尾の文字・安全な整数の上限超過は HTTP 400 で拒否し、再送を省略した接続として受け付けない。履歴の読み取りまたは再送の送信が失敗した場合は `onError` / logger へ通知し、接続を code 1011・reason `replay failed` で閉じる。利用側は最後に処理できた offset から再接続する。
 
+WebSocket の再送中に gateway を停止・破棄したり、ホストが socket を閉じたりした場合は、その後の送信・未読履歴の claim・ライブ接続への登録を行わない。gateway の停止は socket を code 1001・reason `gateway stopped` で閉じる。停止後に再送の読み取りが失敗しても、通常の停止を再送障害として通知し直さない。
+
 WebSocket のライブ配信と再送は同じ送信バッファ上限を使い、超過した接続を code 1009・reason `backpressure` で閉じる。Bun の `send()` が返す 0 は送信破棄として扱い、ライブ配信なら code 1011・reason `send failed`、再送なら code 1011・reason `replay failed` で閉じる。再送はページ単位で読み、送信が止まった後の履歴を読み込んだり、未送信分をまとめて exclusive 割当したりしない。
 
 入力列の形式は [Streaming Input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)、通知と capability は [Channels reference](https://code.claude.com/docs/en/channels-reference) に準拠する。ローカル検証では Agent SDK 0.3.299 の `SDKUserMessage` / `query` / `Query.streamInput` に型が適合し、MCP SDK 1.30.0 の実 Server/Client 間で通知を送受信できることを確認した。Claude への実問い合わせと実際の Claude Code Channels セッションは未検証。

@@ -217,9 +217,16 @@ export class FunnelBroadcaster {
   }
 
   /** Pull replay pages only as sends progress, using the same limits as live delivery. */
-  replayToClient(ws: ServerWebSocket<unknown>, since: number, data: ClientData): void {
-    for (const event of this.replayEvents(since, data, this.latestOffset))
+  replayToClient(
+    ws: ServerWebSocket<unknown>,
+    since: number,
+    data: ClientData,
+    isCancelled?: () => boolean,
+  ): void {
+    for (const event of this.replayEvents(since, data, this.latestOffset, isCancelled)) {
+      if (isCancelled?.()) return
       sendWsPayload(ws, JSON.stringify(event), this.maxBufferedBytes)
+    }
   }
 
   /** Capture the memory boundary now; fetch older history and claim work only as it is read. */
