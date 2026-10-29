@@ -8,6 +8,14 @@ import {
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
 
+const creationFieldsSchema = slackConnectorSchema.pick({
+  botToken: true,
+  appToken: true,
+  botTokenEnv: true,
+  appTokenEnv: true,
+  minify: true,
+})
+
 export type SlackConnectorOptions = {
   /**
    * Optional host-side preprocessor applied to every raw Slack event after
@@ -80,11 +88,7 @@ export const slackConnector = (options: SlackConnectorOptions = {}): ConnectorDe
       id: context.id,
       type: "slack",
       name: input.name,
-      ...(typeof input.botToken === "string" ? { botToken: input.botToken } : {}),
-      ...(typeof input.appToken === "string" ? { appToken: input.appToken } : {}),
-      ...(typeof input.botTokenEnv === "string" ? { botTokenEnv: input.botTokenEnv } : {}),
-      ...(typeof input.appTokenEnv === "string" ? { appTokenEnv: input.appTokenEnv } : {}),
-      minify: typeof input.minify === "boolean" ? input.minify : true,
+      ...creationFieldsSchema.parse(input),
       createdAt: context.now,
       updatedAt: context.now,
     })

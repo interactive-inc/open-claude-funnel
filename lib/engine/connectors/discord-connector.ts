@@ -4,6 +4,8 @@ import { FunnelFlumeDiscordListener } from "@/engine/connectors/discord-flume-li
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
 
+const creationFieldsSchema = discordConnectorSchema.pick({ botToken: true, botTokenEnv: true })
+
 export type DiscordConnectorOptions = {
   /**
    * Discord gateway dispatch types funnel forwards to the broadcaster.
@@ -59,8 +61,7 @@ export const discordConnector = (options: DiscordConnectorOptions = {}): Connect
       id: context.id,
       type: "discord",
       name: input.name,
-      ...(typeof input.botToken === "string" ? { botToken: input.botToken } : {}),
-      ...(typeof input.botTokenEnv === "string" ? { botTokenEnv: input.botTokenEnv } : {}),
+      ...creationFieldsSchema.parse(input),
       createdAt: context.now,
       updatedAt: context.now,
     })

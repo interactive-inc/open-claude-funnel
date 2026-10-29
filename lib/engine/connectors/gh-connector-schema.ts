@@ -6,8 +6,8 @@ export const ghConnectorSchema = z.object({
   type: z.literal("gh"),
   pollInterval: z.number().int().positive().optional(),
   /**
-   * Explicit PAT/OAuth token. When neither this nor `tokenEnv` is set, the
-   * listener falls back to `gh auth token`, reusing the `gh` CLI's session.
+   * Explicit PAT/OAuth token. A missing token and `tokenEnv` fail before
+   * connecting; the listener does not read a CLI session or launch a process.
    */
   token: z.string().optional(),
   /** Name of an env var to read the token from at start time. */

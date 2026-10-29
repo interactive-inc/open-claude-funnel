@@ -4,6 +4,12 @@ import { FunnelFlumeGhListener } from "@/engine/connectors/gh-flume-listener"
 import type { ConnectorDescriptor } from "@/engine/connectors/connector-descriptor"
 import { slotFields } from "@/engine/connectors/slot-fields"
 
+const creationFieldsSchema = ghConnectorSchema.pick({
+  pollInterval: true,
+  token: true,
+  tokenEnv: true,
+})
+
 /** GitHub REST connector. Credentials are supplied by the host. */
 export const ghConnector = (): ConnectorDescriptor => ({
   type: "gh",
@@ -30,9 +36,7 @@ export const ghConnector = (): ConnectorDescriptor => ({
       id: context.id,
       type: "gh",
       name: input.name,
-      ...(typeof input.pollInterval === "number" ? { pollInterval: input.pollInterval } : {}),
-      ...(typeof input.token === "string" ? { token: input.token } : {}),
-      ...(typeof input.tokenEnv === "string" ? { tokenEnv: input.tokenEnv } : {}),
+      ...creationFieldsSchema.parse(input),
       createdAt: context.now,
       updatedAt: context.now,
     })
