@@ -17,9 +17,9 @@ export const resolveConnectorToken = (props: {
   if (props.literal !== undefined && props.literal !== "") return props.literal
 
   if (props.envVar !== undefined && props.envVar !== "") {
-    const fromEnv = props.env[props.envVar]
+    const fromEnv = Object.hasOwn(props.env, props.envVar) ? props.env[props.envVar] : undefined
 
-    if (fromEnv !== undefined && fromEnv !== "") return fromEnv
+    if (typeof fromEnv === "string" && fromEnv !== "") return fromEnv
 
     throw new Error(
       `${props.label} references env var "${props.envVar}" but it is not set in the environment`,
