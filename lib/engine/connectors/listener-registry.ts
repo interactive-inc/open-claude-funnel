@@ -1,4 +1,5 @@
 import { requireTimestamp } from "@/require-timestamp"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import { requireDurationLimit } from "@/require-limit"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
@@ -59,6 +60,13 @@ type Deps = {
   startTimeoutMs?: number
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
   now?: () => number
+}
+
+const normalizeError = (error: unknown): Error => {
+  try {
+    if (error instanceof Error) return error
+  } catch {}
+  return new Error(errorMessageOf(error))
 }
 
 const defaultOnError: OnFunnelError = () => {}
@@ -150,7 +158,7 @@ export class FunnelListenerRegistry {
       deps.logger === undefined
         ? undefined
         : new ObservedFunnelLogger(deps.logger, (error) =>
-            this.onError(error instanceof Error ? error : new Error(String(error)), {
+            this.onError(normalizeError(error), {
               component: "listener-registry.logger",
             }),
           )
@@ -352,7 +360,7 @@ export class FunnelListenerRegistry {
           () => {},
         )
         .catch((error: unknown) => {
-          const err = error instanceof Error ? error : new Error(String(error))
+          const err = normalizeError(error)
           this.onError(err, {
             component: "listener-registry.late-stop",
             channel: channelName,
@@ -386,7 +394,7 @@ export class FunnelListenerRegistry {
 
       return { ok: true }
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
+      const err = normalizeError(error)
       const wasCancelled = signal.aborted
       startup.needsLateCleanup = true
       input.controller.abort()
@@ -403,7 +411,7 @@ export class FunnelListenerRegistry {
       this.logger?.error(`${type} listener failed to start`, {
         channel: channelName,
         connector: connectorName,
-        error: err.message,
+        error: errorMessageOf(err),
       })
       this.onError(err, {
         component: "listener-registry.start",
@@ -418,7 +426,7 @@ export class FunnelListenerRegistry {
       // skip pendingRetry / restart for these.
       const retriable = !(err instanceof FunnelAuthFailedError)
 
-      return { ok: false, reason: err.message, retriable }
+      return { ok: false, reason: errorMessageOf(err), retriable }
     } finally {
       deadline.abort()
     }
@@ -481,12 +489,12 @@ export class FunnelListenerRegistry {
 
       return { ok: true }
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
+      const err = normalizeError(error)
 
       this.logger?.error(`${entry.config.type} listener failed to stop`, {
         channel: channelName,
         connector: connectorName,
-        error: err.message,
+        error: errorMessageOf(err),
       })
       this.onError(err, {
         component: "listener-registry.stop",
@@ -495,7 +503,7 @@ export class FunnelListenerRegistry {
         type: entry.config.type,
       })
 
-      return { ok: false, reason: err.message }
+      return { ok: false, reason: errorMessageOf(err) }
     } finally {
       // Drop the entry from the registry whether or not listener.stop() threw.
       // A throwing stop used to leave the entry behind, so the next start() saw
@@ -631,8 +639,8 @@ export class FunnelListenerRegistry {
     try {
       stats.lastEventAt = new Date(requireTimestamp(this.now())).toISOString()
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
-      this.logger?.warn("listener event time unavailable", { key, error: err.message })
+      const err = normalizeError(error)
+      this.logger?.warn("listener event time unavailable", { key, error: errorMessageOf(err) })
       this.onError(err, { component: "listener-registry.event-time", key })
     }
   }
@@ -650,8 +658,8 @@ export class FunnelListenerRegistry {
       // recover/retry in try/catch, but `Promise.all` rejection could still
       // surface here. Route to onError so host observability sees it.
       this.runHealthCheck().catch((error: unknown) => {
-        const err = error instanceof Error ? error : new Error(String(error))
-        this.logger?.error("health check pass failed", { error: err.message })
+        const err = normalizeError(error)
+        this.logger?.error("health check pass failed", { error: errorMessageOf(err) })
         this.onError(err, { component: "listener-registry.health-check" })
       })
     }, this.healthCheckIntervalMs)
@@ -694,13 +702,16 @@ export class FunnelListenerRegistry {
         try {
           alive = entry.listener.isAlive()
         } catch (error) {
-          const err = error instanceof Error ? error : new Error(String(error))
+          const err = normalizeError(error)
           const context = {
             channelId: entry.channelId,
             connectorId: entry.config.id,
             type: entry.config.type,
           }
-          this.logger?.warn("listener health state unavailable", { ...context, error: err.message })
+          this.logger?.warn("listener health state unavailable", {
+            ...context,
+            error: errorMessageOf(err),
+          })
           this.onError(err, { component: "listener-registry.health-state", ...context })
           if (this.isStopped || lifecycle !== this.lifecycle) return
           continue
@@ -766,8 +777,8 @@ export class FunnelListenerRegistry {
     try {
       await task()
     } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
-      this.logger?.warn("listener health task failed", { key, op, error: err.message })
+      const err = normalizeError(error)
+      this.logger?.warn("listener health task failed", { key, op, error: errorMessageOf(err) })
       this.onError(err, { component: "listener-registry.health-task", key, op })
     }
   }
