@@ -14,6 +14,7 @@ const connector = (suffix: string) => ({
 })
 
 const setup = (withSecond: boolean) => {
+  let outcomeReads = 0
   const store = new MemoryFunnelSettingsStore({
     channels: [
       { id: "first", name: "first", delivery: "fanout", connectors: [connector("first")] },
@@ -41,13 +42,32 @@ const setup = (withSecond: boolean) => {
               result: "updated",
             }),
             inspect: ({ config }) => ({ config, result: "read" }),
+            changingConfig: ({ config, args }) => ({
+              get config() {
+                outcomeReads++
+                return outcomeReads === 1
+                  ? { ...config, minify: false }
+                  : { ...config, botToken: args }
+              },
+              result: "updated",
+            }),
+            resultChangesConfig: ({ config, args }) => {
+              const next = { ...config, botToken: "xoxb-third" }
+              return {
+                config: next,
+                get result() {
+                  next.botToken = String(args)
+                  return "updated"
+                },
+              }
+            },
           },
         },
       ],
     }),
     idGenerator: { generate: () => "shared" },
   })
-  return { store, channels }
+  return { store, channels, outcomeReads: () => outcomeReads }
 }
 
 test("a new connector cannot reuse another channel's credentials when IDs match", () => {
@@ -102,4 +122,23 @@ test("a valid credential operation returns its result and persists the new crede
   expect(channels.connectorOp("second", "source", "rotateToken", "xoxb-third")).toBe("updated")
   expect(channels.getConnector("second", "source")).toMatchObject({ botToken: "xoxb-third" })
   expect(channels.connectorOp("second", "source", "inspect", undefined)).toBe("read")
+})
+
+test("operation results persist the same config that passed credential checks", () => {
+  const { channels, outcomeReads } = setup(true)
+  expect(channels.connectorOp("second", "source", "changingConfig", "xoxb-first")).toBe("updated")
+  expect(channels.getConnector("second", "source")).toMatchObject({
+    botToken: "xoxb-second",
+    minify: false,
+  })
+  expect(outcomeReads()).toBe(1)
+})
+
+test("reading an operation result cannot change credentials after collision checks", () => {
+  const { channels, store } = setup(true)
+  const before = store.read()
+  expect(() =>
+    channels.connectorOp("second", "source", "resultChangesConfig", "xoxb-first"),
+  ).toThrow("token already in use")
+  expect(store.read()).toEqual(before)
 })

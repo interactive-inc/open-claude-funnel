@@ -286,17 +286,17 @@ export class FunnelChannels {
         throw new FunnelConnectorNotFoundError(channelName, connectorName)
       }
 
-      const outcome = this.registry.runOperation(connector, operation, args, {
+      const { config: next, result } = this.registry.runOperation(connector, operation, args, {
         generateId: () => this.idGenerator.generate(),
         now: this.clock.iso(),
       })
 
-      this.assertNoTokenCollision(settings, outcome.config, connector)
-      if (outcome.config !== connector) {
-        this.replaceConnector(channel, connector.name, outcome.config)
+      this.assertNoTokenCollision(settings, next, connector)
+      if (next !== connector) {
+        this.replaceConnector(channel, connector.name, next)
       }
 
-      return outcome.result
+      return result
     })
   }
 
