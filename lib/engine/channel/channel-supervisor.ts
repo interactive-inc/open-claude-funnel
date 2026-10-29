@@ -75,11 +75,23 @@ export class FunnelChannelSupervisor {
 
   register(channel: Channel): void {
     if (this.closed || this.props.signal?.aborted) return
-    if (this.has(channel.id)) {
-      throw new Error(`FunnelChannelSupervisor: channel id already registered: ${channel.id}`)
+    const id = channel.id
+    if (this.closed || this.props.signal?.aborted) return
+    if (this.has(id))
+      throw new Error(`FunnelChannelSupervisor: channel id already registered: ${id}`)
+    const name = channel.name
+    if (this.closed || this.props.signal?.aborted) return
+    const build = channel.build
+    if (this.closed || this.props.signal?.aborted) return
+    if (this.has(id))
+      throw new Error(`FunnelChannelSupervisor: channel id already registered: ${id}`)
+    const registered: Channel = {
+      id,
+      name,
+      build: (ctx) => build.call(channel, ctx),
     }
-    this.channels.set(channel.id, channel)
-    if (this.started) void this.startChannel(channel)
+    this.channels.set(id, Object.freeze(registered))
+    if (this.started) void this.startChannel(registered)
   }
 
   async unregister(id: string): Promise<void> {
