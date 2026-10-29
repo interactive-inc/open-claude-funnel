@@ -25,18 +25,17 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
     const signal = input.signal
     signal?.throwIfAborted()
     const method = (input.method || "GET").toUpperCase()
+    const path = input.path.replace(/^\/+/, "")
+    const body = method !== "GET" && method !== "HEAD" ? input.body : undefined
     const request = {
       method,
-      url: `https://api.github.com/${input.path.replace(/^\/+/, "")}`,
+      url: `https://api.github.com/${path}`,
       headers: {
         Authorization: `Bearer ${this.token}`,
         Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
       },
-      body:
-        method !== "GET" && method !== "HEAD" && input.body !== undefined
-          ? JSON.stringify(input.body)
-          : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
       signal,
     }
     signal?.throwIfAborted()

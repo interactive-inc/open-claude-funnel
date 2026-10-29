@@ -35,8 +35,9 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
     const signal = input.signal
     signal?.throwIfAborted()
     const method = (input.method || "GET").toUpperCase()
-    const path = input.path.startsWith("/") ? input.path : `/${input.path}`
-    const hasBody = input.body !== undefined && method !== "GET" && method !== "HEAD"
+    const requestedPath = input.path
+    const path = requestedPath.startsWith("/") ? requestedPath : `/${requestedPath}`
+    const body = method !== "GET" && method !== "HEAD" ? input.body : undefined
 
     const request = {
       method,
@@ -45,7 +46,7 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
         Authorization: `Bot ${this.token}`,
         "Content-Type": "application/json",
       },
-      body: hasBody ? JSON.stringify(input.body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
       signal,
     }
     signal?.throwIfAborted()
