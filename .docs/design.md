@@ -72,6 +72,7 @@ Funnel の生成時に options の値を取得し、registry・チャネル操�
 - コネクタの operation は同じ表で own property の確認と関数取得を行い、別の表の継承関数を誤実行しない。adapter の factory も一度取得し、元の descriptor を receiver として呼ぶ。
 - コネクタの buildConfig・applyUpdate・operation は同期の設定 transaction 内で完了する。Promise・thenable は明示的な契約エラーとして commit 前に拒否し、遅延拒否も監視して未処理拒否にしない。
 - createListener・createAdapter・secretTokens も同期の descriptor hook として Promise・thenable を拒否する。生成結果を listener・adapter・token 配列と誤認せず、遅延拒否を監視する。接続ライフサイクルと adapter.call の非同期処理は維持する。
+- 同期 hook の thenable 判定では then を一度取得し、同じ関数を使って拒否を監視する。getter の再読込で監視を外さず、別の Promise への解決でも拒否を取りこぼさない。
 - Channel の解除は呼び出し時の登録だけを対象にする。未登録 ID の解除は何もせず完了し、後から追加した同じ ID の登録を停止・削除しない。
 - time channel は生成時に cron・変換関数・状態保存先と catch-up 方針の値を取得する。後から渡した設定や方針を変更しても、再構築時の動作・保存先・追いつき範囲を変えない。状態保存先のオブジェクト自身はホスト所有のまま使う。
 - コネクタの共通エラー文字列化は、例外値の message 取得や文字列変換が失敗しても固定の説明を返す。配送失敗の報告自体でイベントの受信処理を終了させない。

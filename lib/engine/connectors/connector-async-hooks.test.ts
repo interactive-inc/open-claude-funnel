@@ -6,7 +6,7 @@ import type {
   ConnectorOperation,
 } from "@/engine/connectors/connector-descriptor"
 
-for (const kind of ["promise", "thenable"] as const) {
+for (const kind of ["promise", "thenable", "changing-then", "nested-thenable"] as const) {
   for (const stage of [
     "buildConfig",
     "applyUpdate",
@@ -28,19 +28,34 @@ for (const kind of ["promise", "thenable"] as const) {
       })
       const before = funnel.channels.list()
       let observed = 0
+      let thenReads = 0
       const asynchronous =
-        kind === "promise"
-          ? async () => {
-              await Promise.resolve()
-              observed++
-              throw new Error("late hook failure")
+        kind === "promise" || kind === "changing-then"
+          ? () => {
+              const value = (async () => {
+                await Promise.resolve()
+                observed++
+                throw new Error("late hook failure")
+              })()
+              if (kind === "changing-then") {
+                const then = value.then
+                // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
+                Object.defineProperty(value, "then", {
+                  get() {
+                    return ++thenReads === 1 ? then : undefined
+                  },
+                })
+              }
+              return value
             }
           : () =>
               // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
               Object.defineProperty({}, "then", {
-                value: (_resolve: unknown, reject: (error: unknown) => void) => {
+                value: (resolve: (value: unknown) => void, reject: (error: unknown) => void) => {
                   observed++
-                  reject(new Error("late hook failure"))
+                  const failure = new Error("late hook failure")
+                  if (kind === "nested-thenable") resolve(Promise.reject(failure))
+                  else reject(failure)
                 },
               })
       if (stage === "buildConfig")
@@ -71,6 +86,7 @@ for (const kind of ["promise", "thenable"] as const) {
         else expect(run).toThrow(`connector ${stage} must be synchronous`)
         await Bun.sleep(0)
         expect(observed).toBe(1)
+        if (kind === "changing-then") expect(thenReads).toBe(1)
         expect(funnel.channels.list()).toEqual(before)
       } finally {
         Object.assign(descriptor, original)

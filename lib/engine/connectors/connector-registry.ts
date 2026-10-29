@@ -161,13 +161,17 @@ export class FunnelConnectorRegistry {
 
 /** Descriptor hooks are synchronous; lifecycle and outbound calls own asynchronous work. */
 function synchronousResult<T>(value: T, operation: string): T {
-  if (
-    value !== null &&
-    (typeof value === "object" || typeof value === "function") &&
-    typeof Reflect.get(value, "then") === "function"
-  ) {
-    invokeCallback(() => value)
-    throw new Error(`connector ${operation} must be synchronous`)
+  if (value !== null && (typeof value === "object" || typeof value === "function")) {
+    const then = Reflect.get(value, "then")
+    if (typeof then === "function") {
+      invokeCallback(
+        () =>
+          new Promise((resolve, reject) => {
+            Reflect.apply(then, value, [resolve, reject])
+          }),
+      )
+      throw new Error(`connector ${operation} must be synchronous`)
+    }
   }
   return value
 }
