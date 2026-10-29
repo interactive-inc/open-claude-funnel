@@ -84,23 +84,22 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   constructor(props: Props) {
     super()
-    const rawPath = props.rawPath
-    const processedPath = props.processedPath
-    const connectionPath = props.connectionPath
+    const { rawPath, processedPath, connectionPath, maxRows, rawMaxRows, maxAgeMs, now, logger } =
+      props
     const paths = [rawPath, processedPath, connectionPath]
     requireSeparateDiagnosticPaths(paths)
-    if (props.maxRows !== undefined) requireIntegerLimit(props.maxRows, "maxRows")
-    if (props.rawMaxRows !== undefined) requireIntegerLimit(props.rawMaxRows, "rawMaxRows")
-    if (props.maxAgeMs !== undefined) requireDurationLimit(props.maxAgeMs, "maxAgeMs")
-    this.now = props.now ?? (() => Date.now())
-    this.logger = props.logger
-    const ageCap = props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}
+    if (maxRows !== undefined) requireIntegerLimit(maxRows, "maxRows")
+    if (rawMaxRows !== undefined) requireIntegerLimit(rawMaxRows, "rawMaxRows")
+    if (maxAgeMs !== undefined) requireDurationLimit(maxAgeMs, "maxAgeMs")
+    this.now = now ?? (() => Date.now())
+    this.logger = logger
+    const ageCap = maxAgeMs !== undefined ? { maxAgeMs } : {}
     const verdictCap = {
       now: this.now,
       ...ageCap,
-      ...(props.maxRows !== undefined ? { maxRows: props.maxRows } : {}),
+      ...(maxRows !== undefined ? { maxRows } : {}),
     }
-    const rawMax = props.rawMaxRows ?? props.maxRows
+    const rawMax = rawMaxRows ?? maxRows
     const rawCap = {
       now: this.now,
       ...ageCap,

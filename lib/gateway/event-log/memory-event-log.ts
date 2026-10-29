@@ -31,10 +31,9 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
 
   constructor(options: { maxRows?: number; maxBytes?: number } = {}) {
     super()
-    this.maxRows =
-      options.maxRows === undefined ? Infinity : requireIntegerLimit(options.maxRows, "maxRows")
-    this.maxBytes =
-      options.maxBytes === undefined ? Infinity : requireIntegerLimit(options.maxBytes, "maxBytes")
+    const { maxRows, maxBytes } = options
+    this.maxRows = maxRows === undefined ? Infinity : requireIntegerLimit(maxRows, "maxRows")
+    this.maxBytes = maxBytes === undefined ? Infinity : requireIntegerLimit(maxBytes, "maxBytes")
   }
 
   record(record: FunnelEventRecord): void {

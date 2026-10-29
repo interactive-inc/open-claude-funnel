@@ -6,6 +6,29 @@ const record = (log: MemoryFunnelEventLog, offset: number, content: string) => {
 }
 
 describe("MemoryFunnelEventLog", () => {
+  for (const field of ["maxRows", "maxBytes"] as const) {
+    it(`captures ${field} once rather than changing a zero retention cap`, () => {
+      let reads = 0
+      const options =
+        field === "maxRows"
+          ? {
+              get maxRows() {
+                return ++reads === 1 ? 0 : 100
+              },
+            }
+          : {
+              get maxBytes() {
+                return ++reads === 1 ? 0 : 1048576
+              },
+            }
+      const log = new MemoryFunnelEventLog(options)
+      record(log, 1, "input")
+      expect(log.loadSince(0)).toEqual([])
+      expect(log.findMaxOffset()).toBe(1)
+      expect(reads).toBe(1)
+    })
+  }
+
   it("records events and replays those strictly after `since`", () => {
     const log = new MemoryFunnelEventLog()
 
