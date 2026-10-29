@@ -1,5 +1,6 @@
 import { FunnelSettingsReader } from "@/engine/settings/settings-reader"
 import { settingsSchema, type Settings } from "@/engine/settings/settings-schema"
+import { requireSynchronous } from "@/require-synchronous"
 
 /** In-memory connection configuration. Persistence belongs to the host. */
 export class MemoryFunnelSettingsStore extends FunnelSettingsReader {
@@ -22,15 +23,7 @@ export class MemoryFunnelSettingsStore extends FunnelSettingsReader {
     this.writing = true
     try {
       const draft = snapshot(this.state)
-      const result = mutator(draft)
-      if (
-        result !== null &&
-        (typeof result === "object" || typeof result === "function") &&
-        typeof Reflect.get(result, "then") === "function"
-      ) {
-        void Promise.resolve(result).catch(() => {})
-        throw new Error("settings updates must be synchronous")
-      }
+      const result = requireSynchronous(mutator(draft), "settings updates must be synchronous")
       this.state = snapshot(settingsSchema.parse(draft))
       return result
     } finally {

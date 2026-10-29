@@ -151,3 +151,31 @@ test("async mutations are rejected and their later failure is observed", async (
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(store.read()).toEqual(initial())
 })
+
+test("changing then getters cannot bypass async mutation rejection or leak the original failure", async () => {
+  const store = new MemoryFunnelSettingsStore(initial())
+  let reads = 0
+  expect(() =>
+    store.update((draft) => {
+      draft.channels[0]!.name = "partial"
+      const value = Promise.reject(new Error("late mutation failure"))
+      const then = value.then
+      // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
+      Object.defineProperty(value, "then", {
+        get() {
+          return ++reads === 1 ? then : undefined
+        },
+      })
+      return value
+    }),
+  ).toThrow("settings updates must be synchronous")
+  await Bun.sleep(0)
+  expect(reads).toBe(1)
+  expect(store.read()).toEqual(initial())
+  expect(() =>
+    store.update((draft) => {
+      draft.channels[0]!.name = "next"
+    }),
+  ).not.toThrow()
+  expect(store.read().channels[0]!.name).toBe("next")
+})

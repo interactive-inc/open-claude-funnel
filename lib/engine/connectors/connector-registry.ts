@@ -15,7 +15,7 @@ import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
-import { invokeCallback } from "@/invoke-callback"
+import { requireSynchronous } from "@/require-synchronous"
 
 type Deps = {
   /** Connector types this funnel handles. Each is a self-describing descriptor;
@@ -72,9 +72,9 @@ export class FunnelConnectorRegistry {
   }
 
   createListener(channelId: string, config: BaseConnectorConfig): FunnelConnectorListener {
-    return synchronousResult(
+    return requireSynchronous(
       this.require(config.type).createListener(config, this.listenerDeps(channelId)),
-      "createListener",
+      "connector createListener must be synchronous",
     )
   }
 
@@ -84,20 +84,26 @@ export class FunnelConnectorRegistry {
 
     if (!createAdapter) return null
 
-    return synchronousResult(
+    return requireSynchronous(
       createAdapter.call(descriptor, config, this.adapterDeps()),
-      "createAdapter",
+      "connector createAdapter must be synchronous",
     )
   }
 
   secretTokens(config: BaseConnectorConfig): string[] {
-    return synchronousResult(this.require(config.type).secretTokens(config), "secretTokens")
+    return requireSynchronous(
+      this.require(config.type).secretTokens(config),
+      "connector secretTokens must be synchronous",
+    )
   }
 
   buildConfig(input: Record<string, unknown>, context: ConnectorBuildContext): BaseConnectorConfig {
     const type = typeof input.type === "string" ? input.type : ""
 
-    return synchronousResult(this.require(type).buildConfig(input, context), "buildConfig")
+    return requireSynchronous(
+      this.require(type).buildConfig(input, context),
+      "connector buildConfig must be synchronous",
+    )
   }
 
   applyUpdate(
@@ -105,9 +111,9 @@ export class FunnelConnectorRegistry {
     fields: Record<string, unknown>,
     context: ConnectorUpdateContext,
   ): BaseConnectorConfig {
-    return synchronousResult(
+    return requireSynchronous(
       this.require(config.type).applyUpdate(config, fields, context),
-      "applyUpdate",
+      "connector applyUpdate must be synchronous",
     )
   }
 
@@ -125,7 +131,10 @@ export class FunnelConnectorRegistry {
       throw new Error(`connector type "${config.type}" has no operation "${name}"`)
     }
 
-    return synchronousResult(operation({ config, args, context }), "operation")
+    return requireSynchronous(
+      operation({ config, args, context }),
+      "connector operation must be synchronous",
+    )
   }
 
   private require(type: string): ConnectorDescriptor {
@@ -157,21 +166,4 @@ export class FunnelConnectorRegistry {
       logger: this.logger,
     }
   }
-}
-
-/** Descriptor hooks are synchronous; lifecycle and outbound calls own asynchronous work. */
-function synchronousResult<T>(value: T, operation: string): T {
-  if (value !== null && (typeof value === "object" || typeof value === "function")) {
-    const then = Reflect.get(value, "then")
-    if (typeof then === "function") {
-      invokeCallback(
-        () =>
-          new Promise((resolve, reject) => {
-            Reflect.apply(then, value, [resolve, reject])
-          }),
-      )
-      throw new Error(`connector ${operation} must be synchronous`)
-    }
-  }
-  return value
 }

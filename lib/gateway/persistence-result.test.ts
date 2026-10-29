@@ -51,19 +51,33 @@ test("gateway event-log results are preserved for the broadcaster's failure chec
   }
 })
 
-for (const kind of ["promise", "thenable"] as const) {
+for (const kind of ["promise", "thenable", "changing-then", "nested-thenable"] as const) {
   test(`late ${kind} persistence failures reach the host reporter without delivering`, async () => {
     const errors: string[] = []
+    let reads = 0
     const broadcaster = new FunnelBroadcaster({
-      record: () =>
-        kind === "promise"
-          ? Promise.reject(new Error("late persistence failure"))
-          : {
-              // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
-              then(_resolve: unknown, reject: (error: Error) => void) {
-                reject(new Error("late persistence failure"))
-              },
+      record: () => {
+        const failure = new Error("late persistence failure")
+        if (kind === "promise") return Promise.reject(failure)
+        if (kind === "changing-then") {
+          const value = Promise.reject(failure)
+          const then = value.then
+          // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
+          Object.defineProperty(value, "then", {
+            get() {
+              return ++reads === 1 ? then : undefined
             },
+          })
+          return value
+        }
+        return {
+          // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
+          then(resolve: (value: unknown) => void, reject: (error: Error) => void) {
+            if (kind === "nested-thenable") resolve(Promise.reject(failure))
+            else reject(failure)
+          },
+        }
+      },
       onError: (error) => {
         errors.push(error.message)
       },
@@ -71,6 +85,7 @@ for (const kind of ["promise", "thenable"] as const) {
     expect(() => broadcaster.broadcast("input")).toThrow("event persistence must be synchronous")
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(errors).toEqual(["late persistence failure"])
+    if (kind === "changing-then") expect(reads).toBe(1)
     expect(broadcaster.getMetrics().eventsBroadcast).toBe(0)
   })
 }
