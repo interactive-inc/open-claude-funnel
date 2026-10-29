@@ -4,9 +4,15 @@ export type ScheduleStateStore = { load(): Map<string, Date>; save(state: Map<st
 export class FunnelScheduleStateStore implements ScheduleStateStore {
   private state = new Map<string, Date>()
   load(): Map<string, Date> {
-    return new Map(this.state)
+    return this.snapshot(this.state)
   }
   save(state: Map<string, Date>): void {
-    this.state = new Map(state)
+    this.state = this.snapshot(state)
+  }
+
+  private snapshot(state: ReadonlyMap<string, Date>): Map<string, Date> {
+    return new Map(
+      Array.from(state, (entry): [string, Date] => [entry[0], new Date(entry[1].getTime())]),
+    )
   }
 }

@@ -29,7 +29,7 @@ const removeEntryArgsSchema = z.object({ id: z.string() })
 export const scheduleConnector = (options: ScheduleConnectorOptions = {}): ConnectorDescriptor => {
   const states = new Map<string, ScheduleStateStore>()
   const stateFor = (channelId: string, connectorId: string): ScheduleStateStore => {
-    const key = `${channelId}\0${connectorId}`
+    const key = JSON.stringify([channelId, connectorId])
     let store = states.get(key)
     if (!store) {
       store = options.stateStore?.(channelId, connectorId) ?? new FunnelScheduleStateStore()

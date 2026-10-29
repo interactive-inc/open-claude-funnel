@@ -11,6 +11,7 @@ import type {
   ScheduleEntry,
 } from "@/engine/connectors/schedule-connector-schema"
 
+/** The observer receives its own Date; changing it cannot alter saved firing checkpoints. */
 export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Promise<void>
 
 type Deps = {
@@ -313,7 +314,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (this.onFired) {
       try {
-        await this.onFired(entry, firedAt)
+        await this.onFired(entry, new Date(firedAt.getTime()))
       } catch (error) {
         this.logger?.error("schedule onFired callback failed", {
           connector: this.config.name,
