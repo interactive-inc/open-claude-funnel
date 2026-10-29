@@ -2,6 +2,33 @@ import { expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
 import { channelWsProtocols } from "@/gateway/channel-ws-url"
 
+test("a replacement character cannot authenticate as an unpaired surrogate", async () => {
+  const gateway = new Funnel({ channels: [{ name: "ops" }] }).gatewayModule({
+    token: "example-\uD800",
+  })
+  let upgrades = 0
+  try {
+    const result = gateway.handleUpgrade(
+      new Request("http://localhost/ws?channel=ops", {
+        headers: {
+          upgrade: "websocket",
+          "sec-websocket-protocol": channelWsProtocols("example-\uFFFD")[0]!,
+        },
+      }),
+      {
+        upgrade() {
+          upgrades++
+          return true
+        },
+      } as never,
+    )
+    expect(result.response?.status).toBe(401)
+    expect(upgrades).toBe(0)
+  } finally {
+    await gateway.stop()
+  }
+})
+
 for (const token of [
   "example/token==",
   "example token",

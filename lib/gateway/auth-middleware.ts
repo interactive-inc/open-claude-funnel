@@ -27,8 +27,9 @@ export const requireBearerToken = (deps: Deps): MiddlewareHandler<Env> => {
 }
 
 export const constantTimeEqual = (a: string, b: string): boolean => {
-  const bufA = Buffer.from(a, "utf-8")
-  const bufB = Buffer.from(b, "utf-8")
+  // Preserve every UTF-16 code unit; UTF-8 would alias unpaired surrogates with U+FFFD.
+  const bufA = Buffer.from(a, "utf16le")
+  const bufB = Buffer.from(b, "utf16le")
   const maxLen = Math.max(bufA.length, bufB.length, 1)
   const padA = Buffer.alloc(maxLen)
   const padB = Buffer.alloc(maxLen)
