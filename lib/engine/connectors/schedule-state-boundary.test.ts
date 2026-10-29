@@ -14,6 +14,54 @@ const once = (id: string): ScheduleEntry => ({
 })
 const now = () => new Date("2026-01-01T00:00:00.000Z")
 
+for (const [name, key] of [
+  ["number", 1],
+  ["null", null],
+  ["object", { id: "1" }],
+  ["symbol", Symbol("1")],
+] as const) {
+  test(`${name} checkpoint IDs cannot replace a valid saved snapshot`, () => {
+    const store = new FunnelScheduleStateStore()
+    store.save(new Map([["1", now()]]))
+    const invalid = new Map<unknown, Date>([[key, now()]]) as Map<string, Date>
+    expect(() => store.save(invalid)).toThrow("schedule checkpoint ID must be a string")
+    expect([...store.load()]).toEqual([["1", now()]])
+  })
+
+  test(`${name} persisted checkpoint IDs fail before pruning or duplicate delivery`, async () => {
+    let state = new Map<unknown, Date>([[key, now()]]) as Map<string, Date>
+    let saves = 0
+    const delivered: string[] = []
+    const listener = new FunnelScheduleListener({
+      config: { id: "source", name: "source", type: "schedule", entries: [once("1")] },
+      now,
+      lastFiredStore: {
+        load: () => state,
+        save(next) {
+          saves++
+          state = next
+        },
+      },
+    })
+    const notify = async (content: string) => {
+      delivered.push(content)
+    }
+    try {
+      await expect(listener.tick(notify)).rejects.toThrow("schedule checkpoint ID must be a string")
+      expect(delivered).toEqual([])
+      expect(saves).toBe(0)
+      const keys: unknown[] = [...state.keys()]
+      expect(keys).toEqual([key])
+      state = new Map([["1", now()]])
+      await listener.tick(notify)
+      expect(delivered).toEqual([])
+      expect(saves).toBe(0)
+    } finally {
+      await listener.stop()
+    }
+  })
+}
+
 test("checkpoint snapshots accept maps from another realm and detach their dates", () => {
   const state: Map<string, Date> = runInNewContext('new Map([["entry", new Date(0)]])')
   const store = new FunnelScheduleStateStore()

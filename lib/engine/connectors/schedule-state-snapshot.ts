@@ -6,6 +6,7 @@ export function snapshotScheduleState(state: ReadonlyMap<string, Date>): Map<str
   if (typeof iterator !== "function") throw new TypeError("schedule state must be an iterable map")
   return new Map(
     Array.from({ [Symbol.iterator]: () => iterator.call(state) }, ([id, date]): [string, Date] => {
+      if (typeof id !== "string") throw new TypeError("schedule checkpoint ID must be a string")
       try {
         return [id, new Date(requireTimestamp(date.getTime()))]
       } catch (error) {
