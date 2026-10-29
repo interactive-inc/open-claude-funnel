@@ -22,8 +22,10 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
     Object.freeze(this)
   }
   async call(input: CallInput): Promise<unknown> {
+    const signal = input.signal
+    signal?.throwIfAborted()
     const method = (input.method || "GET").toUpperCase()
-    const response = await this.http.fetch({
+    const request = {
       method,
       url: `https://api.github.com/${input.path.replace(/^\/+/, "")}`,
       headers: {
@@ -35,10 +37,22 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
         method !== "GET" && method !== "HEAD" && input.body !== undefined
           ? JSON.stringify(input.body)
           : undefined,
-    })
-    if (!response.ok)
-      throw new Error(`GitHub API failed (${response.status}): ${await response.text()}`)
-    if (response.status === 204 || method === "HEAD") return null
-    return response.json()
+      signal,
+    }
+    signal?.throwIfAborted()
+    const response = await this.http.fetch(request)
+    signal?.throwIfAborted()
+    if (!response.ok) {
+      const detail = await response.text()
+      signal?.throwIfAborted()
+      throw new Error(`GitHub API failed (${response.status}): ${detail}`)
+    }
+    if (response.status === 204 || method === "HEAD") {
+      signal?.throwIfAborted()
+      return null
+    }
+    const result = await response.json()
+    signal?.throwIfAborted()
+    return result
   }
 }

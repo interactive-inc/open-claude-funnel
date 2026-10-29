@@ -17,5 +17,6 @@ export type GatewayRouteDeps = {
   uptimeMs: () => number
   emit: (input: GatewayEmitInput) => { offset: number }
   assertActive: () => void
+  callSignal?: AbortSignal
   diagnosticLog?: ConnectorDiagnosticLog
 }

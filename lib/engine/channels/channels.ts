@@ -301,19 +301,31 @@ export class FunnelChannels {
   }
 
   async call(channelName: string, connectorName: string, input: CallInput): Promise<unknown> {
+    const request: CallInput = {
+      method: input.method,
+      path: input.path,
+      body: input.body,
+      signal: input.signal,
+    }
+    const signal = request.signal
+    signal?.throwIfAborted()
     const connector = this.getConnector(channelName, connectorName)
+    signal?.throwIfAborted()
 
     if (!connector) {
       throw new FunnelConnectorNotFoundError(channelName, connectorName)
     }
 
     const adapter = this.registry.createAdapter(connector)
+    signal?.throwIfAborted()
 
     if (!adapter) {
       throw new Error(`connector type "${connector.type}" does not support outbound calls`)
     }
 
-    return await adapter.call(input)
+    const result = await adapter.call(request)
+    signal?.throwIfAborted()
+    return result
   }
 
   createListener(

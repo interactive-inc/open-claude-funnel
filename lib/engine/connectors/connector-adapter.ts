@@ -17,6 +17,8 @@ export type CallInput = {
   path: string
   /** JSON request body. Omit for GET-like calls. */
   body?: JsonValue
+  /** Host cancellation for dispatch, transport and response-body reads. Never serialized. */
+  signal?: AbortSignal
 }
 
 export abstract class FunnelConnectorAdapter {

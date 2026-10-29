@@ -45,6 +45,8 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
   }
 
   async call(input: CallInput): Promise<unknown> {
+    const signal = input.signal
+    signal?.throwIfAborted()
     const url = `${SLACK_API_BASE}${input.path}`
     const body = input.body !== null && typeof input.body === "object" ? toRecord(input.body) : {}
     const form = new URLSearchParams()
@@ -53,7 +55,7 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
       form.set(key, typeof value === "string" ? value : JSON.stringify(value))
     }
 
-    const res = await this.http.fetch({
+    const request = {
       method: "POST",
       url,
       headers: {
@@ -61,9 +63,14 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: form.toString(),
-    })
+      signal,
+    }
+    signal?.throwIfAborted()
+    const res = await this.http.fetch(request)
+    signal?.throwIfAborted()
 
     const text = await res.text()
+    signal?.throwIfAborted()
 
     try {
       return JSON.parse(text)

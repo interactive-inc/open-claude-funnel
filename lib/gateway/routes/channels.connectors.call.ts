@@ -45,6 +45,9 @@ export const channelsConnectorsCallHandler = factory.createHandlers(
       // Pass body through as-is; omitted body stays undefined so adapters apply
       // their own "no body" handling rather than seeing a spurious empty object.
       body: parsed.data.body,
+      signal: c.var.deps.callSignal
+        ? AbortSignal.any([c.var.deps.callSignal, c.req.raw.signal])
+        : c.req.raw.signal,
     })
 
     return c.json({ ok: true, result })

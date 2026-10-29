@@ -32,11 +32,13 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
   }
 
   async call(input: CallInput): Promise<unknown> {
+    const signal = input.signal
+    signal?.throwIfAborted()
     const method = (input.method || "GET").toUpperCase()
     const path = input.path.startsWith("/") ? input.path : `/${input.path}`
     const hasBody = input.body !== undefined && method !== "GET" && method !== "HEAD"
 
-    const res = await this.http.fetch({
+    const request = {
       method,
       url: `${DISCORD_API_BASE}${path}`,
       headers: {
@@ -44,14 +46,25 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
         "Content-Type": "application/json",
       },
       body: hasBody ? JSON.stringify(input.body) : undefined,
-    })
+      signal,
+    }
+    signal?.throwIfAborted()
+    const res = await this.http.fetch(request)
+    signal?.throwIfAborted()
 
     if (!res.ok) {
-      throw new Error(`Discord API failed (${res.status}): ${await res.text()}`)
+      const detail = await res.text()
+      signal?.throwIfAborted()
+      throw new Error(`Discord API failed (${res.status}): ${detail}`)
     }
 
-    if (res.status === 204 || method === "HEAD") return null
+    if (res.status === 204 || method === "HEAD") {
+      signal?.throwIfAborted()
+      return null
+    }
 
-    return await res.json()
+    const result = await res.json()
+    signal?.throwIfAborted()
+    return result
   }
 }

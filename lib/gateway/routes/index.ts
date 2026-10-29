@@ -44,6 +44,8 @@ function buildCoreRoutes() {
       // carries its own status/body, so delegate to its native response untouched.
       .onError((error, c) => {
         if (error instanceof HTTPException) return error.getResponse()
+        if (c.var.deps.callSignal?.aborted)
+          return c.json({ ok: false, reason: "gateway is stopped" }, 503)
         if (error instanceof FunnelChannelAmbiguousError) {
           return c.json({ error: error.message }, 400)
         }

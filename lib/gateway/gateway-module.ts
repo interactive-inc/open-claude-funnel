@@ -132,6 +132,7 @@ export class FunnelGatewayModule {
   private readonly healthRoute: boolean
   private startedAt: number | null = null
   private readonly signal: AbortSignal | undefined
+  private readonly callController = new AbortController()
   private readonly onAbort: () => void
   private stopPromise: Promise<void> | null = null
   private startPromise: Promise<void> | null = null
@@ -281,6 +282,7 @@ export class FunnelGatewayModule {
           component: "gateway-dispose",
         }),
     )
+    this.callController.abort()
     this.broadcaster.closeEventStreams()
     this.broadcaster.closeClients()
     this.signal?.removeEventListener("abort", this.onAbort)
@@ -295,6 +297,7 @@ export class FunnelGatewayModule {
     const stopping = (async () => {
       try {
         const closing = this.registry.close()
+        this.callController.abort()
         this.broadcaster.closeEventStreams()
         this.broadcaster.closeClients()
         await closing
@@ -498,6 +501,7 @@ export class FunnelGatewayModule {
         uptimeMs: () => (this.startedAt !== null ? this.nowMs() - this.startedAt : 0),
         emit: (input) => this.emit(input),
         assertActive: () => this.assertHttpActive(),
+        callSignal: this.callController.signal,
         diagnosticLog: this.diagnosticLog,
       })
 
