@@ -40,6 +40,8 @@ await gateway.stop()
 
 別プロセスの購読者は `/ws?channel=ops&id=worker-1` に接続します。認証には `/gateway` の `channelWsProtocols(token)` を WebSocket の subprotocol として渡します。`since=<offset>` を付けると保持中のイベントを再送します。
 
+`channelWsProtocols` は特殊文字を含むトークンを `funnel.token-uri.<encoded>` へ変換します。通常のトークンは既存の `funnel.token.<token>` のままです。サーバーは両形式を照合し、不正なエンコードは認証しません。
+
 `channel` の欠落や不正な `since` は HTTP 400 で拒否します。再送の読み取り・送信に失敗した接続は code 1011 で閉じるため、最後に処理できた offset から再接続してください。
 
 gateway のチャネル指定は名前または ID で解決します。同じ値が別々のチャネルの名前と ID に一致する場合は配送先を選ばず、同一プロセスでは `FunnelChannelAmbiguousError`（code: `channel-ambiguous`）、HTTP 公開と WebSocket 購読では HTTP 400 を返します。対象を一意に識別できる別の名前・IDを指定するか、衝突する名前を変更してください。

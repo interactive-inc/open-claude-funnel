@@ -1,4 +1,5 @@
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun"
+import { websocketProtocolToken } from "@/gateway/websocket-token"
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import type { FunnelChannels } from "@/engine/channels/channels"
@@ -617,7 +618,7 @@ export class FunnelGatewayModule {
 
   /**
    * Reads the bearer token from the WebSocket upgrade request. Accepts:
-   *   - `Sec-WebSocket-Protocol: funnel.token.<value>` (preferred — header, never logged in URLs)
+   *   - `Sec-WebSocket-Protocol: funnel.token.<value>` or `funnel.token-uri.<encoded>`
    *   - `Authorization: Bearer <value>` (also header-based)
    * Returns true on a constant-time match against the host token.
    */
@@ -628,10 +629,8 @@ export class FunnelGatewayModule {
       .filter((p) => p.length > 0)
 
     for (const proto of protocols) {
-      if (
-        proto.startsWith("funnel.token.") &&
-        constantTimeEqual(proto.slice("funnel.token.".length), this.token)
-      ) {
+      const presented = websocketProtocolToken(proto)
+      if (presented !== null && constantTimeEqual(presented, this.token)) {
         return true
       }
     }

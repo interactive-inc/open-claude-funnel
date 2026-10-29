@@ -1,4 +1,5 @@
 import { requireIntegerLimit } from "@/require-limit"
+import { websocketTokenProtocol } from "@/gateway/websocket-token"
 
 /**
  * Builds the WebSocket URL a client uses to subscribe to a gateway channel.
@@ -47,7 +48,8 @@ export function channelWsUrl(input: ChannelWsUrlInput): string {
 /**
  * Builds the `Sec-WebSocket-Protocol` values that authenticate a gateway WS
  * upgrade. Browser `WebSocket` cannot set an `Authorization` header, so the
- * gateway also accepts the token as a `funnel.token.<token>` subprotocol.
+ * gateway accepts `funnel.token.<token>` for HTTP-token-safe credentials and
+ * `funnel.token-uri.<encoded>` for credentials containing reserved characters.
  * Returns an empty array when no token is given (auth disabled / loopback).
  *
  * Usage: `new WebSocket(channelWsUrl({ base, channel }), channelWsProtocols(token))`
@@ -55,5 +57,5 @@ export function channelWsUrl(input: ChannelWsUrlInput): string {
 export function channelWsProtocols(token?: string | null): string[] {
   if (!token) return []
 
-  return [`funnel.token.${token}`]
+  return [websocketTokenProtocol(token)]
 }
