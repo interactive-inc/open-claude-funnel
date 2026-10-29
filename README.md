@@ -106,6 +106,7 @@ Slack、Discord、GitHub の接続は `/connectors/<type>` から必要なもの
 - チャネルの ID と名前は設定全体、コネクタの ID と名前は所属チャネル内で一意にしてください。ID は空文字列にできません。不正な保存設定は読み取り時に拒否します。
 - 既定のメモリ store は、通常のオブジェクトと配列で構成された設定データを読み書き時にコピーします。取得結果を加工しても保存内容は変わりません。変更にはチャネル API または同期的な `store.update` / `store.write` を使います。独自設定内の関数・クラスインスタンスなどのリソースはホスト所有の参照を維持します。
 - 定期実行の発火状態も既定はメモリです。`scheduleConnector({ stateStore })`、または `/channel` の `timeChannel({ statePersister })` にホストの保存処理を渡せます。
+- `timeChannel()` の `transform` 省略時は、`firedAt`（ミリ秒の epoch 時刻）と `cron` を含む tick データを JSON 本文として配送し、source のメタデータを引き継ぎます。独自の本文・メタデータが必要な場合は `transform` を渡してください。
 - `Funnel({ signal })` のキャンセルは接続の監視・復旧も停止します。Bun helper が所有する待受も閉じます。ホスト所有の待受はホストが閉じます。
 - HTTP の公開・コネクタ呼び出しは、JSON 本文のネストが128段を超える場合に解析・外部通信・保存前に400を返します。文字列内の括弧は深さに数えません。
 - gateway の停止・破棄は、HTTP 経由で進行中のコネクタ呼び出しも取り消します。受信した `Request.signal` の取消も外部通信へ伝えます。公開・呼び出しの本文読み取りも停止・取消時に中断します。直接の `funnel.channels.call` と組み込み adapter は `CallInput.signal` で取り消せます。独自 adapter や HTTP クライアントもこの signal を通信と応答本文の読み取りへ渡してください。

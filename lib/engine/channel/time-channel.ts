@@ -13,8 +13,9 @@ type Options = {
   /** Default: `{ mode: "lastOnly" }` (recover only the most recent missed tick on startup) */
   readonly catchupPolicy?: FlumeCatchupPolicy
   /**
-   * Converts each tick into a broadcast payload. Defaults to the equivalent of
-   * `{ content: "tick", meta: { cron, firedAt } }`
+   * Converts each tick into a broadcast payload. When omitted, content is
+   * JSON.stringify(event.data) and event.meta is forwarded unchanged.
+   * Default tick data contains firedAt (epoch milliseconds) and cron.
    */
   readonly transform?: ChannelTransform
   /** Optional host-owned state. Catch-up is disabled when absent. */
