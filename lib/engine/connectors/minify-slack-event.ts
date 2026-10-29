@@ -54,8 +54,16 @@ const flattenRichText = (node: unknown): string => {
   if (!isRecord(node)) return ""
 
   const text = node.text
+  const linkUrl = node.type === "link" ? node.url : undefined
 
-  const ownText = typeof text === "string" ? text : isRecord(text) ? flattenRichText(text) : ""
+  const ownText =
+    typeof text === "string"
+      ? text
+      : isRecord(text)
+        ? flattenRichText(text)
+        : typeof linkUrl === "string"
+          ? linkUrl
+          : ""
   const fields = node.fields
 
   if (Array.isArray(fields)) {

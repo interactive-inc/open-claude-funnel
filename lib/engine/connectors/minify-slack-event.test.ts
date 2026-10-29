@@ -3,6 +3,42 @@ import { minifySlackEvent } from "@/engine/connectors/minify-slack-event"
 import { FunnelSlackEventProcessor } from "@/engine/connectors/slack-event-processor"
 
 describe("minifySlackEvent", () => {
+  for (const layout of ["rich_text", "table"] as const) {
+    test(`preserves an unlabeled link through ${layout} attachment delivery`, () => {
+      const section = {
+        type: "rich_text_section",
+        elements: [
+          { type: "text", text: "Read " },
+          { type: "link", url: "https://example.com/guide" },
+          { type: "text", text: " now" },
+        ],
+      }
+      const block =
+        layout === "table"
+          ? { type: "table", rows: [[section]] }
+          : { type: "rich_text", elements: [section] }
+      const input = {
+        type: "message",
+        user: "UOTHER",
+        channel: "C1",
+        ts: "1.0",
+        attachments: [{ blocks: [block] }],
+      }
+      const original = structuredClone(input)
+      const result = new FunnelSlackEventProcessor({
+        ownBotUserId: "BOT",
+        ownBotId: "BOT_ID",
+      }).process(input)
+      expect(result.skip).toBe(false)
+      if (result.skip) throw new Error("Expected delivery")
+      expect(JSON.parse(result.content).attachments[0]).toEqual({
+        text: "Read https://example.com/guide now",
+        _funnel_omitted: ["blocks"],
+      })
+      expect(input).toEqual(original)
+    })
+  }
+
   test("preserves both section text and fields through the delivery processor", () => {
     const input = {
       type: "message",
