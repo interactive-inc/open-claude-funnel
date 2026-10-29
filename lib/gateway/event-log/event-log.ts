@@ -25,6 +25,7 @@ export type FunnelEventRecord = {
   channelId: string | null
   connectorId: string | null
   meta: Record<string, string> | null
+  /** Positive safe integer, unique among the store's retained records. */
   offset: number
   exclusive?: Record<string, string | null>
 }

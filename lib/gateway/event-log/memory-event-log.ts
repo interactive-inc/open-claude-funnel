@@ -28,16 +28,28 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
   }
 
   record(record: FunnelEventRecord): void {
-    this.latestOffset = Math.max(this.latestOffset, record.offset)
-    this.bytes += this.sizeOf(record.content, record.meta)
-    this.events.push({
-      offset: record.offset,
+    const offset = record.offset
+    if (!Number.isSafeInteger(offset) || offset < 1)
+      throw new RangeError("event offset must be a positive safe integer")
+    const meta = record.meta
+    const exclusive = record.exclusive
+    const event: StoredEvent = {
+      offset,
       content: record.content,
-      meta: record.meta ? { ...record.meta } : undefined,
+      meta: meta ? { ...meta } : undefined,
       channelId: record.channelId,
       connectorId: record.connectorId,
-      ...(record.exclusive ? { exclusive: { ...record.exclusive } } : {}),
-    })
+      ...(exclusive ? { exclusive: { ...exclusive } } : {}),
+    }
+    const bytes = this.sizeOf(event.content, event.meta)
+    const index =
+      offset <= this.latestOffset ? this.events.findIndex((stored) => stored.offset >= offset) : -1
+    if (index >= 0 && this.events[index]?.offset === offset)
+      throw new Error("event offset is already recorded")
+
+    this.events.splice(index < 0 ? this.events.length : index, 0, event)
+    this.latestOffset = Math.max(this.latestOffset, offset)
+    this.bytes += bytes
     while (
       this.events.length > 0 &&
       (this.events.length > (this.options.maxRows ?? Infinity) ||
