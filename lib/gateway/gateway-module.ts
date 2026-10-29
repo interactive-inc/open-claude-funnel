@@ -23,6 +23,7 @@ import { WebSocketBackpressureError } from "@/gateway/errors"
 import { invokeCallback } from "@/invoke-callback"
 import { logInfo } from "@/gateway/log-info"
 import { requireTimestamp } from "@/require-timestamp"
+import { errorMessageOf, normalizeError } from "@/engine/error/error-message-of"
 import type { GatewayEmitInput } from "@/gateway/routes/route-deps"
 
 export type GatewayEventsOptions = EventStreamOptions & {
@@ -571,7 +572,7 @@ export class FunnelGatewayModule {
           closeStopped()
           return
         }
-        const err = error instanceof Error ? error : new Error(String(error))
+        const err = normalizeError(error)
         try {
           if (err instanceof WebSocketBackpressureError) ws.close(1009, "backpressure")
           else ws.close(1011, "replay failed")
@@ -579,7 +580,7 @@ export class FunnelGatewayModule {
           // The peer may already have closed the transport.
         }
         invokeCallback(() =>
-          this.logger?.warn("replay failed during ws.open", { error: err.message }),
+          this.logger?.warn("replay failed during ws.open", { error: errorMessageOf(err) }),
         )
         invokeCallback(() => this.onError(err, { component: "gateway-server.replay" }))
         return

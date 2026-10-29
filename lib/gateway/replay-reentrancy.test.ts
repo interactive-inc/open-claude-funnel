@@ -1,6 +1,54 @@
 import { expect, test } from "bun:test"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import { FunnelEventStream, type FunnelEventSubscription } from "@/gateway/event-stream"
+import { errorMessageOf } from "@/engine/error/error-message-of"
+
+for (const kind of ["null-prototype", "revoked", "unreadable-error"] as const) {
+  test(`an unprintable ${kind} replay failure rejects all reads and releases the subscription`, async () => {
+    const revoked = Proxy.revocable({}, {})
+    revoked.revoke()
+    const unreadable = new Error()
+    Object.defineProperty(unreadable, "message", {
+      get() {
+        throw new Error("unreadable")
+      },
+    })
+    const failure =
+      kind === "null-prototype"
+        ? Object.create(null)
+        : kind === "revoked"
+          ? revoked.proxy
+          : unreadable
+    let subscription: FunnelEventSubscription
+    let nested: ReturnType<FunnelEventSubscription["next"]> | undefined
+    const broadcaster = new FunnelBroadcaster({
+      replayBufferSize: 0,
+      persistentReplay: {
+        loadSince() {
+          nested = subscription.next()
+          void nested.catch(() => {})
+          throw failure
+        },
+      },
+    })
+    broadcaster.seedLatestOffset(1)
+    subscription = broadcaster.events({ channel: "channel", connectors: [] }, { since: 0 })
+    try {
+      const first = subscription.next()
+      expect(first).toBeInstanceOf(Promise)
+      const outcomes = await Promise.allSettled([first, nested!])
+      expect(outcomes.map((item) => item.status)).toEqual(["rejected", "rejected"])
+      for (const outcome of outcomes) {
+        if (outcome.status !== "rejected") throw new Error("expected replay failure")
+        expect(errorMessageOf(outcome.reason)).toBe("Unprintable thrown value")
+        if (kind === "unreadable-error") expect(outcome.reason).toBe(failure)
+      }
+      expect(broadcaster.getMetrics().subscribers).toBe(0)
+    } finally {
+      await subscription.return()
+    }
+  })
+}
 
 for (const phase of ["load", "claim"] as const) {
   test(`a read requested during replay ${phase} waits for the running generator`, async () => {

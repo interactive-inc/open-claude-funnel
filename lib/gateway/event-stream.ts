@@ -1,4 +1,5 @@
 import type { ReplayableEvent } from "@/gateway/broadcaster"
+import { normalizeError } from "@/engine/error/error-message-of"
 
 export type FunnelEventSubscription = AsyncIterableIterator<ReplayableEvent> & {
   return(): Promise<IteratorResult<ReplayableEvent>>
@@ -79,7 +80,7 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
       if (item && !item.done) return Promise.resolve(item)
       this.replay = undefined
     } catch (error) {
-      const failure = error instanceof Error ? error : new Error(String(error))
+      const failure = normalizeError(error)
       if (!this.closed) this.close(failure)
       return this.failure
         ? Promise.reject(this.failure)

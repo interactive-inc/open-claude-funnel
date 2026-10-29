@@ -6,7 +6,7 @@ import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 
 /** Real loopback sockets with deterministic storage and transport failures. */
 const failedReplay = async (
-  failure: "read" | "send" | "dropped" | "backpressure",
+  failure: "read" | "send" | "dropped" | "backpressure" | "unprintable-read" | "unprintable-send",
   failingReporters = false,
 ) => {
   const reported: Error[] = []
@@ -34,8 +34,9 @@ const failedReplay = async (
     meta: { channelId: channel.id },
   })
   const gateway = funnel.gatewayModule({ token: "", eventLog: log })
-  if (failure === "read")
+  if (failure === "read" || failure === "unprintable-read")
     log.loadSince = () => {
+      if (failure === "unprintable-read") throw Object.create(null)
       throw new Error("replay read failed")
     }
   const server = Bun.serve<GatewayWsData>({
@@ -51,8 +52,9 @@ const failedReplay = async (
       open(socket) {
         if (failure === "dropped") socket.send = () => 0
         if (failure === "backpressure") socket.getBufferedAmount = () => 10_000_000
-        if (failure === "send")
+        if (failure === "send" || failure === "unprintable-send")
           socket.send = () => {
+            if (failure === "unprintable-send") throw Object.create(null)
             throw new Error("replay send failed")
           }
         // The host boundary must not need to catch Funnel replay errors.
@@ -82,6 +84,8 @@ const failedReplay = async (
     expect(reported).toHaveLength(1)
     if (failure === "read" || failure === "send")
       expect(reported[0]?.message).toBe(`replay ${failure} failed`)
+    if (failure === "unprintable-read" || failure === "unprintable-send")
+      expect(reported[0]?.message).toBe("Unprintable thrown value")
     if (failure === "backpressure") expect(closed).toEqual({ code: 1009, reason: "backpressure" })
     else expect(closed).toEqual({ code: 1011, reason: "replay failed" })
     expect(gateway.getStatus().clients).toBe(0)
@@ -96,6 +100,14 @@ const failedReplay = async (
 test("WebSocket replay read failure is reported and closes the failed subscription", async () => {
   await failedReplay("read")
 })
+
+for (const failure of ["unprintable-read", "unprintable-send"] as const) {
+  for (const failingReporters of [false, true]) {
+    test(`${failure} closes the real socket without escaping (reporters fail=${failingReporters})`, async () => {
+      await failedReplay(failure, failingReporters)
+    })
+  }
+}
 
 test("failed replay reporting cannot escape the host WebSocket callback", async () => {
   await failedReplay("read", true)
