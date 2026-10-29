@@ -36,7 +36,12 @@ type RunningEntry = {
 }
 
 type StartResult = { ok: boolean; reason?: string; retriable?: boolean }
-type StartingEntry = { controller: AbortController; completion: Promise<StartResult> }
+type StartingEntry = {
+  channelName: string
+  connectorName: string
+  controller: AbortController
+  completion: Promise<StartResult>
+}
 
 type ListenerStats = {
   events: number
@@ -187,12 +192,17 @@ export class FunnelListenerRegistry {
       .find((view) => view.channelName === channelName && view.name === connectorName)
     if (configured) return FunnelListenerRegistry.keyOf(configured.channelId, configured.id)
     // An orphaned source can still be stopped before the next health pass.
-    const detached = [...this.running].filter(
-      ([, entry]) => entry.channelName === channelName && entry.config.name === connectorName,
-    )
-    if (detached.length > 1)
-      throw new Error("listener name is ambiguous among detached connections")
-    return detached[0]?.[0] ?? JSON.stringify(["missing", channelName, connectorName])
+    const detached = new Set<string>()
+    for (const [key, entry] of this.running) {
+      if (entry.channelName === channelName && entry.config.name === connectorName)
+        detached.add(key)
+    }
+    for (const [key, entry] of this.starting) {
+      if (entry.channelName === channelName && entry.connectorName === connectorName)
+        detached.add(key)
+    }
+    if (detached.size > 1) throw new Error("listener name is ambiguous among detached connections")
+    return detached.values().next().value ?? JSON.stringify(["missing", channelName, connectorName])
   }
 
   isRunning(channelName: string, connectorName: string): boolean {
@@ -261,7 +271,7 @@ export class FunnelListenerRegistry {
     const completion = Promise.resolve().then(() =>
       this.startLocked({ channelName, connectorName, key, controller }),
     )
-    this.starting.set(key, { controller, completion })
+    this.starting.set(key, { channelName, connectorName, controller, completion })
 
     try {
       const result = await completion
