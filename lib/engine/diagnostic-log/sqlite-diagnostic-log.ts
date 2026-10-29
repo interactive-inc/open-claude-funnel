@@ -1,4 +1,5 @@
 import { hasSafeJsonDepth } from "@/has-safe-json-depth"
+import { invokeCallback } from "@/invoke-callback"
 import { requireSeparateDiagnosticPaths } from "@/engine/diagnostic-log/require-separate-paths"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { chmodSync } from "node:fs"
@@ -214,14 +215,12 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     operation = "insert",
   ): void {
     if (result instanceof Error) {
-      try {
-        void Promise.resolve(
-          this.logger?.error(`diagnostic log ${operation} failed`, {
-            table,
-            error: result.message,
-          }),
-        ).catch(() => {})
-      } catch {}
+      invokeCallback(() =>
+        this.logger?.error(`diagnostic log ${operation} failed`, {
+          table,
+          error: result.message,
+        }),
+      )
     }
   }
 
