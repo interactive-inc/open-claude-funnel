@@ -6,6 +6,7 @@ import { eventSnapshot } from "@/gateway/event-snapshot"
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { sendWsPayload } from "@/gateway/send-ws-payload"
 import { invokeCallback } from "@/invoke-callback"
+import { requireTimestamp } from "@/engine/time/require-timestamp"
 import {
   FunnelEventStream,
   type EventStreamOptions,
@@ -183,7 +184,8 @@ export class FunnelBroadcaster {
       subscribers: this.subscribers.size + this.streams.size,
       eventsBroadcast: this.eventsBroadcast,
       droppedSlowClients: this.droppedSlowClients,
-      lastBroadcastAt: this.lastBroadcastAt ? new Date(this.lastBroadcastAt).toISOString() : null,
+      lastBroadcastAt:
+        this.lastBroadcastAt !== null ? new Date(this.lastBroadcastAt).toISOString() : null,
       latestOffset: this.latestOffset,
       oldestReplayableOffset: this.replayBuffer[0]?.offset ?? null,
     }
@@ -488,7 +490,7 @@ export class FunnelBroadcaster {
   private deliverEvent(content: string, meta?: Record<string, string>): ReplayableEvent {
     if (this.latestOffset >= Number.MAX_SAFE_INTEGER)
       throw new RangeError("event offset range exhausted")
-    const broadcastAt = this.now()
+    const broadcastAt = requireTimestamp(this.now())
     if (this.channels) {
       this.channelDelivery.clear()
       for (const channel of this.channels()) this.updateChannel(channel.id, channel)

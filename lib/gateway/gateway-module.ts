@@ -18,6 +18,7 @@ import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/even
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { invokeCallback } from "@/invoke-callback"
 import { logInfo } from "@/gateway/log-info"
+import { requireTimestamp } from "@/engine/time/require-timestamp"
 
 export type GatewayEventsOptions = EventStreamOptions & {
   channel: string
@@ -143,7 +144,7 @@ export class FunnelGatewayModule {
     // Read before buildApp() below, which branches on it.
     this.healthRoute = deps.healthRoute ?? true
     const clock = deps.clock
-    this.nowMs = clock ? () => clock.millis() : () => Date.now()
+    this.nowMs = () => requireTimestamp(clock ? clock.millis() : Date.now())
 
     this.eventLog =
       deps.eventLog ?? new MemoryFunnelEventLog({ maxRows: 200, maxBytes: 4 * 1024 * 1024 })
@@ -424,7 +425,7 @@ export class FunnelGatewayModule {
         broadcaster: this.broadcaster,
         registry: this.registry,
         channels: this.channels,
-        uptimeMs: () => (this.startedAt ? this.nowMs() - this.startedAt : 0),
+        uptimeMs: () => (this.startedAt !== null ? this.nowMs() - this.startedAt : 0),
         emit: (input) => this.emit(input),
         assertActive: () => this.assertHttpActive(),
         diagnosticLog: this.diagnosticLog,

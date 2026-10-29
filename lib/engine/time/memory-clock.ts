@@ -9,7 +9,7 @@ export class MemoryFunnelClock extends FunnelClock {
 
   constructor(props: Props = {}) {
     super()
-    this.current = props.start ?? new Date(0)
+    this.current = new Date(props.start?.getTime() ?? 0)
   }
 
   now(): Date {
@@ -17,7 +17,7 @@ export class MemoryFunnelClock extends FunnelClock {
   }
 
   set(date: Date): void {
-    this.current = date
+    this.current = new Date(date.getTime())
   }
 
   advance(ms: number): void {
