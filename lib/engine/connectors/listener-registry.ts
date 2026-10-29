@@ -717,7 +717,14 @@ export class FunnelListenerRegistry {
         })
       }
 
-      await Promise.all(dead.map((target) => this.recoverDead(target.key, target.type)))
+      await Promise.all(
+        dead.map((target) =>
+          this.runHealthTask(target.key, "recover", () =>
+            this.recoverDead(target.key, target.type),
+          ),
+        ),
+      )
+      if (this.isStopped || lifecycle !== this.lifecycle) return
 
       // pendingRetry runs in parallel for the same reason: each entry
       // sleeps its own backoff before re-attempting start.
@@ -740,9 +747,28 @@ export class FunnelListenerRegistry {
         })
       }
 
-      await Promise.all(retries.map((retry) => this.attemptRetry(retry)))
+      await Promise.all(
+        retries.map((retry) =>
+          this.runHealthTask(retry.key, "retry", () => this.attemptRetry(retry)),
+        ),
+      )
     } finally {
       this.healthCheckInFlight = false
+    }
+  }
+
+  /** Settle every sibling before releasing the shared health-pass lock. */
+  private async runHealthTask(
+    key: string,
+    op: "recover" | "retry",
+    task: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await task()
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      this.logger?.warn("listener health task failed", { key, op, error: err.message })
+      this.onError(err, { component: "listener-registry.health-task", key, op })
     }
   }
 
