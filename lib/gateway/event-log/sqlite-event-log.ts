@@ -64,11 +64,12 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
 
   constructor(props: Props) {
     super()
-    this.now = props.now ?? (() => Date.now())
-    this.logger = props.logger
-    this.onError = props.onError
+    const { path, now, logger, onError, maxRows, maxAgeMs, maxBytes, targetBytes } = props
+    this.now = now ?? (() => Date.now())
+    this.logger = logger
+    this.onError = onError
     this.sink = new SqliteEventLog<FunnelEvent, ["channel_id", "connector_id"]>({
-      path: props.path,
+      path,
       indexes: ["channel_id", "connector_id"],
       extractIndexes: (event) => ({
         channel_id: event.channel_id,
@@ -76,19 +77,18 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       }),
       now: this.now,
       onMaintenanceError: (error) => this.reportMaintenanceError(error, "compact"),
-      ...(props.maxRows !== undefined ? { maxRows: props.maxRows } : {}),
-      ...(props.maxAgeMs !== undefined ? { maxAgeMs: props.maxAgeMs } : {}),
-      ...(props.maxBytes !== undefined ? { maxBytes: props.maxBytes } : {}),
-      ...(props.targetBytes !== undefined ? { targetBytes: props.targetBytes } : {}),
+      ...(maxRows !== undefined ? { maxRows } : {}),
+      ...(maxAgeMs !== undefined ? { maxAgeMs } : {}),
+      ...(maxBytes !== undefined ? { maxBytes } : {}),
+      ...(targetBytes !== undefined ? { targetBytes } : {}),
     })
     try {
-      this.exclusiveClaims = new SqliteExclusiveClaims(props.path)
+      this.exclusiveClaims = new SqliteExclusiveClaims(path)
     } catch (error) {
       this.sink.close()
       throw error
     }
-    this.hasRetention =
-      props.maxRows !== undefined || props.maxAgeMs !== undefined || props.maxBytes !== undefined
+    this.hasRetention = maxRows !== undefined || maxAgeMs !== undefined || maxBytes !== undefined
   }
 
   /**
