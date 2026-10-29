@@ -648,10 +648,12 @@ export class FunnelBroadcaster {
 
     for (const recipient of recipients) {
       if (recipient.kind === "stream") {
+        if (this.streams.get(recipient.target) !== recipient.data) continue
         recipient.target.push(delivered)
         continue
       }
       const ws = recipient.target
+      if (this.clients.get(ws) !== recipient.data) continue
       try {
         sendWsPayload(ws, payload, this.maxBufferedBytes)
       } catch (error) {
