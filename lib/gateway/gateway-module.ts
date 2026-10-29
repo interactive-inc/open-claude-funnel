@@ -14,6 +14,7 @@ import { type Env, factory } from "@/gateway/factory"
 import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
 import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/event-stream"
+import { WebSocketBackpressureError } from "@/gateway/errors"
 
 export type GatewayEventsOptions = EventStreamOptions & {
   channel: string
@@ -418,12 +419,12 @@ export class FunnelGatewayModule {
       // A partial replay must close the subscription so the consumer can resume
       // from its last handled offset rather than wait forever for live input.
       try {
-        const replay = this.broadcaster.replaySince(ws.data.since, ws.data)
-        for (const event of replay) ws.send(JSON.stringify(event))
+        this.broadcaster.replayToClient(ws, ws.data.since, ws.data)
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
         try {
-          ws.close(1011, "replay failed")
+          if (err instanceof WebSocketBackpressureError) ws.close(1009, "backpressure")
+          else ws.close(1011, "replay failed")
         } catch {
           // The peer may already have closed the transport.
         }

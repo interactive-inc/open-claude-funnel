@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { eventSnapshot } from "@/gateway/event-snapshot"
+import { WebSocketBackpressureError } from "@/gateway/errors"
+import { sendWsPayload } from "@/gateway/send-ws-payload"
 import {
   FunnelEventStream,
   type EventStreamOptions,
@@ -199,6 +201,12 @@ export class FunnelBroadcaster {
    */
   replaySince(since: number, data: ClientData): ReplayableEvent[] {
     return [...this.replayEvents(since, data)]
+  }
+
+  /** Pull replay pages only as sends progress, using the same limits as live delivery. */
+  replayToClient(ws: ServerWebSocket<unknown>, since: number, data: ClientData): void {
+    for (const event of this.replayEvents(since, data, this.latestOffset))
+      sendWsPayload(ws, JSON.stringify(event), this.maxBufferedBytes)
   }
 
   /** Capture the memory boundary now; fetch older history and claim work only as it is read. */
@@ -462,42 +470,31 @@ export class FunnelBroadcaster {
         continue
       }
       const ws = recipient.target
-      const buffered = ws.getBufferedAmount()
-
-      if (buffered > this.maxBufferedBytes) {
-        const data = this.clients.get(ws)
-
-        this.logger?.warn("dropping slow WS client (backpressure)", {
-          channel: data?.channel,
-          buffered,
-          max: this.maxBufferedBytes,
-        })
-
-        try {
-          ws.close(1009, "backpressure")
-        } catch {
-          // ignore
-        }
-
-        this.clients.delete(ws)
-        this.droppedSlowClients += 1
-        continue
-      }
-
-      // ws.send can throw if the socket is in a transitional state (close
-      // frame already queued, peer-reset between the buffered-amount check
-      // and the send call). Catch per-recipient so one broken socket does
-      // not stop the broadcast loop from reaching healthy subscribers.
       try {
-        ws.send(payload)
+        sendWsPayload(ws, payload, this.maxBufferedBytes)
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
         const data = this.clients.get(ws)
+        this.clients.delete(ws)
+        if (err instanceof WebSocketBackpressureError) {
+          this.droppedSlowClients += 1
+          try {
+            ws.close(1009, "backpressure")
+          } catch {}
+          this.logger?.warn("dropping slow WS client (backpressure)", {
+            channel: data?.channel,
+            buffered: err.buffered,
+            max: this.maxBufferedBytes,
+          })
+          continue
+        }
+        try {
+          ws.close(1011, "send failed")
+        } catch {}
         this.logger?.warn("ws.send failed; dropping client", {
           channel: data?.channel,
           error: err.message,
         })
-        this.clients.delete(ws)
       }
     }
 

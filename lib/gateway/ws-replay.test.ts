@@ -4,7 +4,7 @@ import { Funnel } from "@/funnel"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 
 /** Real loopback sockets with deterministic storage and transport failures. */
-const failedReplay = async (failure: "read" | "send") => {
+const failedReplay = async (failure: "read" | "send" | "dropped" | "backpressure") => {
   const reported: Error[] = []
   const escaped: unknown[] = []
   const funnel = new Funnel({
@@ -38,6 +38,8 @@ const failedReplay = async (failure: "read" | "send") => {
     websocket: {
       ...gateway.websocket,
       open(socket) {
+        if (failure === "dropped") socket.send = () => 0
+        if (failure === "backpressure") socket.getBufferedAmount = () => 10_000_000
         if (failure === "send")
           socket.send = () => {
             throw new Error("replay send failed")
@@ -66,8 +68,11 @@ const failedReplay = async (failure: "read" | "send") => {
       }
     })
     expect(escaped).toEqual([])
-    expect(reported.map((error) => error.message)).toEqual([`replay ${failure} failed`])
-    expect(closed).toEqual({ code: 1011, reason: "replay failed" })
+    expect(reported).toHaveLength(1)
+    if (failure === "read" || failure === "send")
+      expect(reported[0]?.message).toBe(`replay ${failure} failed`)
+    if (failure === "backpressure") expect(closed).toEqual({ code: 1009, reason: "backpressure" })
+    else expect(closed).toEqual({ code: 1011, reason: "replay failed" })
     expect(gateway.getStatus().clients).toBe(0)
   } finally {
     socket.close()
@@ -84,6 +89,13 @@ test("WebSocket replay read failure is reported and closes the failed subscripti
 test("WebSocket replay send failure closes instead of leaving an orphan connection", async () => {
   await failedReplay("send")
 })
+
+test.each(["dropped", "backpressure"] as const)(
+  "WebSocket replay stops on %s rather than silently continuing",
+  async (failure) => {
+    await failedReplay(failure)
+  },
+)
 
 test("a WebSocket receives retained input before continuing with live input", async () => {
   const gateway = new Funnel({ channels: [{ name: "ops" }] }).gatewayServer({ port: 0, token: "" })

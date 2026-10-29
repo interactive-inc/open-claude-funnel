@@ -3,7 +3,7 @@ import type { ServerWebSocket } from "bun"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
 
-type FakeWsMode = "fast" | "slow"
+type FakeWsMode = "fast" | "slow" | "dropped" | "buffer-error" | "queued"
 
 class FakeWs {
   sent: string[] = []
@@ -11,11 +11,15 @@ class FakeWs {
 
   constructor(private readonly mode: FakeWsMode = "fast") {}
 
-  send(payload: string): void {
+  send(payload: string): number {
+    if (this.mode === "dropped") return 0
     this.sent.push(payload)
+    if (this.mode === "queued") return -1
+    return Buffer.byteLength(payload)
   }
 
   getBufferedAmount(): number {
+    if (this.mode === "buffer-error") throw new Error("buffer state unavailable")
     return this.mode === "slow" ? 10_000_000 : 0
   }
 
@@ -27,6 +31,62 @@ class FakeWs {
 const asWs = (ws: FakeWs): ServerWebSocket<unknown> => ws as unknown as ServerWebSocket<unknown>
 
 describe("FunnelBroadcaster", () => {
+  test("Bun's accepted backpressure status does not disconnect a queued send", () => {
+    const broadcaster = new FunnelBroadcaster()
+    const queued = new FakeWs("queued")
+    broadcaster.addClient(asWs(queued), { channel: "ops", connectors: [] })
+    broadcaster.broadcast("first")
+    broadcaster.broadcast("second")
+    expect(queued.sent).toHaveLength(2)
+    expect(queued.closed).toBeNull()
+    expect(broadcaster.getClientCount()).toBe(1)
+  })
+
+  test("failed replay stops paging and does not claim the rest of an exclusive backlog", () => {
+    const claims: number[] = []
+    const limits: (number | undefined)[] = []
+    const broadcaster = new FunnelBroadcaster({
+      persistentReplay: {
+        loadSince(since, limit) {
+          limits.push(limit)
+          return Array.from({ length: Math.min(limit ?? 1000, 1000 - since) }, (_, index) => ({
+            offset: since + index + 1,
+            content: "retained",
+            exclusive: { ops: null },
+          }))
+        },
+        claimExclusive(offset) {
+          claims.push(offset)
+          return true
+        },
+      },
+    })
+    broadcaster.seedLatestOffset(1000)
+    expect(() =>
+      broadcaster.replayToClient(asWs(new FakeWs("slow")), 0, {
+        channel: "ops",
+        connectors: [],
+        delivery: "exclusive",
+        subscriberId: "worker",
+      }),
+    ).toThrow("backpressure")
+    expect(limits).toEqual([64])
+    expect(claims).toEqual([1])
+  })
+  test.each(["dropped", "buffer-error"] as const)(
+    "a %s socket is closed without preventing healthy deliveries",
+    (mode) => {
+      const broadcaster = new FunnelBroadcaster()
+      const failed = new FakeWs(mode)
+      const healthy = new FakeWs()
+      broadcaster.addClient(asWs(failed), { channel: "ops", connectors: [] })
+      broadcaster.addClient(asWs(healthy), { channel: "ops", connectors: [] })
+      expect(() => broadcaster.broadcast("message")).not.toThrow()
+      expect(failed.closed).toEqual({ code: 1011, reason: "send failed" })
+      expect(healthy.sent).toHaveLength(1)
+      expect(broadcaster.getClientCount()).toBe(1)
+    },
+  )
   test("persistence failure prevents live delivery and in-memory replay", () => {
     const broadcaster = new FunnelBroadcaster({
       record: () => {
