@@ -457,6 +457,12 @@ export class FunnelBroadcaster {
     return stream
   }
 
+  /** Release monitoring callbacks and discard notifications awaiting dispatch. */
+  closeObservers(): void {
+    this.subscribers.clear()
+    this.observerQueue = []
+  }
+
   closeEventStreams(): void {
     for (const stream of this.streams.keys()) stream.close()
   }

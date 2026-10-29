@@ -275,6 +275,7 @@ export class FunnelGatewayModule {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.broadcaster.closeObservers()
     invokeCallback(
       () => this.registry.close(),
       (error) =>
@@ -294,6 +295,7 @@ export class FunnelGatewayModule {
     if (this.stopPromise) return this.stopPromise
     const completion = Promise.withResolvers<void>()
     this.stopPromise = completion.promise
+    this.broadcaster.closeObservers()
     const stopping = (async () => {
       try {
         const closing = this.registry.close()
@@ -415,6 +417,8 @@ export class FunnelGatewayModule {
    * process cannot be observed this way — use a WS client for that.
    */
   onEvent(handler: BroadcastSubscriber): () => void {
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new Error("gateway is stopped")
     return this.broadcaster.subscribe(handler)
   }
 
