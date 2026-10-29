@@ -477,11 +477,23 @@ export class FunnelGatewayModule {
   emit(input: GatewayEmitInput): { offset: number } {
     if (this.disposed || this.stopPromise || this.signal?.aborted)
       throw new Error("gateway is stopped")
-    const channel = this.resolveChannel(input.channel)
+    const channelRef = input.channel
+    const connector = input.connector
+    const content = input.content
+    const meta = input.meta
+    const snapshot: GatewayEmitInput = {
+      channel: channelRef,
+      connector,
+      content,
+      meta: meta === undefined ? undefined : { ...meta },
+    }
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new Error("gateway is stopped")
+    const channel = this.resolveChannel(channelRef)
 
-    if (!channel) throw new FunnelChannelNotFoundError(input.channel)
+    if (!channel) throw new FunnelChannelNotFoundError(channelRef)
 
-    return this.emitResolved(channel, input)
+    return this.emitResolved(channel, snapshot)
   }
 
   private emitResolved(channel: ResolvedChannel, input: GatewayEmitInput): { offset: number } {
