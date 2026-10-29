@@ -9,7 +9,7 @@ import { sendWsPayload } from "@/gateway/send-ws-payload"
 import { invokeCallback } from "@/invoke-callback"
 import { requireTimestamp } from "@/require-timestamp"
 import { requireSynchronous } from "@/require-synchronous"
-import { normalizeError } from "@/engine/error/error-message-of"
+import { errorMessageOf, normalizeError } from "@/engine/error/error-message-of"
 import {
   FunnelEventStream,
   type EventStreamOptions,
@@ -338,7 +338,7 @@ export class FunnelBroadcaster {
         invokeCallback(
           () => claimed,
           (error) =>
-            this.onError(error instanceof Error ? error : new Error(String(error)), {
+            this.onError(normalizeError(error), {
               component: "broadcaster.claim-exclusive",
               offset: event.offset,
               channelId: data.channel,
@@ -583,10 +583,10 @@ export class FunnelBroadcaster {
             invokeCallback(
               () => handler(delivered),
               (error) => {
-                const err = error instanceof Error ? error : new Error(String(error))
+                const err = normalizeError(error)
 
                 invokeCallback(() =>
-                  this.logger?.error("broadcast subscriber threw", { error: err.message }),
+                  this.logger?.error("broadcast subscriber threw", { error: errorMessageOf(err) }),
                 )
                 invokeCallback(() =>
                   this.onError(err, {
@@ -660,7 +660,7 @@ export class FunnelBroadcaster {
           () => this.clients.get(ws) === recipient.data,
         )
       } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error))
+        const err = normalizeError(error)
         if (this.clients.get(ws) !== recipient.data) continue
         const data = recipient.data
         this.clients.delete(ws)
@@ -684,7 +684,7 @@ export class FunnelBroadcaster {
         invokeCallback(() =>
           this.logger?.warn("ws.send failed; dropping client", {
             channel: data?.channel,
-            error: err.message,
+            error: errorMessageOf(err),
           }),
         )
       }
