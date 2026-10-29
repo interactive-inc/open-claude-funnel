@@ -107,9 +107,11 @@ export class FunnelConnectorRegistry {
     context: ConnectorOperationContext,
   ): { config: BaseConnectorConfig; result: unknown } {
     const descriptor = this.require(config.type)
-    const operation = descriptor.operations[name]
+    const operation = Object.hasOwn(descriptor.operations, name)
+      ? descriptor.operations[name]
+      : undefined
 
-    if (!operation) {
+    if (typeof operation !== "function") {
       throw new Error(`connector type "${config.type}" has no operation "${name}"`)
     }
 
