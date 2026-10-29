@@ -1,3 +1,4 @@
+import { normalizeSqlitePath } from "@/event-log/sqlite-path"
 import { encodeSqliteText, SQLITE_TEXT_PARAMETER } from "@/event-log/sqlite-text"
 import { requireTimestamp } from "@/require-timestamp"
 import { invokeCallback } from "@/invoke-callback"
@@ -206,7 +207,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     // environment errors out with an opaque `unable to open database file`.
     // Create it here. `:memory:` is a sentinel handled by SQLite, not a path,
     // so skip it.
-    const path = props.path
+    const path = normalizeSqlitePath(props.path)
     if (path !== ":memory:") {
       const dir = dirname(path)
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true })

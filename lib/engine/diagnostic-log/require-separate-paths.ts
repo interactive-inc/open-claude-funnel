@@ -1,3 +1,4 @@
+import { normalizeSqlitePath } from "@/event-log/sqlite-path"
 import { lstatSync, realpathSync, statSync } from "node:fs"
 import { dirname, join, parse, sep } from "node:path"
 
@@ -22,7 +23,8 @@ export function requireSeparateDiagnosticPaths(paths: readonly string[]): void {
       if (!isMissing(error)) throw error
     }
   }
-  paths.forEach((path, index) => {
+  paths.forEach((input, index) => {
+    const path = normalizeSqlitePath(input)
     if (path === ":memory:") return
     const canonical = canonicalPath(path)
     for (const suffix of ["", "-wal", "-shm", "-journal"]) {
