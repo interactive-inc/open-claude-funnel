@@ -2,6 +2,34 @@ import { expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
 import { FunnelGatewayClient } from "@/gateway/gateway-client"
 
+for (const cleanup of ["complete", "throw", "reject", "pending"] as const) {
+  test(`listener list cancels an unused error body without waiting for cleanup (${cleanup})`, async () => {
+    let cancellations = 0
+    const client = new FunnelGatewayClient({
+      baseUrl: "https://gateway.example",
+      token: () => "example-token",
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("unfinished error response"))
+            },
+            cancel() {
+              cancellations++
+              if (cleanup === "throw") throw new Error("cleanup failed")
+              if (cleanup === "reject") return Promise.reject(new Error("cleanup failed"))
+              if (cleanup === "pending") return new Promise<void>(() => {})
+            },
+          }),
+          { status: 503 },
+        ),
+    })
+    expect(await client.list()).toEqual({ state: "error", reason: "HTTP 503" })
+    expect(cancellations).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+}
+
 test("HTTP client publishes to the native gateway and observes listener state", async () => {
   const gateway = new Funnel({ channels: [{ name: "ops" }] }).gatewayServer({
     port: 0,

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { invokeCallback } from "@/invoke-callback"
 import {
   publishRequestSchema,
   publishResponseSchema,
@@ -64,7 +65,10 @@ export class FunnelGatewayClient {
     try {
       if (!this.available()) return { state: "offline" }
       const response = await this.request("/listeners")
-      if (!response.ok) return { state: "error", reason: `HTTP ${response.status}` }
+      if (!response.ok) {
+        invokeCallback(() => response.body?.cancel())
+        return { state: "error", reason: `HTTP ${response.status}` }
+      }
       const body = z.object({ listeners: z.array(entrySchema) }).parse(await response.json())
       return { state: "ok", listeners: body.listeners }
     } catch (error) {
