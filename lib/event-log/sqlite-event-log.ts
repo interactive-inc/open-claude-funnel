@@ -47,9 +47,9 @@ export type SqliteEventLogProps<E, I extends ReadonlyArray<string>> = I extends 
     }
 
 export type SqliteEventLogQuery<I extends ReadonlyArray<string>> = {
-  /** Return only records with seq strictly greater than this. */
+  /** Non-negative safe integer. Return only records with seq strictly greater than this. */
   sinceSeq?: number
-  /** Match one sequence number exactly instead of using `sinceSeq`. */
+  /** Non-negative safe integer. Match one sequence number exactly instead of using `sinceSeq`. */
   seq?: number
   /** Filter by the top-level `event.type` discriminator. */
   type?: string
@@ -59,7 +59,7 @@ export type SqliteEventLogQuery<I extends ReadonlyArray<string>> = {
   wherePrefix?: IndexPrefixes<I>
   /** Match any value in a set for indexed columns. */
   whereIn?: IndexSets<I>
-  /** Maximum rows returned. Default 1000. */
+  /** Maximum rows returned, as a non-negative safe integer. Default 1000; zero returns no rows. */
   limit?: number
   /**
    * Which end of the seq range to take when `limit` clips the result.
@@ -317,15 +317,18 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   query(props: SqliteEventLogQuery<I> = {}): EventLogEntry<E>[] {
+    const limit = requireIntegerLimit(props.limit === undefined ? 1000 : props.limit, "limit")
     const conditions: string[] = []
     const params: SQLQueryBindings[] = []
 
     if (props.seq !== undefined) {
       conditions.push("seq = ?")
-      params.push(props.seq)
+      params.push(requireIntegerLimit(props.seq, "seq"))
     } else {
       conditions.push("seq > ?")
-      params.push(props.sinceSeq ?? 0)
+      params.push(
+        requireIntegerLimit(props.sinceSeq === undefined ? 0 : props.sinceSeq, "sinceSeq"),
+      )
     }
 
     if (typeof props.type === "string") {
@@ -345,7 +348,6 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.appendSetConditions(props.whereIn, conditions, params)
     }
 
-    const limit = props.limit ?? 1000
     params.push(limit)
 
     // "desc" selects the newest `limit` rows at the DB; we then re-sort them
