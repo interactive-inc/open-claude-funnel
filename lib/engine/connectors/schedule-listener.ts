@@ -509,9 +509,10 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private truncateToMinute(date: Date): Date {
-    const copy = new Date(date.getTime())
-    copy.setSeconds(0, 0)
-    return copy
+    // Local setters can choose an earlier occurrence of an ambiguous DST hour.
+    const timestamp = requireTimestamp(date.getTime())
+    const rounded = timestamp - date.getSeconds() * 1000 - date.getMilliseconds()
+    return new Date(requireTimestamp(rounded))
   }
 
   private pruneRemovedEntries(state: Map<string, Date>): boolean {
