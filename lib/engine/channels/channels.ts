@@ -234,7 +234,7 @@ export class FunnelChannels {
 
       const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
 
-      this.assertNoTokenCollision(settings, updated)
+      this.assertNoTokenCollision(settings, updated, connector)
       this.replaceConnector(channel, connector.name, updated)
     })
   }
@@ -386,14 +386,18 @@ export class FunnelChannels {
     channel.connectors[index] = next
   }
 
-  private assertNoTokenCollision(settings: Settings, candidate: BaseConnectorConfig): void {
+  private assertNoTokenCollision(
+    settings: Settings,
+    candidate: BaseConnectorConfig,
+    replaced?: BaseConnectorConfig,
+  ): void {
     const tokens = this.registry.secretTokens(candidate)
 
     if (tokens.length === 0) return
 
     for (const channel of settings.channels) {
       for (const other of channel.connectors) {
-        if (other.id === candidate.id) continue
+        if (other === replaced) continue
 
         for (const token of this.registry.secretTokens(other)) {
           if (tokens.includes(token)) {
