@@ -19,7 +19,8 @@ type ListenerRegistryNotify = (
   channelName: string,
   connectorName: string,
   content: string,
-  meta?: Record<string, string>,
+  meta: Record<string, string> | undefined,
+  identity: { channelId: string; connectorId: string },
 ) => Promise<void>
 
 type RunningEntry = {
@@ -309,7 +310,10 @@ export class FunnelListenerRegistry {
         try {
           const current = this.configured(key)
           if (!current) throw new Error("listener configuration no longer exists")
-          await this.notify(current.channelName, current.name, content, meta)
+          await this.notify(current.channelName, current.name, content, meta, {
+            channelId: current.channelId,
+            connectorId: current.id,
+          })
           this.recordEvent(key)
         } catch (error) {
           this.recordError(key)

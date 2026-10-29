@@ -7,6 +7,7 @@ import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import {
   FunnelChannelAmbiguousError,
   FunnelChannelNotFoundError,
+  FunnelConnectorNotFoundError,
 } from "@/engine/error/funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelClock } from "@/engine/time/clock"
@@ -22,6 +23,7 @@ import { WebSocketBackpressureError } from "@/gateway/errors"
 import { invokeCallback } from "@/invoke-callback"
 import { logInfo } from "@/gateway/log-info"
 import { requireTimestamp } from "@/require-timestamp"
+import type { GatewayEmitInput } from "@/gateway/routes/route-deps"
 
 export type GatewayEventsOptions = EventStreamOptions & {
   channel: string
@@ -192,8 +194,17 @@ export class FunnelGatewayModule {
       channels: this.channels,
       logger: this.logger,
       onError: this.onError,
-      notify: async (channelName, connectorName, content, meta) => {
-        this.emit({ channel: channelName, connector: connectorName, content, meta })
+      notify: async (_channelName, _connectorName, content, meta, identity) => {
+        const channel = this.resolveChannel(identity.channelId, "id")
+        if (!channel) throw new FunnelChannelNotFoundError(identity.channelId)
+        const index = channel.connectorIds.indexOf(identity.connectorId)
+        if (index < 0) throw new FunnelConnectorNotFoundError(channel.name, identity.connectorId)
+        this.emitResolved(channel, {
+          channel: channel.name,
+          connector: channel.connectors[index],
+          content,
+          meta,
+        })
       },
       now: this.nowMs,
     })
@@ -430,22 +441,25 @@ export class FunnelGatewayModule {
    *
    * The host can publish in-process without an HTTP request.
    */
-  emit(input: {
-    channel: string
-    connector?: string
-    content: string
-    meta?: Record<string, string>
-  }): { offset: number } {
+  emit(input: GatewayEmitInput): { offset: number } {
     if (this.disposed || this.stopPromise || this.signal?.aborted)
       throw new Error("gateway is stopped")
     const channel = this.resolveChannel(input.channel)
 
     if (!channel) throw new FunnelChannelNotFoundError(input.channel)
 
+    return this.emitResolved(channel, input)
+  }
+
+  private emitResolved(channel: ResolvedChannel, input: GatewayEmitInput): { offset: number } {
+    if (this.disposed || this.stopPromise || this.signal?.aborted)
+      throw new Error("gateway is stopped")
     const channelId = channel.id
     this.broadcaster.updateChannel(channel.id, channel)
     const connectorId =
-      channelId && input.connector ? this.lookupConnectorId(channelId, input.connector) : null
+      input.connector === undefined
+        ? undefined
+        : channel.connectorIds[channel.connectors.indexOf(input.connector)]
     const enriched: Record<string, string> = {
       ...input.meta,
       channel: input.channel,
@@ -453,7 +467,7 @@ export class FunnelGatewayModule {
     delete enriched.connector
     delete enriched.connectorId
 
-    if (input.connector) enriched.connector = input.connector
+    if (input.connector !== undefined) enriched.connector = input.connector
     if (channelId) enriched.channelId = channelId
     if (connectorId) enriched.connectorId = connectorId
 
@@ -597,9 +611,13 @@ export class FunnelGatewayModule {
     return false
   }
 
-  private resolveChannel(requested: string): ResolvedChannel | null {
+  private resolveChannel(
+    requested: string,
+    mode: "name-or-id" | "id" = "name-or-id",
+  ): ResolvedChannel | null {
     const channels = this.channels.list()
-    const byName = channels.find((channel) => channel.name === requested)
+    const byName =
+      mode === "name-or-id" ? channels.find((channel) => channel.name === requested) : undefined
     const byId = channels.find((channel) => channel.id === requested)
     if (byName && byId && byName.id !== byId.id) throw new FunnelChannelAmbiguousError(requested)
     const channel = byName ?? byId
@@ -628,12 +646,6 @@ export class FunnelGatewayModule {
     }
 
     logInfo(this.logger, this.onError, "funnel gateway running")
-  }
-
-  private lookupConnectorId(channelId: string, connectorName: string): string | null {
-    const channel = this.channels.getById(channelId)
-
-    return channel?.connectors.find((c) => c.name === connectorName)?.id ?? null
   }
 
   private assertHttpActive(): void {
