@@ -26,19 +26,51 @@ export function agentSdkInput(
   events: AsyncIterable<ReplayableEvent>,
 ): AsyncIterableIterator<AgentSdkInputMessage> {
   const iterator = events[Symbol.asyncIterator]()
+  const done = (): IteratorReturnResult<undefined> => ({ done: true, value: undefined })
+  const pending = new Set<() => void>()
+  let closed = false
+  let closing: Promise<IteratorReturnResult<undefined>> | undefined
+  const close = () => {
+    closed = true
+    for (const cancel of pending) cancel()
+    pending.clear()
+  }
   return {
     [Symbol.asyncIterator]() {
       return this
     },
     async next() {
-      const item = await iterator.next()
-      return item.done
-        ? { done: true, value: undefined }
-        : { done: false, value: agentSdkMessage(item.value) }
+      if (closed) return done()
+      const canceled = Promise.withResolvers<IteratorReturnResult<undefined>>()
+      const cancel = () => canceled.resolve(done())
+      pending.add(cancel)
+      const read = async (): Promise<IteratorResult<AgentSdkInputMessage>> => {
+        const item = await iterator.next()
+        if (closed) return done()
+        if (item.done) {
+          close()
+          return done()
+        }
+        return { done: false, value: agentSdkMessage(item.value) }
+      }
+      try {
+        return await Promise.race([read(), canceled.promise])
+      } finally {
+        pending.delete(cancel)
+      }
     },
-    async return() {
-      await iterator.return?.()
-      return { done: true, value: undefined }
+    return() {
+      close()
+      if (closing) return closing
+      // Install the cleanup guard before invoking host code, which may reenter.
+      const completion = Promise.withResolvers<IteratorReturnResult<undefined>>()
+      closing = completion.promise
+      const cleanup = async () => {
+        await iterator.return?.()
+        return done()
+      }
+      void cleanup().then(completion.resolve, completion.reject)
+      return closing
     },
   }
 }

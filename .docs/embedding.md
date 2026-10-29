@@ -82,6 +82,7 @@ await client.publish("ops", { content: "host event" })
 - 再送は購読開始時の offset を上限に、`next()` の読み取りに合わせて進める。保存ログは64件以下のページで読み、現在のメモリ保持分と offset 順に合流する。再送中の新着入力はライブ用キューに入り、履歴の後に一度だけ渡す。未読の exclusive 履歴は先に取得者へ割り当てず、読む時点で claim する。
 - 未読キューは `maxQueuedEvents`（既定200件）と `maxQueuedBytes`（既定4 MiB、JSON全体のUTF-8バイト数）で制限する。超過すると当該購読を解除し、`next()` がエラーになる。他の購読は継続する。
 - `return()`、`break`、購読の `signal` の abort、gateway の停止で未読入力を破棄し、待機中の `next()` を終了する。使用しなくなった列は、読み始めていなくても解除する。`agentSdkInput` の `return()` も元の列へ解除を伝える。
+- `agentSdkInput` は解除開始時に待機中の読み取りを終了し、その後の読み取りや遅れて届く元の列のイベントを SDK へ渡さない。元の列に `return()` がなくてもこの規則を適用する。同時に複数回解除しても元の列の解除は一度だけ実行し、その完了または失敗を呼び出し元へ返す。
 - gateway の停止は SDK の実行中タスクやホストの MCP サーバーを閉じない。それぞれの既存 API で終了する。
 - `gateway.stop()` の開始後は gateway の HTTP 操作と新たな WebSocket 購読を HTTP 503 で拒否する。認証が必要な入口では認証を先に確認する。既存の WebSocket 購読も閉じ、取得済みの registry は接続を再開できなくなる。ホストの独自ルートと `healthRoute: false` でホストが持つ health は継続できる。
 - 返信は利用側が登録した SDK / MCP ツールから `funnel.channels.call(channel, connector, request)` を呼ぶ。受信時のサービス固有メタデータを使って返信先を指定する。投稿可否・送信者の許可・対象ツールの公開はホストで決める。
