@@ -78,17 +78,13 @@ export class FunnelSlackEventProcessor {
     if (!ALLOWED_SUBTYPES.has(subtype)) return { skip: true, reason: "skip:subtype" }
 
     const channelId = getString(event, "channel") ?? ""
-    const eventTs = getString(event, "event_ts") ?? getString(event, "ts") ?? ""
-    const dedupKey = `${channelId}:${eventTs}`
+    const eventTs = getString(event, "event_ts") || getString(event, "ts") || ""
+    const dedupKey = channelId && eventTs ? JSON.stringify([channelId, eventTs]) : null
     const now = this.now()
+    const seenAt = dedupKey === null ? undefined : this.dedup.get(dedupKey)
 
-    if (this.dedup.has(dedupKey)) return { skip: true, reason: "skip:dedup" }
-
-    this.dedup.set(dedupKey, now)
-
-    for (const key of this.dedup.keys()) {
-      if ((this.dedup.get(key) ?? 0) < now - DEDUP_WINDOW) this.dedup.delete(key)
-    }
+    if (seenAt !== undefined && seenAt >= now - DEDUP_WINDOW)
+      return { skip: true, reason: "skip:dedup" }
 
     const userId = getString(event, "user")
     const botId = getString(event, "bot_id")
@@ -115,11 +111,17 @@ export class FunnelSlackEventProcessor {
       mentioned,
       source,
     }
+    const content = JSON.stringify(emitted)
+    if (content === undefined) throw new Error("Slack event could not be serialized")
+    if (dedupKey !== null) this.dedup.set(dedupKey, now)
+    for (const [key, timestamp] of this.dedup) {
+      if (timestamp < now - DEDUP_WINDOW) this.dedup.delete(key)
+    }
 
     return {
       skip: false,
       event: message,
-      content: JSON.stringify(emitted),
+      content,
       meta: {
         event_type: "slack",
         channel_id: channelId,
