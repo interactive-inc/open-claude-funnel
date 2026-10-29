@@ -180,7 +180,7 @@ export class FunnelGatewayModule {
       record: (event) => {
         if (this.disposed || this.stopPromise || this.signal?.aborted)
           throw new Error("gateway is stopped")
-        this.eventLog.record({
+        return this.eventLog.record({
           content: event.content,
           channelId: event.meta?.channelId ?? null,
           connectorId: event.meta?.connectorId ?? null,

@@ -119,7 +119,7 @@ type Deps = {
   replayBufferMaxBytes?: number
   /** Persistent replay source consulted when the in-memory buffer cannot satisfy `since`. */
   persistentReplay?: ReplaySource
-  /** Persist the assigned event before notifying any consumer. */
+  /** Persist synchronously before notifying consumers. Promises/thenables are rejected. */
   record?: (event: ReplayableEvent) => void
 }
 
@@ -600,7 +600,23 @@ export class FunnelBroadcaster {
     const delivered = eventSnapshot(event)
     const payload = JSON.stringify(delivered)
     const eventBytes = this.replayBufferSize > 0 ? byteLengthOf(event) : 0
-    this.record?.(delivered)
+    const persisted: unknown = this.record?.(delivered)
+    if (persisted instanceof Error) throw persisted
+    if (
+      persisted !== null &&
+      (typeof persisted === "object" || typeof persisted === "function") &&
+      typeof Reflect.get(persisted, "then") === "function"
+    ) {
+      invokeCallback(
+        () => persisted,
+        (error) =>
+          this.onError(error instanceof Error ? error : new Error(String(error)), {
+            component: "broadcaster.persistence",
+            offset: delivered.offset,
+          }),
+      )
+      throw new Error("event persistence must be synchronous")
+    }
 
     this.eventsBroadcast += 1
     this.lastBroadcastAt = broadcastAt

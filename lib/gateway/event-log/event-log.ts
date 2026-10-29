@@ -46,6 +46,7 @@ export type FunnelEventRecord = {
  *     that do not need durability (replay is lost when the process exits).
  */
 export abstract class FunnelEventLog {
+  /** Complete synchronously or throw. Async implementations cannot be used for publication. */
   abstract record(record: FunnelEventRecord): void
 
   /**
