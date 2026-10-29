@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { invokeCallback } from "@/invoke-callback"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 import {
   publishRequestSchema,
   publishResponseSchema,
@@ -138,5 +139,5 @@ function encodePathName(value: string, label: string): string {
 }
 
 function failure(error: unknown): { state: "error"; reason: string } {
-  return { state: "error", reason: error instanceof Error ? error.message : String(error) }
+  return { state: "error", reason: errorMessageOf(error) }
 }
