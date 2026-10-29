@@ -238,6 +238,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       order: "desc",
     })
 
+    for (const record of records) requireMatchingIdentity(record.event, query)
     return records.map((record) => ({
       seq: record.seq,
       ts: record.ts,
@@ -271,6 +272,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       order: "desc",
     })
 
+    for (const record of records) requireMatchingIdentity(record.event, query)
     return records.map((record) => ({
       seq: record.seq,
       ts: record.ts,
@@ -302,6 +304,7 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       order: "desc",
     })
 
+    for (const record of records) requireMatchingIdentity(record.event, query)
     return records.map((record) => ({
       seq: record.seq,
       ts: record.ts,
@@ -347,6 +350,18 @@ const buildWhere = (query: ConnectorQuery): WhereClause => {
   if (query.channelId !== undefined) where.channel_id = query.channelId
 
   return where
+}
+
+const requireMatchingIdentity = (
+  event: { type: string; channel_id: string | null; connector_id: string | null },
+  query: ConnectorQuery,
+): void => {
+  if (
+    (query.type !== undefined && event.type !== query.type) ||
+    (query.channelId !== undefined && event.channel_id !== query.channelId) ||
+    (query.connectorId !== undefined && event.connector_id !== query.connectorId)
+  )
+    throw new Error("diagnostic routing index conflicts with stored identity")
 }
 
 // Narrow the stored string back to the union without `as`, validating against
