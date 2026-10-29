@@ -1,3 +1,4 @@
+import { ObservedFunnelLogger } from "@/engine/logger/observed-logger"
 import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import type { FunnelClock } from "@/engine/time/clock"
 import type { FunnelLogger } from "@/engine/logger/logger"
@@ -18,12 +19,14 @@ type Props = {
 export class FunnelChannelSupervisor {
   private readonly channels = new Map<string, Channel>()
   private readonly registry: FunnelListenerRegistry
+  private readonly logger: FunnelLogger
   private started = false
   private closed = false
 
   constructor(private readonly props: Props) {
+    this.logger = new ObservedFunnelLogger(props.logger, () => {})
     this.registry = new FunnelListenerRegistry({
-      logger: props.logger,
+      logger: this.logger,
       channels: {
         listAllConnectors: () =>
           [...this.channels.keys()].map((id) => ({
@@ -40,7 +43,7 @@ export class FunnelChannelSupervisor {
             : {
                 channelId: id,
                 config: { id, name: id, type: "channel" },
-                listener: new FunnelChannelListener({ ...props, channel }),
+                listener: new FunnelChannelListener({ ...props, logger: this.logger, channel }),
               }
         },
       },
@@ -52,7 +55,7 @@ export class FunnelChannelSupervisor {
       "abort",
       () => {
         void this.stop().catch((error: unknown) => {
-          props.logger.error("channel shutdown failed", { error: String(error) })
+          this.logger.error("channel shutdown failed", { error: String(error) })
         })
       },
       { once: true },
@@ -100,9 +103,9 @@ export class FunnelChannelSupervisor {
     try {
       const result = await this.registry.start(channel.id, channel.id)
       if (result.ok) return
-      this.props.logger.error(`channel "${channel.id}" failed to start`, { error: result.reason })
+      this.logger.error(`channel "${channel.id}" failed to start`, { error: result.reason })
     } catch (error) {
-      this.props.logger.error(`channel "${channel.id}" failed to start`, { error: String(error) })
+      this.logger.error(`channel "${channel.id}" failed to start`, { error: String(error) })
     }
     if (this.channels.get(channel.id) === channel) this.channels.delete(channel.id)
   }
