@@ -3,6 +3,7 @@ import type { ReplayableEvent } from "@/gateway/broadcaster"
 import { FunnelEventLog, type FunnelEventRecord } from "@/gateway/event-log/event-log"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { replayRoutingMetadata } from "@/gateway/event-log/replay-routing"
+import { isValidExclusiveClaim } from "@/gateway/event-log/exclusive-claim"
 
 type StoredEvent = {
   offset: number
@@ -107,7 +108,9 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
   }
 
   override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
+    if (!isValidExclusiveClaim(offset, channelId, subscriberId)) return false
     const event = this.events.find((candidate) => candidate.offset === offset)
+    if (event && event.channelId !== null && event.channelId !== channelId) return false
     const exclusive = event?.exclusive
 
     if (!event || !exclusive || !Object.hasOwn(exclusive, channelId)) return false

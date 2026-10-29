@@ -12,6 +12,7 @@ import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-clai
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { invokeCallback } from "@/invoke-callback"
 import { replayRoutingMetadata } from "@/gateway/event-log/replay-routing"
+import { isValidExclusiveClaim } from "@/gateway/event-log/exclusive-claim"
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */
@@ -198,9 +199,11 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
   }
 
   override claimExclusive(offset: number, channelId: string, subscriberId: string): boolean {
+    if (!isValidExclusiveClaim(offset, channelId, subscriberId)) return false
     const stored = this.sink.query({ seq: offset, limit: 1 })[0]
     if (!stored) return false
     const event = this.parseEvent(stored.event)
+    if (event.channel_id !== null && event.channel_id !== channelId) return false
     const assigned =
       event.exclusive && Object.hasOwn(event.exclusive, channelId)
         ? event.exclusive[channelId]
