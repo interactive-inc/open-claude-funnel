@@ -106,6 +106,10 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
     "CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)",
     "CREATE INDEX IF NOT EXISTS idx_logs_type ON logs (type)",
   ],
+  [
+    "CREATE TABLE IF NOT EXISTS log_sequence (id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL)",
+    "INSERT OR IGNORE INTO log_sequence (id, seq) SELECT 1, COALESCE(MAX(seq), 0) FROM logs",
+  ],
 ]
 
 /**
@@ -114,11 +118,10 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
  * mirror records from another (e.g. cross-process replication, restore
  * from a backup stream).
  *
- * Concurrency model: seq is `INTEGER PRIMARY KEY`, so SQLite assigns it
- * atomically via `lastInsertRowid`. Two `EventLog` instances pointed
- * at the same database file therefore see one monotonically increasing
- * seq stream without coordinating through `EventLog` — the database itself is
- * the synchronization point.
+ * Concurrency model: a one-row sequence table and the payload are updated in
+ * the same write transaction. Two processes share a monotonically increasing
+ * stream even after retention or clear removes all payloads. Relay writes
+ * advance the same watermark without moving it backwards.
  *
  * Schema is version-managed via `PRAGMA user_version`. Migrations are
  * append-only and run in a transaction on every construct so a partial
@@ -149,8 +152,9 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private readonly now: () => number
   private readonly indexes: I
   private readonly extractIndexes: ((event: E) => IndexValues<I>) | null
-  private readonly insertStmt: Statement<unknown, SQLQueryBindings[]>
   private readonly insertWithSeqStmt: Statement<unknown, SQLQueryBindings[]>
+  private readonly nextSeqStmt: Statement<MaxRow, []>
+  private readonly advanceSeqStmt: Statement<unknown, [number]>
   private readonly maxSeqStmt: Statement<MaxRow, []>
   private readonly countStmt: Statement<CountRow, []>
   private readonly trimRowsStmt: Statement<unknown, [number]>
@@ -209,20 +213,19 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       }
 
       const cols = ["ts", "type", "event", ...this.indexes]
-      const placeholders = cols.map(() => "?").join(", ")
       // Database.query owns its cached statements and finalizes them on close.
       // Unmanaged prepare() statements keep SQLite file handles alive after close_v2.
-      this.insertStmt = this.db.query(
-        `INSERT INTO logs (${cols.join(", ")}) VALUES (${placeholders})`,
-      )
-
       const colsWithSeq = ["seq", ...cols]
       const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
       this.insertWithSeqStmt = this.db.query(
         `INSERT INTO logs (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
       )
 
-      this.maxSeqStmt = this.db.query("SELECT COALESCE(MAX(seq), 0) AS max FROM logs")
+      this.nextSeqStmt = this.db.query(
+        "UPDATE log_sequence SET seq = seq + 1 WHERE id = 1 RETURNING seq AS max",
+      )
+      this.advanceSeqStmt = this.db.query("UPDATE log_sequence SET seq = MAX(seq, ?) WHERE id = 1")
+      this.maxSeqStmt = this.db.query("SELECT seq AS max FROM log_sequence WHERE id = 1")
       this.countStmt = this.db.query("SELECT COUNT(*) AS n FROM logs")
       this.trimRowsStmt = this.db.query(
         "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
@@ -240,10 +243,13 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   insert(input: { ts: number; event: E }): EventLogEntry<E> | Error {
     try {
       const params = this.buildInsertParams(input.ts, input.event)
-      const result = this.insertStmt.run(...params)
-      const seq = Number(result.lastInsertRowid)
+      const record = this.db.transaction(() => {
+        const seq = this.nextSequence()
+        this.insertWithSeqStmt.run(seq, ...params)
+        return { seq, ts: input.ts, event: input.event }
+      })()
       this.trim()
-      return { seq, ts: input.ts, event: input.event }
+      return record
     } catch (e) {
       return e instanceof Error ? e : new Error(String(e))
     }
@@ -257,9 +263,10 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const apply = this.db.transaction((batch: ReadonlyArray<{ ts: number; event: E }>) => {
         for (const input of batch) {
           const params = this.buildInsertParams(input.ts, input.event)
-          const result = this.insertStmt.run(...params)
+          const seq = this.nextSequence()
+          this.insertWithSeqStmt.run(seq, ...params)
           records.push({
-            seq: Number(result.lastInsertRowid),
+            seq,
             ts: input.ts,
             event: input.event,
           })
@@ -275,11 +282,16 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   write(record: EventLogEntry<E>): void | Error {
     try {
+      if (!Number.isSafeInteger(record.seq) || record.seq < 1)
+        throw new Error("event log sequence must be a positive safe integer")
       const params: SQLQueryBindings[] = [
         record.seq,
         ...this.buildInsertParams(record.ts, record.event),
       ]
-      this.insertWithSeqStmt.run(...params)
+      this.db.transaction(() => {
+        this.insertWithSeqStmt.run(...params)
+        this.advanceSeqStmt.run(record.seq)
+      })()
       this.trim()
     } catch (e) {
       return e instanceof Error ? e : new Error(String(e))
@@ -365,6 +377,15 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       : null
     const indexParams = this.indexes.map((col) => values?.[col] ?? null)
     return [ts, type, json, ...indexParams]
+  }
+
+  /** Allocate under the same write transaction as the payload; failed writes roll back both. */
+  private nextSequence(): number {
+    const row = this.nextSeqStmt.get()
+    if (!row || !Number.isSafeInteger(row.max))
+      throw new Error("event log sequence is missing or exceeds the safe integer range")
+
+    return row.max
   }
 
   private appendWhereConditions(

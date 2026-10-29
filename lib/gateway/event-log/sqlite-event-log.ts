@@ -38,11 +38,12 @@ type Props = {
  * event with `channel_id` and `connector_id` as dedicated columns, so
  * per-channel and per-connector replay is an indexed range scan.
  *
- * Concurrency: `seq` is `INTEGER PRIMARY KEY`, so SQLite assigns it
- * atomically. The broadcaster owns its own offset counter at runtime
+ * The broadcaster owns its own offset counter at runtime
  * (seeded from `findMaxOffset()` at startup); each broadcaster event
  * flows in here via `record()` with that pre-assigned offset, which the
- * sink stores via `write()` — PK uniqueness catches double-emit bugs.
+ * sink stores via `write()` together with a durable high watermark. PK
+ * uniqueness catches collisions with retained rows; one broadcaster owns
+ * offset assignment for a store.
  *
  * System events (gateway lifecycle, channel connect/disconnect, etc.) do
  * NOT go through this store. They are diagnostic only and live in

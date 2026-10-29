@@ -49,6 +49,7 @@ export abstract class FunnelEventLog {
   /** Ascending offsets strictly after since. Honor limit when provided to bound replay read-ahead. */
   abstract loadSince(since: number, limit?: number): ReplayableEvent[]
 
+  /** Highest recorded offset, preserved after retention and clear remove payloads. */
   abstract findMaxOffset(): number
 
   /** Atomically assign an unclaimed exclusive event to a reconnecting worker. */

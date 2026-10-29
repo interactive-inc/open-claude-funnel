@@ -19,11 +19,11 @@ export type EventLogRelay<E> = {
  * Primary sink. Owns the canonical seq sequence for the log. `insert` is
  * the atomic boundary — it assigns a seq strictly greater than every
  * previously assigned one, persists the record, and returns it. SQLite
- * implementations get atomicity for free by delegating to `INTEGER PRIMARY
- * KEY` so two processes sharing one database file see one monotonic
- * stream without coordinating through `EventLog`.
+ * implementations update the sequence and payload in one transaction so two
+ * processes sharing one database file see one monotonic stream, even after
+ * retention or clear removes the last payload.
  *
- * `getMaxSeq` is the highest seq currently in the sink — used for
+ * `getMaxSeq` is the highest assigned seq, including removed payloads — used for
  * observability and for replay seeding by clients reading the store.
  */
 export type EventLogStore<E> = {
