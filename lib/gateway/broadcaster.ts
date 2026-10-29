@@ -318,9 +318,27 @@ export class FunnelBroadcaster {
     if (assigned !== null) return assigned === data.subscriberId
 
     if (this.persistentReplay) {
-      const claimed =
-        this.persistentReplay.claimExclusive?.(event.offset, data.channel, data.subscriberId) ??
-        false
+      const claim = this.persistentReplay.claimExclusive
+      if (!claim) return false
+      const claimed: unknown = claim.call(
+        this.persistentReplay,
+        event.offset,
+        data.channel,
+        data.subscriberId,
+      )
+      if (claimed instanceof Error) throw claimed
+      if (typeof claimed !== "boolean") {
+        invokeCallback(
+          () => claimed,
+          (error) =>
+            this.onError(error instanceof Error ? error : new Error(String(error)), {
+              component: "broadcaster.claim-exclusive",
+              offset: event.offset,
+              channelId: data.channel,
+            }),
+        )
+        throw new Error("exclusive claim must return a boolean synchronously")
+      }
       if (!claimed) return false
       // Store pages are immutable snapshots. Only cache ownership in an event
       // still owned by this broadcaster's replay buffer.

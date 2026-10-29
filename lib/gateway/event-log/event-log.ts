@@ -59,7 +59,10 @@ export abstract class FunnelEventLog {
   /** Highest recorded offset, preserved after retention and clear remove payloads. */
   abstract findMaxOffset(): number
 
-  /** Atomically assign unclaimed work. Invalid IDs/offsets or a different scoped channel return false. */
+  /**
+   * Atomically assign unclaimed work and return a boolean synchronously.
+   * Invalid IDs/offsets or a different scoped channel return false; failures throw.
+   */
   claimExclusive(_offset: number, _channelId: string, _subscriberId: string): boolean {
     return false
   }
