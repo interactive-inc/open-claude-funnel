@@ -99,6 +99,8 @@ SQLite の保存失敗では logger と `onError` を独立して呼び、通知
 
 配信されたイベントの本文・メタデータ・exclusive 割当は読み取り専用で凍結される。値を加工する場合は自分のコピーを作り、Funnel が保持する履歴を変更しない。
 
+公開入力の `channel` / `channelId` / `connector` / `connectorId` は gateway が所有する識別情報で、入力の `meta` からは上書きできない。`connector` 引数を省略した入力は接続の識別情報を持たず、未登録の接続ラベルを渡した場合も `meta` の既存 ID を借りない。登録済みの接続を指定した場合だけ、その接続の ID を付ける。その他のメタデータと入力オブジェクトは維持する。
+
 WebSocket の `/ws` 購読には `channel` が必要。`since` を指定する場合は、非負の安全な整数を十進数の数字列で渡す。空値・負数・小数・末尾の文字・安全な整数の上限超過は HTTP 400 で拒否し、再送を省略した接続として受け付けない。履歴の読み取りまたは再送の送信が失敗した場合は `onError` / logger へ通知し、接続を code 1011・reason `replay failed` で閉じる。利用側は最後に処理できた offset から再接続する。
 
 WebSocket のライブ配信と再送は同じ送信バッファ上限を使い、超過した接続を code 1009・reason `backpressure` で閉じる。Bun の `send()` が返す 0 は送信破棄として扱い、ライブ配信なら code 1011・reason `send failed`、再送なら code 1011・reason `replay failed` で閉じる。再送はページ単位で読み、送信が止まった後の履歴を読み込んだり、未送信分をまとめて exclusive 割当したりしない。

@@ -404,6 +404,8 @@ export class FunnelGatewayModule {
       ...input.meta,
       channel: input.channel,
     }
+    delete enriched.connector
+    delete enriched.connectorId
 
     if (input.connector) enriched.connector = input.connector
     if (channelId) enriched.channelId = channelId
