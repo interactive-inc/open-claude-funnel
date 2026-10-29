@@ -21,12 +21,14 @@ type PendingRead = {
 export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent> {
   private readonly queue: { event: ReplayableEvent; bytes: number }[] = []
   private readonly pending: PendingRead[] = []
+  private readonly replayReads: PendingRead[] = []
   private readonly maxQueuedEvents: number
   private readonly maxQueuedBytes: number
   private readonly signal: AbortSignal | undefined
   private readonly onAbort = () => this.close()
   private bytes = 0
   private readingReplay = false
+  private drainingReplayReads = false
   private closed = false
   private failure: Error | undefined
 
@@ -57,8 +59,20 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
   next(): Promise<IteratorResult<ReplayableEvent>> {
     if (this.failure) return Promise.reject(this.failure)
     if (this.closed) return Promise.resolve({ value: undefined, done: true })
+    if (this.readingReplay)
+      return new Promise((resolve, reject) => this.replayReads.push({ resolve, reject }))
+    this.readingReplay = true
     try {
-      this.readingReplay = true
+      return this.readNext()
+    } finally {
+      this.readingReplay = false
+      if (this.closed) this.finishReplay()
+      this.drainReplayReads()
+    }
+  }
+
+  private readNext(): Promise<IteratorResult<ReplayableEvent>> {
+    try {
       const item = this.replay?.next()
       if (this.failure) return Promise.reject(this.failure)
       if (this.closed) return Promise.resolve({ value: undefined, done: true })
@@ -70,9 +84,6 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
       return this.failure
         ? Promise.reject(this.failure)
         : Promise.resolve({ value: undefined, done: true })
-    } finally {
-      this.readingReplay = false
-      if (this.closed) this.finishReplay()
     }
     const queued = this.queue.shift()
     if (queued) {
@@ -125,5 +136,18 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
     const replay = this.replay
     this.replay = undefined
     replay?.return?.()
+  }
+
+  private drainReplayReads(): void {
+    if (this.drainingReplayReads) return
+    this.drainingReplayReads = true
+    try {
+      let waiting: PendingRead | undefined
+      while ((waiting = this.replayReads.shift())) {
+        this.next().then(waiting.resolve, waiting.reject)
+      }
+    } finally {
+      this.drainingReplayReads = false
+    }
   }
 }
