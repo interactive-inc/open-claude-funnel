@@ -44,9 +44,9 @@ test("a gateway rejects a corrupt durable sequence before accepting events", () 
   database.close()
   const store = new SqliteFunnelEventLog({ path })
   try {
-    expect(store.findMaxOffset()).toBe(1.5)
+    expect(() => store.findMaxOffset()).toThrow("event log sequence state is invalid")
     expect(() => new Funnel().gatewayModule({ token: "", eventLog: store })).toThrow(
-      "non-negative safe integer",
+      "event log sequence state is invalid",
     )
   } finally {
     store.close()

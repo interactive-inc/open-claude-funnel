@@ -81,6 +81,7 @@ type EventRow = {
 
 type CountRow = { n: number }
 type MaxRow = { max: number }
+type SequenceStateRow = MaxRow & { retainedMax: number | null }
 type VersionRow = { user_version: number }
 type ColumnRow = { name: string }
 type PageCountRow = { page_count: number }
@@ -166,7 +167,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private readonly insertWithSeqStmt: Statement<unknown, SQLQueryBindings[]>
   private readonly nextSeqStmt: Statement<MaxRow, []>
   private readonly advanceSeqStmt: Statement<unknown, [number]>
-  private readonly maxSeqStmt: Statement<MaxRow, []>
+  private readonly maxSeqStmt: Statement<SequenceStateRow, []>
   private readonly countStmt: Statement<CountRow, []>
   private readonly trimRowsStmt: Statement<unknown, [number]>
   private readonly trimAgeStmt: Statement<unknown, [number]>
@@ -244,7 +245,9 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
         "UPDATE log_sequence SET seq = seq + 1 WHERE id = 1 RETURNING seq AS max",
       )
       this.advanceSeqStmt = this.db.query("UPDATE log_sequence SET seq = MAX(seq, ?) WHERE id = 1")
-      this.maxSeqStmt = this.db.query("SELECT seq AS max FROM log_sequence WHERE id = 1")
+      this.maxSeqStmt = this.db.query(
+        "SELECT seq AS max, (SELECT MAX(seq) FROM logs) AS retainedMax FROM log_sequence WHERE id = 1",
+      )
       this.countStmt = this.db.query("SELECT COUNT(*) AS n FROM logs")
       this.trimRowsStmt = this.db.query(
         "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
@@ -321,7 +324,17 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
   getMaxSeq(): number {
     const row = this.maxSeqStmt.get()
-    return row ? row.max : 0
+    if (
+      !row ||
+      !Number.isSafeInteger(row.max) ||
+      row.max < 0 ||
+      (row.retainedMax !== null &&
+        (!Number.isSafeInteger(row.retainedMax) ||
+          row.retainedMax < 1 ||
+          row.max < row.retainedMax))
+    )
+      throw new Error("event log sequence state is invalid")
+    return row.max
   }
 
   query(props: SqliteEventLogQuery<I> = {}): EventLogEntry<E>[] {
@@ -411,7 +424,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   /** Allocate under the same write transaction as the payload; failed writes roll back both. */
   private nextSequence(): number {
     const row = this.nextSeqStmt.get()
-    if (!row || !Number.isSafeInteger(row.max))
+    if (!row || !Number.isSafeInteger(row.max) || row.max < 1)
       throw new Error("event log sequence is missing or exceeds the safe integer range")
 
     return row.max
@@ -482,7 +495,15 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private writeTransaction<T>(write: () => T): T {
     const count = this.insertsSinceByteCheck
     try {
-      return this.db.transaction(write)()
+      // Lock before reading so concurrent WAL writers cannot invalidate the snapshot upgrade.
+      return this.db
+        .transaction(() => {
+          this.getMaxSeq()
+          const result = write()
+          this.getMaxSeq()
+          return result
+        })
+        .immediate()
     } catch (error) {
       this.insertsSinceByteCheck = count
       throw error
