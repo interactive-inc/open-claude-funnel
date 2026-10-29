@@ -179,18 +179,19 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private insertsSinceByteCheck = 0
 
   constructor(props: SqliteEventLogProps<E, I>) {
-    this.maxRows =
-      props.maxRows === undefined ? null : requireIntegerLimit(props.maxRows, "maxRows")
-    this.maxAgeMs =
-      props.maxAgeMs === undefined ? null : requireDurationLimit(props.maxAgeMs, "maxAgeMs")
-    this.maxBytes =
-      props.maxBytes === undefined ? null : requireIntegerLimit(props.maxBytes, "maxBytes")
+    const maxRows = props.maxRows
+    this.maxRows = maxRows === undefined ? null : requireIntegerLimit(maxRows, "maxRows")
+    const maxAgeMs = props.maxAgeMs
+    this.maxAgeMs = maxAgeMs === undefined ? null : requireDurationLimit(maxAgeMs, "maxAgeMs")
+    const maxBytes = props.maxBytes
+    this.maxBytes = maxBytes === undefined ? null : requireIntegerLimit(maxBytes, "maxBytes")
+    const targetBytes = props.targetBytes
     this.targetBytes =
-      props.targetBytes === undefined
+      targetBytes === undefined
         ? this.maxBytes === null
           ? null
           : Math.floor(this.maxBytes / 4)
-        : requireIntegerLimit(props.targetBytes, "targetBytes")
+        : requireIntegerLimit(targetBytes, "targetBytes")
     if (this.targetBytes !== null && (this.maxBytes === null || this.targetBytes > this.maxBytes))
       throw new RangeError("targetBytes requires maxBytes and must not exceed it")
     // Snapshot before validation: callers can retain and mutate the input array.
@@ -201,11 +202,12 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     // environment errors out with an opaque `unable to open database file`.
     // Create it here. `:memory:` is a sentinel handled by SQLite, not a path,
     // so skip it.
-    if (props.path !== ":memory:") {
-      const dir = dirname(props.path)
+    const path = props.path
+    if (path !== ":memory:") {
+      const dir = dirname(path)
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     }
-    this.db = new Database(props.path)
+    this.db = new Database(path)
     // Anything after open can throw (lock timeout, disk, schema). Close the
     // handle so a failed constructor does not leak it to the caller's retry.
     try {
