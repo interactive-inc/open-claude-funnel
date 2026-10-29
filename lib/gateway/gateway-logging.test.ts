@@ -5,6 +5,50 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+const thrownValues = [
+  { name: "null-prototype value", create: () => Object.create(null) },
+  {
+    name: "revoked proxy",
+    create: () => {
+      const { proxy, revoke } = Proxy.revocable({}, {})
+      revoke()
+      return proxy
+    },
+  },
+  { name: "Error", create: () => new Error("original logger failure") },
+]
+
+for (const fixture of thrownValues) {
+  for (const mode of ["throw", "reject"] as const) {
+    test(`logger ${mode} failures containing ${fixture.name} reach the gateway reporter`, async () => {
+      const failure = fixture.create()
+      const reports: { error: Error; component: unknown }[] = []
+      class Logger extends MemoryFunnelLogger {
+        override info() {
+          if (mode === "throw") throw failure
+          return Promise.reject(failure)
+        }
+      }
+      const gateway = new Funnel({
+        logger: new Logger(),
+        onError(error, context) {
+          reports.push({ error, component: context?.component })
+        },
+      }).gatewayModule({ token: "" })
+      try {
+        await gateway.start()
+        await Bun.sleep(0)
+        expect(reports).toHaveLength(1)
+        expect(reports[0]!.component).toBe("gateway-logger")
+        if (fixture.name === "Error") expect(reports[0]!.error).toBe(failure)
+        else expect(reports[0]!.error.message).toBe("Unprintable thrown value")
+      } finally {
+        await gateway.stop()
+      }
+    })
+  }
+}
+
 test("a throwing startup logger does not leave a failed facade over a bound server", async () => {
   const reported: string[] = []
   class Logger extends MemoryFunnelLogger {
