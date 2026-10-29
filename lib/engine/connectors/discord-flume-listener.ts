@@ -6,6 +6,7 @@ import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-p
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
+import { listenerSignal } from "@/engine/connectors/listener-signal"
 import type { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
@@ -73,7 +74,9 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       deps.eventTypes === "all" ? "all" : new Set(deps.eventTypes ?? DEFAULT_EVENT_TYPES)
   }
 
-  async start(notify: NotifyFn): Promise<void> {
+  async start(notify: NotifyFn, signal?: AbortSignal): Promise<void> {
+    const startupSignal = listenerSignal(this.signal, signal)
+    startupSignal?.throwIfAborted()
     this.diagnostics.recordConnection("started", "")
 
     let token: string
@@ -108,7 +111,7 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
       sources: [source],
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
-      signal: this.signal,
+      signal: startupSignal,
       onEvent: (event) => {
         if (event.source !== "discord") return Promise.resolve()
         return this.handleEvent(event, notify)

@@ -5,6 +5,7 @@ import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
+import { listenerSignal } from "@/engine/connectors/listener-signal"
 import type { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
@@ -41,7 +42,9 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
     this.signal = deps.signal
   }
 
-  async start(notify: NotifyFn): Promise<void> {
+  async start(notify: NotifyFn, signal?: AbortSignal): Promise<void> {
+    const startupSignal = listenerSignal(this.signal, signal)
+    startupSignal?.throwIfAborted()
     this.diagnostics.recordConnection("started", "")
 
     let token: string
@@ -53,6 +56,8 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       throw error
     }
 
+    startupSignal?.throwIfAborted()
+
     // Source ctor takes only protocol-specific options in Flume 0.9.
     const source = new FlumeGitHubSource({
       token,
@@ -63,7 +68,7 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       sources: [source],
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
-      signal: this.signal,
+      signal: startupSignal,
       onEvent: (event) => {
         if (event.source !== "github") return Promise.resolve()
         return this.handleEvent(event, notify)

@@ -87,6 +87,8 @@ await client.publish("ops", { content: "host event" })
 
 Discord / GitHub の JSON 送信では、本文の省略と空配列・空オブジェクト・`null` を区別する。GET / HEAD は本文を送らず、成功した HEAD と HTTP 204 の戻り値は `null` とする。空の応答を JSON として読み取らない。
 
+独自の `FunnelHttpClient` を注入する場合は `HttpRequest.signal` を通信処理と応答本文の読み取りへ渡す。Slack の起動中の認証は、個別接続の停止・タイムアウトとホスト全体の停止のどちらでも取り消される。注入したクライアントが取消を無視して応答しても、取消後に Flume 接続は開始しない。
+
 独自の `FunnelEventLog` は `loadSince(since, limit?)` を offset 昇順・指定位置の次から返し、`limit` がある場合は読み出し件数を制限する。引数省略時は保持中の全件を返す既存の契約を維持する。ページ順序の違反や読み取り失敗は購読エラーとして返す。`record()` の保存失敗は例外にして配信側へ伝える。SQLite アダプターも logger / onError へ通知した後に例外を返し、保存されていない入力をライブ配送しない。
 
 配信されたイベントの本文・メタデータ・exclusive 割当は読み取り専用で凍結される。値を加工する場合は自分のコピーを作り、Funnel が保持する履歴を変更しない。

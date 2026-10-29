@@ -1,5 +1,10 @@
-import { describe, expect, vi, test, beforeEach } from "vitest"
+import { describe, expect, vi, test, beforeEach, afterEach } from "vitest"
 import { FunnelSlackAdapter } from "@/engine/connectors/slack-adapter"
+
+const originalFetch = globalThis.fetch
+afterEach(() => {
+  globalThis.fetch = originalFetch
+})
 
 const config = {
   type: "slack" as const,

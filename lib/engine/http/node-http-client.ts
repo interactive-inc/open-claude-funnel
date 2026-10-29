@@ -11,6 +11,7 @@ export class NodeFunnelHttpClient extends FunnelHttpClient {
       method: request.method,
       headers: request.headers,
       body: request.body,
+      signal: request.signal,
     })
 
     return {

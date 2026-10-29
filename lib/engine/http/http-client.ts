@@ -3,6 +3,8 @@ export type HttpRequest = {
   url: string
   headers?: Record<string, string>
   body?: string
+  /** Cancel the request and response-body reads when its owning operation stops. */
+  signal?: AbortSignal
 }
 
 export type HttpResponse = {

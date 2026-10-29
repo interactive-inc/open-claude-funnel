@@ -13,6 +13,7 @@ import {
 import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-token"
 import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
+import { listenerSignal } from "@/engine/connectors/listener-signal"
 import type { FunnelLogger } from "@/engine/logger/logger"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
@@ -112,7 +113,9 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     this.onInteractive = deps.onInteractive
   }
 
-  async start(notify: NotifyFn): Promise<void> {
+  async start(notify: NotifyFn, signal?: AbortSignal): Promise<void> {
+    const startupSignal = listenerSignal(this.signal, signal)
+    startupSignal?.throwIfAborted()
     this.diagnostics.recordConnection("started", "")
 
     let appToken: string
@@ -143,7 +146,8 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     // user/bot id, which the processor uses to drop self-authored events. A
     // bad/expired token surfaces here before the socket opens — the most
     // common "no events ever arrive" cause.
-    const auth = await this.callAuthTest()
+    const auth = await this.callAuthTest(startupSignal)
+    startupSignal?.throwIfAborted()
 
     if (!auth.ok) {
       const detail = auth.error ?? "auth.test returned ok=false"
@@ -170,7 +174,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       sources: [source],
       onLog: flumeLogHandler(this.logger),
       deps: resolveFlumeDeps(this.flumeDeps),
-      signal: this.signal,
+      signal: startupSignal,
       onEvent: (event) => {
         if (event.source !== "slack") return Promise.resolve()
         // Return the handleEvent promise so flume's serial queue waits for
@@ -216,13 +220,14 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     }
   }
 
-  private async callAuthTest() {
+  private async callAuthTest(signal?: AbortSignal) {
     let text: string
 
     try {
       const res = await this.http.fetch({
         method: "POST",
         url: AUTH_TEST_URL,
+        signal,
         headers: {
           Authorization: `Bearer ${this.botToken}`,
           "Content-Type": "application/x-www-form-urlencoded",
