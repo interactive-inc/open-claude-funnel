@@ -76,10 +76,11 @@ export class FunnelConnectorRegistry {
 
   createAdapter(config: BaseConnectorConfig): FunnelConnectorAdapter | null {
     const descriptor = this.require(config.type)
+    const createAdapter = descriptor.createAdapter
 
-    if (!descriptor.createAdapter) return null
+    if (!createAdapter) return null
 
-    return descriptor.createAdapter(config, this.adapterDeps())
+    return createAdapter.call(descriptor, config, this.adapterDeps())
   }
 
   secretTokens(config: BaseConnectorConfig): string[] {
@@ -107,9 +108,8 @@ export class FunnelConnectorRegistry {
     context: ConnectorOperationContext,
   ): { config: BaseConnectorConfig; result: unknown } {
     const descriptor = this.require(config.type)
-    const operation = Object.hasOwn(descriptor.operations, name)
-      ? descriptor.operations[name]
-      : undefined
+    const operations = descriptor.operations
+    const operation = Object.hasOwn(operations, name) ? operations[name] : undefined
 
     if (typeof operation !== "function") {
       throw new Error(`connector type "${config.type}" has no operation "${name}"`)
