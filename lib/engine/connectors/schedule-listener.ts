@@ -85,7 +85,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       signal.addEventListener("abort", abort, { once: true })
     }
 
-    invokeCallback(() => this.diagnostics.recordConnection("started", ""))
+    this.observeDiagnostic(() => this.diagnostics.recordConnection("started", ""))
 
     const scheduleNext = () => {
       if (!isCurrent()) return
@@ -124,7 +124,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       }
       if (!isCurrent()) return
       scheduleNext()
-      if (isCurrent()) invokeCallback(() => this.diagnostics.recordConnection("connected", ""))
+      if (isCurrent())
+        this.observeDiagnostic(() => this.diagnostics.recordConnection("connected", ""))
     }
 
     // A stop/restart can be requested from inside notify/onFired. Do not wait
@@ -149,8 +150,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
   async stop(): Promise<void> {
     this.stopRun(this.run)
-    invokeCallback(() => this.diagnostics.recordConnection("disconnected", ""))
-    invokeCallback(() => this.diagnostics.recordConnection("stopped", ""))
+    this.observeDiagnostic(() => this.diagnostics.recordConnection("disconnected", ""))
+    this.observeDiagnostic(() => this.diagnostics.recordConnection("stopped", ""))
   }
 
   private isCurrent(run: number): boolean {
@@ -172,9 +173,18 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     }
   }
 
+  private observeDiagnostic(callback: () => unknown): void {
+    invokeCallback(callback, (error) =>
+      this.logger?.error("schedule diagnostic callback failed", {
+        connector: this.config.name,
+        error: errorMessageOf(error),
+      }),
+    )
+  }
+
   private recordTickError(error: unknown): void {
     const message = errorMessageOf(error)
-    invokeCallback(() => this.diagnostics.recordConnection("error", `tick: ${message}`))
+    this.observeDiagnostic(() => this.diagnostics.recordConnection("error", `tick: ${message}`))
     invokeCallback(() =>
       this.logger?.error("schedule tick failed", {
         connector: this.config.name,
@@ -357,40 +367,46 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     // the exact firing time so catch-up fires of one entry stay distinct.
     const eventId = `${entry.id}@${firedAt.toISOString()}`
 
-    this.diagnostics.recordRaw(
-      eventId,
-      JSON.stringify({
-        schedule_id: entry.id,
-        kind: entry.kind,
-        ...(entry.kind === "cron" ? { cron: entry.cron } : { run_at: entry.runAt }),
-        prompt: entry.prompt,
-        fired_at: firedAt.toISOString(),
-        catchup,
-      }),
+    this.observeDiagnostic(() =>
+      this.diagnostics.recordRaw(
+        eventId,
+        JSON.stringify({
+          schedule_id: entry.id,
+          kind: entry.kind,
+          ...(entry.kind === "cron" ? { cron: entry.cron } : { run_at: entry.runAt }),
+          prompt: entry.prompt,
+          fired_at: firedAt.toISOString(),
+          catchup,
+        }),
+      ),
     )
 
     if (!this.isCurrent(props.run)) return
     try {
       await props.notify(entry.prompt, meta)
     } catch (error) {
-      this.diagnostics.recordProcessed(eventId, "emitted:delivery-failed", entry.prompt)
+      this.observeDiagnostic(() =>
+        this.diagnostics.recordProcessed(eventId, "emitted:delivery-failed", entry.prompt),
+      )
       throw error
     }
 
     // Preserve successful delivery even if a later fire or host callback fails.
     props.state.set(entry.id, firedAt)
     this.lastFiredStore.save(snapshotScheduleState(props.state))
-    this.diagnostics.recordProcessed(eventId, "emitted", entry.prompt)
+    this.observeDiagnostic(() => this.diagnostics.recordProcessed(eventId, "emitted", entry.prompt))
 
     if (this.onFired) {
       try {
         await this.onFired(entry, new Date(firedAt.getTime()))
       } catch (error) {
-        this.logger?.error("schedule onFired callback failed", {
-          connector: this.config.name,
-          id: entry.id,
-          error: errorMessageOf(error),
-        })
+        invokeCallback(() =>
+          this.logger?.error("schedule onFired callback failed", {
+            connector: this.config.name,
+            id: entry.id,
+            error: errorMessageOf(error),
+          }),
+        )
       }
     }
   }
@@ -445,16 +461,20 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private logInvalidCron(entry: { id: string; cron: string }, error: unknown): void {
     const message = errorMessageOf(error)
 
-    this.diagnostics.recordConnection(
-      "error",
-      `invalid cron "${entry.cron}" (entry ${entry.id}): ${message}`,
+    this.observeDiagnostic(() =>
+      this.diagnostics.recordConnection(
+        "error",
+        `invalid cron "${entry.cron}" (entry ${entry.id}): ${message}`,
+      ),
     )
-    this.logger?.error("invalid cron expression in schedule", {
-      connector: this.config.name,
-      id: entry.id,
-      cron: entry.cron,
-      error: message,
-    })
+    invokeCallback(() =>
+      this.logger?.error("invalid cron expression in schedule", {
+        connector: this.config.name,
+        id: entry.id,
+        cron: entry.cron,
+        error: message,
+      }),
+    )
   }
 
   private readNow(): Date {
