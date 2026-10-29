@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test, spyOn } from "bun:test"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 import {
   FlumeSource,
+  Flume,
   type FlumeEventHandler,
   type FlumeLogHandler,
   type FlumeSourceStartContext,
@@ -107,6 +108,27 @@ class TestListener extends FunnelFlumeSourceListener {
 }
 
 describe("FunnelFlumeSourceListener", () => {
+  test("an aborted open result is closed before it can become the active listener", async () => {
+    const controller = new AbortController()
+    const listener = new TestListenerWithSignal(
+      new MemoryConnectorDiagnosticLog(),
+      controller.signal,
+    )
+    const original = Flume.prototype.open
+    const open = spyOn(Flume.prototype, "open").mockImplementation(async function (this: Flume) {
+      const result = await original.call(this)
+      controller.abort()
+      return result
+    })
+    try {
+      await expect(listener.start()).rejects.toMatchObject({ name: "AbortError" })
+      expect(listener.isAlive()).toBe(false)
+      expect(listener.source.disconnectCalls).toBe(1)
+    } finally {
+      open.mockRestore()
+      await listener.stop()
+    }
+  })
   test("health reads current source state before queued status logs are delivered", async () => {
     const listener = new TestListener(new MemoryConnectorDiagnosticLog())
     await listener.start()
@@ -194,7 +216,11 @@ describe("FunnelFlumeSourceListener", () => {
     })
     await listener.emitStatus("connected")
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(log.queryConnection({ type: "slack" }).some((row) => row.status === "error" && row.detail.includes("host log failed"))).toBe(true)
+    expect(
+      log
+        .queryConnection({ type: "slack" })
+        .some((row) => row.status === "error" && row.detail.includes("host log failed")),
+    ).toBe(true)
     expect(listener.isConnected()).toBe(true)
     await listener.stop()
   })
@@ -206,7 +232,9 @@ describe("FunnelFlumeSourceListener", () => {
     await Promise.all([listener.stop(), listener.stop(), listener.stop()])
     expect(listener.source.disconnectCalls).toBe(1)
     expect(listener.resetCount).toBe(1)
-    expect(log.queryConnection({ type: "slack" }).filter((row) => row.status === "stopped")).toHaveLength(1)
+    expect(
+      log.queryConnection({ type: "slack" }).filter((row) => row.status === "stopped"),
+    ).toHaveLength(1)
   })
 
   test("the final failed delivery is recorded and later deliveries still run", async () => {
@@ -217,12 +245,21 @@ describe("FunnelFlumeSourceListener", () => {
       calls += 1
       if (calls === 1) throw new Error("host delivery failed")
     })
-    const emit = () => listener.source.capturedCtx!.onEvent({
-      source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0,
-    })
+    const emit = () =>
+      listener.source.capturedCtx!.onEvent({
+        source: "slack",
+        type: "test",
+        data: {},
+        meta: {},
+        receivedAt: 0,
+      })
     emit()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(log.queryConnection({ type: "slack" }).some((row) => row.status === "error" && row.detail.includes("host delivery failed"))).toBe(true)
+    expect(
+      log
+        .queryConnection({ type: "slack" })
+        .some((row) => row.status === "error" && row.detail.includes("host delivery failed")),
+    ).toBe(true)
     emit()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls).toBe(2)
@@ -240,7 +277,8 @@ describe("FunnelFlumeSourceListener", () => {
       await release.promise
     })
     const ctx = listener.source.capturedCtx!
-    const emit = () => ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
+    const emit = () =>
+      ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
     emit()
     await entered.promise
     emit()
@@ -261,7 +299,8 @@ describe("FunnelFlumeSourceListener", () => {
       await release.promise
     })
     const ctx = listener.source.capturedCtx!
-    const emit = () => ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
+    const emit = () =>
+      ctx.onEvent({ source: "slack", type: "test", data: {}, meta: {}, receivedAt: 0 })
     emit()
     await entered.promise
     for (let i = 0; i < 2000; i += 1) emit()
@@ -309,7 +348,11 @@ describe("FunnelFlumeSourceListener", () => {
 
     const rows = log.queryConnection({ type: "slack" }).map((r) => r.status)
     expect(rows).toContain("connected")
-    expect(log.queryConnection({ type: "slack" }).some((row) => row.status === "error" && row.detail.includes("close kaput"))).toBe(true)
+    expect(
+      log
+        .queryConnection({ type: "slack" })
+        .some((row) => row.status === "error" && row.detail.includes("close kaput")),
+    ).toBe(true)
     expect(rows[rows.length - 1]).toBe("stopped")
   })
 

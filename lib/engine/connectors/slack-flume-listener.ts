@@ -96,6 +96,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   private readonly onInteractive: SlackInteractiveHandler | undefined
   private processor: FunnelSlackEventProcessor | null = null
   private botToken = ""
+  private lifecycleController: AbortController | null = null
 
   constructor(deps: Deps) {
     super({
@@ -115,7 +116,49 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
   }
 
   async start(notify: NotifyFn, signal?: AbortSignal): Promise<void> {
-    const startupSignal = listenerSignal(this.signal, signal)
+    if (this.lifecycleController) throw new Error("Slack listener is already starting or running")
+    const controller = new AbortController()
+    this.lifecycleController = controller
+    const startupSignal = listenerSignal(controller.signal, listenerSignal(this.signal, signal))
+    try {
+      await this.startScope(notify, startupSignal)
+      startupSignal?.throwIfAborted()
+    } catch (error) {
+      controller.abort()
+      if (this.lifecycleController === controller) {
+        try {
+          await super.stop()
+        } catch (cleanupError) {
+          invokeCallback(() =>
+            this.logger?.error("slack startup cleanup failed", {
+              error: errorMessageOf(cleanupError),
+            }),
+          )
+        } finally {
+          if (this.lifecycleController === controller) {
+            this.lifecycleController = null
+            this.processor = null
+          }
+        }
+      }
+      throw error
+    }
+  }
+
+  override async stop(): Promise<void> {
+    const controller = this.lifecycleController
+    controller?.abort()
+    try {
+      await super.stop()
+    } finally {
+      if (this.lifecycleController === controller) {
+        this.lifecycleController = null
+        this.processor = null
+      }
+    }
+  }
+
+  private async startScope(notify: NotifyFn, startupSignal?: AbortSignal): Promise<void> {
     startupSignal?.throwIfAborted()
     this.diagnostics.recordConnection("started", "")
 
@@ -177,11 +220,11 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       deps: resolveFlumeDeps(this.flumeDeps),
       signal: startupSignal,
       onEvent: (event) => {
-        if (event.source !== "slack") return Promise.resolve()
+        if (startupSignal?.aborted || event.source !== "slack") return Promise.resolve()
         // Return the handleEvent promise so flume's serial queue waits for
         // notify() to land before processing the next event — guarantees
         // broadcaster offset order matches Slack's event-receive order.
-        return this.handleEvent(event, notify)
+        return this.handleEvent(event, notify, startupSignal)
       },
     })
   }
@@ -256,8 +299,12 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     return parsed.data
   }
 
-  private async handleEvent(event: FlumeSlackEvent, notify: NotifyFn): Promise<void> {
-    if (!this.processor) return
+  private async handleEvent(
+    event: FlumeSlackEvent,
+    notify: NotifyFn,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted || !this.processor) return
 
     // Slack Socket Mode multiplexes envelope types over the same WebSocket;
     // flume forwards every type with `event.type` set to the envelope kind.
@@ -297,6 +344,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     let preprocessed: SlackRawEvent = rawEvent
     if (this.preprocessEvent) {
       const next = await this.preprocessEvent(rawEvent)
+      if (signal?.aborted) return
       if (next === null) {
         this.diagnostics.recordProcessed(eventId, "skip:preprocess", rawJson)
         return
@@ -314,7 +362,15 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     // Await deliver so the firehose handler can chain it back to flume's
     // serial queue: broadcaster offsets land in receive order even if the
     // notify path ever becomes truly async.
-    await this.deliver(notify, eventId, rawJson, result.content, result.meta, result.shouldReact)
+    await this.deliver(
+      notify,
+      eventId,
+      rawJson,
+      result.content,
+      result.meta,
+      result.shouldReact,
+      signal,
+    )
   }
 
   private async deliver(
@@ -324,10 +380,13 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     content: string,
     meta: Record<string, string>,
     shouldReact: boolean,
+    signal?: AbortSignal,
   ): Promise<void> {
+    if (signal?.aborted) return
     try {
       await notify(content, meta)
     } catch (error) {
+      if (signal?.aborted) return
       this.diagnostics.recordProcessed(eventId, "emitted:delivery-failed", content || rawJson)
       this.logger?.error("slack notify error", { error: errorMessageOf(error) })
       return
@@ -335,13 +394,14 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
 
     this.diagnostics.recordProcessed(eventId, "emitted", content)
 
-    if (shouldReact) {
+    if (shouldReact && !signal?.aborted) {
       // Reaction is post-delivery cosmetic — fire-and-forget so a ~300ms
       // round-trip to slack.com/api/reactions.add does not gate the next
       // event's notify. Notify ordering is the contract; reactions are not.
       invokeCallback(
-        () => this.postReaction(meta),
+        () => this.postReaction(meta, signal),
         (error: unknown) => {
+          if (signal?.aborted) return
           const message = errorMessageOf(error)
           invokeCallback(() =>
             this.diagnostics.recordProcessed(eventId, "emitted:reaction-failed", message),
@@ -352,10 +412,12 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     }
   }
 
-  private async postReaction(meta: Record<string, string>): Promise<void> {
+  private async postReaction(meta: Record<string, string>, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     const res = await this.http.fetch({
       method: "POST",
       url: "https://slack.com/api/reactions.add",
+      signal,
       headers: {
         Authorization: `Bearer ${this.botToken}`,
         "Content-Type": "application/x-www-form-urlencoded",
@@ -370,7 +432,9 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     // Slack returns 200 with { ok: false, error: "..." } for logical errors
     // (already_reacted, channel_not_found, invalid_auth, ...). Promote those
     // to thrown errors so the diagnostic outcome above sees them.
+    signal?.throwIfAborted()
     const text = await res.text()
+    signal?.throwIfAborted()
     const parsed = parseSlackResponse(text)
     if (!parsed.ok) {
       throw new Error(`slack reactions.add: ${parsed.error ?? `status=${res.status}`}`)

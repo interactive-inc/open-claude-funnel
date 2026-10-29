@@ -160,6 +160,11 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       throw result
     }
 
+    if (options.signal?.aborted) {
+      await result.close()
+      await result.drain()
+      throw options.signal.reason ?? new Error("listener startup canceled")
+    }
     this.running = result
     const delivery = result.stream()
     this.delivery = delivery
