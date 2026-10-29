@@ -690,7 +690,23 @@ export class FunnelListenerRegistry {
       const dead: Array<{ key: string; type: string }> = []
 
       for (const [key, entry] of this.running.entries()) {
-        if (entry.listener.isAlive()) {
+        let alive: boolean
+        try {
+          alive = entry.listener.isAlive()
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error))
+          const context = {
+            channelId: entry.channelId,
+            connectorId: entry.config.id,
+            type: entry.config.type,
+          }
+          this.logger?.warn("listener health state unavailable", { ...context, error: err.message })
+          this.onError(err, { component: "listener-registry.health-state", ...context })
+          if (this.isStopped || lifecycle !== this.lifecycle) return
+          continue
+        }
+        if (this.isStopped || lifecycle !== this.lifecycle) return
+        if (alive) {
           this.failureCounts.delete(key)
           continue
         }
