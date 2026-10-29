@@ -184,7 +184,15 @@ export class SqliteFunnelEventLog extends FunnelEventLog {
       ...(sinceSeq !== undefined ? { sinceSeq } : {}),
       ...(limit !== undefined ? { limit } : {}),
     })
-    return records.map((record) => this.toReplay(record.seq, record.event))
+    return records.map((record) => {
+      const event = this.toReplay(record.seq, record.event)
+      if (
+        event.meta?.channelId !== channelId ||
+        (connectorId !== undefined && event.meta?.connectorId !== connectorId)
+      )
+        throw new Error("replay routing index conflicts with stored identity")
+      return event
+    })
   }
 
   findMaxOffset(): number {

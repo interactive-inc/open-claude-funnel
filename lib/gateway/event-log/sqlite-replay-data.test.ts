@@ -6,6 +6,54 @@ import { join } from "node:path"
 import { SqliteFunnelEventLog } from "@/gateway/event-log/sqlite-event-log"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
 
+for (const field of ["channel_id", "connector_id"] as const) {
+  test(`scoped history rejects a ${field} index that conflicts with the payload`, () => {
+    const directory = mkdtempSync(join(tmpdir(), "funnel-replay-index-"))
+    const path = join(directory, "events.db")
+    const log = new SqliteFunnelEventLog({ path })
+    const db = new Database(path)
+    try {
+      log.record({
+        offset: 1,
+        content: "original",
+        channelId: "ops",
+        connectorId: "source",
+        meta: null,
+      })
+      if (field === "channel_id") db.run("UPDATE logs SET channel_id = 'other' WHERE seq = 1")
+      else db.run("UPDATE logs SET connector_id = 'other' WHERE seq = 1")
+
+      const scope =
+        field === "channel_id" ? { channelId: "other" } : { channelId: "ops", connectorId: "other" }
+      expect(() => log.loadForChannel(scope)).toThrow(
+        "replay routing index conflicts with stored identity",
+      )
+      expect(log.loadSince(0)[0]?.meta).toEqual({ channelId: "ops", connectorId: "source" })
+      expect(log.findMaxOffset()).toBe(1)
+
+      const original = db
+        .query<{ event: string }, []>("SELECT event FROM logs WHERE seq = 1")
+        .get()!
+      const unscoped = { ...JSON.parse(original.event), [field]: null, meta: null }
+      db.run("UPDATE logs SET event = ? WHERE seq = 1", [JSON.stringify(unscoped)])
+      expect(() => log.loadForChannel(scope)).toThrow(
+        "replay routing index conflicts with stored identity",
+      )
+      db.run("UPDATE logs SET event = ? WHERE seq = 1", [original.event])
+
+      if (field === "channel_id") db.run("UPDATE logs SET channel_id = 'ops' WHERE seq = 1")
+      else db.run("UPDATE logs SET connector_id = 'source' WHERE seq = 1")
+      expect(log.loadForChannel({ channelId: "ops", connectorId: "source" })[0]?.content).toBe(
+        "original",
+      )
+    } finally {
+      db.close()
+      log.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+}
+
 test("malformed stored replay data cannot be returned or claimed", async () => {
   const directory = mkdtempSync(join(tmpdir(), "funnel-replay-data-"))
   const path = join(directory, "events.db")
