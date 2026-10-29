@@ -69,6 +69,7 @@ Funnel の生成時に options の値を取得し、registry・チャネル操�
 - Channel の登録時に ID・名前・build 関数を一度取得して保持する。呼び出し元の変更で起動・失敗時の削除・解除の対象をずらさず、build の元の receiver は維持する。getter から停止や同じ ID の登録が起きた場合は、登録確定前に受付と重複を再確認する。
 - `defineChannel` も ID・名前・build を明示的に取得し、prototype 上の getter・method を持つクラスを受け付ける。manifest の snapshot を凍結し、factory が使う元のインスタンスや内部状態は凍結しない。
 - runtime の transform はイベントごとに一度取得し、元の runtime を receiver として呼ぶ。getter の二重取得でイベントを失わず、印字できない変換エラーも transform の失敗として報告する。
+- transform の Promise・thenable も配送前に拒否し、拒否を監視する。非同期結果を本文と誤認して undefined を配送せず、対象イベントの失敗を報告した後も次のイベントを受信する。
 - コネクタの operation は同じ表で own property の確認と関数取得を行い、別の表の継承関数を誤実行しない。adapter の factory も一度取得し、元の descriptor を receiver として呼ぶ。
 - コネクタの buildConfig・applyUpdate・operation は同期の設定 transaction 内で完了する。Promise・thenable は明示的な契約エラーとして commit 前に拒否し、遅延拒否も監視して未処理拒否にしない。
 - createListener・createAdapter・secretTokens も同期の descriptor hook として Promise・thenable を拒否する。生成結果を listener・adapter・token 配列と誤認せず、遅延拒否を監視する。接続ライフサイクルと adapter.call の非同期処理は維持する。

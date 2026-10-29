@@ -4,7 +4,7 @@ import type { FlumeEvent } from "@interactive-inc/flume"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { MemoryFunnelClock } from "@/engine/time/memory-clock"
 import { FunnelChannelSupervisor } from "@/engine/channel/channel-supervisor"
-import { defineChannel } from "@/engine/channel/channel"
+import { defineChannel, type ChannelTransform } from "@/engine/channel/channel"
 
 function waitForCondition(fn: () => boolean, timeoutMs = 1000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -58,6 +58,49 @@ function freshSupervisor(options: { signal?: AbortSignal } = {}) {
 }
 
 describe("FunnelChannelSupervisor", () => {
+  for (const kind of ["promise", "thenable"] as const) {
+    it(`rejects a ${kind} transform result before delivery and observes its late failure`, async () => {
+      const { supervisor, received, logger } = freshSupervisor()
+      const source = new StubSource()
+      let calls = 0
+      const transform = (() => {
+        if (++calls > 1) return { content: "good" }
+        const failure = new Error("late transform failure")
+        if (kind === "promise") return Promise.reject(failure)
+        return {
+          // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
+          then(_resolve: unknown, reject: (error: unknown) => void) {
+            reject(failure)
+          },
+        }
+      }) as unknown as ChannelTransform
+      supervisor.register({ id: "source", build: () => ({ sources: [source], transform }) })
+      try {
+        await supervisor.start()
+        for (let index = 0; index < 2; index++)
+          source.pushEvent?.({
+            source: "discord",
+            type: "input",
+            data: {},
+            meta: {},
+            receivedAt: 0,
+          })
+        await waitForCondition(() => received.length === 1)
+        await Bun.sleep(0)
+        expect(received.map((item) => item.content)).toEqual(["good"])
+        expect(calls).toBe(2)
+        expect(logger.entries.filter((entry) => entry.level === "error")).toMatchObject([
+          {
+            message: 'channel "source" transform threw',
+            meta: { error: "channel transform must be synchronous" },
+          },
+        ])
+      } finally {
+        await supervisor.stop()
+      }
+    })
+  }
+
   it("reads a runtime transform once per event and preserves its class receiver and error context", async () => {
     const { supervisor, received, logger } = freshSupervisor()
     const source = new StubSource()

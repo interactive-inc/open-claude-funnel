@@ -3,6 +3,7 @@ import type { Channel, ChannelBuildContext } from "@/engine/channel/channel"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
+import { requireSynchronous } from "@/require-synchronous"
 
 type Props = Pick<ChannelBuildContext, "logger" | "clock"> & {
   channel: Channel
@@ -46,10 +47,11 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
         let payload
         try {
           const transform = runtime.transform
-          payload =
+          const converted =
             transform === undefined
               ? { content: JSON.stringify(event.data), meta: event.meta }
               : transform.call(runtime, event)
+          payload = requireSynchronous(converted, "channel transform must be synchronous")
         } catch (error) {
           this.props.logger.error(`channel "${channel.id}" transform threw`, {
             error: errorMessageOf(error),

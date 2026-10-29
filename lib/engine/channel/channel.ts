@@ -11,6 +11,7 @@ export type ChannelBroadcastPayload = {
   readonly meta?: Record<string, string>
 }
 
+/** Synchronous event conversion. Promise/thenable results are rejected before delivery. */
 export type ChannelTransform = (event: FlumeEvent) => ChannelBroadcastPayload | null
 
 /**
