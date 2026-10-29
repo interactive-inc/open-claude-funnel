@@ -34,15 +34,18 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   recordRaw(record: ConnectorRawRecord): void {
-    this.raws.push({ ...record, seq: this.raws.length + 1, ts: this.now() })
+    const event = { ...record, ts: this.now() }
+    this.raws.push({ ...event, seq: this.raws.length + 1 })
   }
 
   recordProcessed(record: ConnectorProcessedRecord): void {
-    this.processeds.push({ ...record, seq: this.processeds.length + 1, ts: this.now() })
+    const event = { ...record, ts: this.now() }
+    this.processeds.push({ ...event, seq: this.processeds.length + 1 })
   }
 
   recordConnection(record: ConnectorConnectionRecord): void {
-    this.connections.push({ ...record, seq: this.connections.length + 1, ts: this.now() })
+    const event = { ...record, ts: this.now() }
+    this.connections.push({ ...event, seq: this.connections.length + 1 })
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
