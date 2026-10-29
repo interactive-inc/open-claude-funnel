@@ -191,6 +191,10 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
         : requireIntegerLimit(props.targetBytes, "targetBytes")
     if (this.targetBytes !== null && (this.maxBytes === null || this.targetBytes > this.maxBytes))
       throw new RangeError("targetBytes requires maxBytes and must not exceed it")
+    // Snapshot before validation: callers can retain and mutate the input array.
+    const indexes = Object.freeze([...(props.indexes ?? [])]) as unknown as I
+    if (indexes.length > 0) validateIndexNames(indexes)
+
     // `bun:sqlite` does not create the parent directory on open, so a fresh
     // environment errors out with an opaque `unable to open database file`.
     // Create it here. `:memory:` is a sentinel handled by SQLite, not a path,
@@ -199,10 +203,6 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const dir = dirname(props.path)
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     }
-    // Index names are validated before opening so a bad call leaves no handle behind.
-    const indexes = (props.indexes ?? []) as unknown as I
-    if (indexes.length > 0) validateIndexNames(indexes)
-
     this.db = new Database(props.path)
     // Anything after open can throw (lock timeout, disk, schema). Close the
     // handle so a failed constructor does not leak it to the caller's retry.
@@ -214,14 +214,9 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.now = props.now ?? (() => Date.now())
       this.onMaintenanceError = props.onMaintenanceError
 
-      // The conditional `SqliteEventLogProps<E, I>` type widens to a union when `I` is a
-      // generic, so TS can't narrow `props.indexes` back to `I` after the
-      // runtime check. One cast at this boundary brings it back; everything
-      // downstream stays I-typed.
-      this.indexes = (props.indexes ?? []) as unknown as I
+      this.indexes = indexes
 
       if (this.indexes.length > 0) {
-        validateIndexNames(this.indexes)
         this.extractIndexes = props.extractIndexes ?? null
         this.syncIndexColumns()
       } else {
