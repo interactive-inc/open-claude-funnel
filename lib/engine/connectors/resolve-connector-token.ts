@@ -1,8 +1,8 @@
 /**
  * Resolves a connector token from either a literal value or the name of an env
- * var. A connector config carries one or the other per slot (see
- * slack-connector-schema): literals are inlined into settings.json, references
- * keep the secret in `process.env` and out of settings.json.
+ * var. A non-empty literal takes precedence over a reference. Literals are part
+ * of the host's configuration; references keep the secret in the explicitly
+ * supplied environment dictionary.
  *
  * Errors loudly when neither yields a value — a misconfigured connector should
  * fail at listener start, not connect with an empty token and silently never
@@ -14,15 +14,22 @@ export const resolveConnectorToken = (props: {
   env: NodeJS.ProcessEnv
   label: string
 }): string => {
-  if (props.literal !== undefined && props.literal !== "") return props.literal
+  const literal = props.literal
+  if (literal !== undefined && typeof literal !== "string")
+    throw new TypeError(`${props.label} literal token must be a string`)
+  if (literal !== undefined && literal !== "") return literal
 
-  if (props.envVar !== undefined && props.envVar !== "") {
-    const fromEnv = Object.hasOwn(props.env, props.envVar) ? props.env[props.envVar] : undefined
+  const envVar = props.envVar
+  if (envVar !== undefined && typeof envVar !== "string")
+    throw new TypeError(`${props.label} env var reference must be a string`)
+  if (envVar !== undefined && envVar !== "") {
+    const env = props.env
+    const fromEnv = Object.hasOwn(env, envVar) ? env[envVar] : undefined
 
     if (typeof fromEnv === "string" && fromEnv !== "") return fromEnv
 
     throw new Error(
-      `${props.label} references env var "${props.envVar}" but it is not set in the environment`,
+      `${props.label} references env var "${envVar}" but it is not set in the environment`,
     )
   }
 
