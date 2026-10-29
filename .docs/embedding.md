@@ -93,6 +93,8 @@ Discord / GitHub の JSON 送信では、本文の省略と空配列・空オブ
 
 独自の `FunnelEventLog` は `loadSince(since, limit?)` を offset 昇順・指定位置の次から返し、`limit` がある場合は読み出し件数を制限する。引数省略時は保持中の全件を返す既存の契約を維持する。ページ順序の違反や読み取り失敗は購読エラーとして返す。`record()` の保存失敗は例外にして配信側へ伝える。SQLite アダプターも logger / onError へ通知した後に例外を返し、保存されていない入力をライブ配送しない。
 
+`findMaxOffset()` は未採番なら 0、それ以外は保存済みの最大 offset を非負の安全な整数で返す。不正な最大値は gateway の構築時に拒否する。`Number.MAX_SAFE_INTEGER` まで公開した後は新しい公開を拒否し、上限を超えた offset や重複した offset を保存・配送しない。
+
 SQLite の保存失敗では logger と `onError` を独立して呼び、通知先の同期例外や Promise の拒否で、もう片方への通知や元の保存エラーを失わない。通知先が失敗しても、呼び出し元には元の SQLite エラーを返す。
 
 保持件数・期限・バイト上限の行削除が失敗した場合は、同じ transaction の保存と採番を取り消す。commit 後の VACUUM 失敗は `onError` の `op: "compact"`、古い exclusive 割当の掃除の失敗は `op: "prune-claims"` で通知する。保守処理の失敗で保存済みのイベントの配送を止めたり、保存失敗として再試行させたりしない。診断ログの圧縮失敗は、そのログに注入した logger へ通知する。

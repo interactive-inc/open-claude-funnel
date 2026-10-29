@@ -440,6 +440,8 @@ export class FunnelBroadcaster {
   }
 
   broadcast(content: string, meta?: Record<string, string>): ReplayableEvent {
+    if (this.latestOffset >= Number.MAX_SAFE_INTEGER)
+      throw new RangeError("event offset range exhausted")
     const observers = [...this.subscribers]
     if (this.channels) {
       this.channelDelivery.clear()
@@ -541,6 +543,8 @@ export class FunnelBroadcaster {
 
   /** Forward-seed the offset counter (used at startup from the persisted event store). */
   seedLatestOffset(offset: number): void {
+    if (!Number.isSafeInteger(offset) || offset < 0)
+      throw new RangeError("restored event offset must be a non-negative safe integer")
     if (offset > this.latestOffset) this.latestOffset = offset
   }
 }
