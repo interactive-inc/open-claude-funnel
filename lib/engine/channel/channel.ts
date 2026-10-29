@@ -55,7 +55,12 @@ export type Channel = {
   readonly build: (ctx: ChannelBuildContext) => ChannelRuntime | Promise<ChannelRuntime>
 }
 
-/** Frozen identity helper that keeps consumer type inference tidy */
+/** Frozen manifest snapshot that preserves the original factory receiver. */
 export function defineChannel(channel: Channel): Channel {
-  return Object.freeze({ ...channel })
+  const { id, name, build } = channel
+  return Object.freeze({
+    id,
+    name,
+    build: (ctx: ChannelBuildContext) => build.call(channel, ctx),
+  })
 }
