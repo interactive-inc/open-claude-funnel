@@ -6,6 +6,7 @@ import { dirname, join } from "node:path"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
+import type { ServerWebSocket } from "bun"
 
 const invalidIntegers = [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]
 
@@ -24,6 +25,56 @@ for (const field of ["maxBufferedBytes", "replayBufferSize", "replayBufferMaxByt
       expect(() => {
         new FunnelBroadcaster({ [field]: value })
       }).toThrow(`${field} must be a non-negative safe integer`)
+  })
+
+  test(`broadcasting rejects an invalid first ${field} value without rereading it`, () => {
+    let reads = 0
+    const options: ConstructorParameters<typeof FunnelBroadcaster>[0] = {}
+    Object.defineProperty(options, field, {
+      get() {
+        return ++reads === 1 ? NaN : 1000
+      },
+    })
+    expect(() => new FunnelBroadcaster(options)).toThrow(
+      `${field} must be a non-negative safe integer`,
+    )
+    expect(reads).toBe(1)
+  })
+
+  test(`broadcasting captures ${field} once and preserves an explicit zero limit`, () => {
+    let reads = 0
+    const options: ConstructorParameters<typeof FunnelBroadcaster>[0] = {}
+    Object.defineProperty(options, field, {
+      get() {
+        return ++reads === 1 ? 0 : 1000
+      },
+    })
+    const broadcaster = new FunnelBroadcaster(options)
+    const sent: string[] = []
+    const closed: number[] = []
+    if (field === "maxBufferedBytes") {
+      const socket = {
+        getBufferedAmount: () => 1,
+        send(payload: string) {
+          sent.push(payload)
+          return 1
+        },
+        close(code: number) {
+          closed.push(code)
+        },
+      } as unknown as ServerWebSocket<unknown>
+      broadcaster.addClient(socket, { channel: "ops", connectors: [] })
+    }
+    broadcaster.broadcast("input")
+    if (field === "maxBufferedBytes") {
+      expect(sent).toEqual([])
+      expect(closed).toEqual([1009])
+      expect(broadcaster.getMetrics().droppedSlowClients).toBe(1)
+    } else {
+      expect(broadcaster.replaySince(0, { channel: "ops", connectors: [] })).toEqual([])
+      expect(broadcaster.getMetrics().oldestReplayableOffset).toBeNull()
+    }
+    expect(reads).toBe(1)
   })
 }
 

@@ -190,19 +190,20 @@ export class FunnelBroadcaster {
   constructor(deps: Deps = {}) {
     this.logger = deps.logger
     this.onError = deps.onError ?? defaultOnError
+    const maxBufferedBytes = deps.maxBufferedBytes
     this.maxBufferedBytes = requireIntegerLimit(
-      deps.maxBufferedBytes === undefined ? DEFAULT_MAX_BUFFERED_BYTES : deps.maxBufferedBytes,
+      maxBufferedBytes === undefined ? DEFAULT_MAX_BUFFERED_BYTES : maxBufferedBytes,
       "maxBufferedBytes",
     )
     this.now = deps.now ?? (() => Date.now())
+    const replayBufferSize = deps.replayBufferSize
     this.replayBufferSize = requireIntegerLimit(
-      deps.replayBufferSize === undefined ? DEFAULT_REPLAY_BUFFER_SIZE : deps.replayBufferSize,
+      replayBufferSize === undefined ? DEFAULT_REPLAY_BUFFER_SIZE : replayBufferSize,
       "replayBufferSize",
     )
+    const replayBufferMaxBytes = deps.replayBufferMaxBytes
     this.replayBufferMaxBytes = requireIntegerLimit(
-      deps.replayBufferMaxBytes === undefined
-        ? DEFAULT_REPLAY_BUFFER_MAX_BYTES
-        : deps.replayBufferMaxBytes,
+      replayBufferMaxBytes === undefined ? DEFAULT_REPLAY_BUFFER_MAX_BYTES : replayBufferMaxBytes,
       "replayBufferMaxBytes",
     )
     this.persistentReplay = deps.persistentReplay ?? null
