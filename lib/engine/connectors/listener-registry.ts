@@ -981,10 +981,14 @@ export class FunnelListenerRegistry {
     try {
       await this.sleep(ms, controller.signal)
     } catch (error) {
-      const canceled =
-        error === controller.signal.reason ||
-        (error instanceof Error && error.name === "AbortError")
-      if (!controller.signal.aborted || !canceled) throw error
+      if (!controller.signal.aborted) throw error
+      if (error === controller.signal.reason) return
+      try {
+        if (error instanceof Error && error.name === "AbortError") return
+      } catch {
+        // Inspecting a host failure must not replace it with a secondary exception.
+      }
+      throw error
     } finally {
       if (this.recoveryWaits.get(key) === controller) this.recoveryWaits.delete(key)
     }
