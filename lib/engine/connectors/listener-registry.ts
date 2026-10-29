@@ -475,9 +475,20 @@ export class FunnelListenerRegistry {
     this.failureCounts.delete(key)
 
     if (!entry) return { ok: true, reason: "not running" }
-    const current = this.configured(key)
-    const channelName = current?.channelName ?? entry.channelName
-    const connectorName = current?.name ?? entry.config.name
+    let channelName = entry.channelName
+    let connectorName = entry.config.name
+    try {
+      const current = this.configured(key)
+      channelName = current?.channelName ?? channelName
+      connectorName = current?.name ?? connectorName
+    } catch (error) {
+      const err = normalizeError(error)
+      this.logger?.warn("listener configuration unavailable during stop", {
+        key,
+        error: errorMessageOf(err),
+      })
+      this.onError(err, { component: "listener-registry.stop-configuration", key })
+    }
 
     try {
       await entry.listener.stop()
