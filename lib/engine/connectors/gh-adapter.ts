@@ -38,6 +38,7 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
     })
     if (!response.ok)
       throw new Error(`GitHub API failed (${response.status}): ${await response.text()}`)
-    return response.status === 204 ? null : response.json()
+    if (response.status === 204 || method === "HEAD") return null
+    return response.json()
   }
 }
