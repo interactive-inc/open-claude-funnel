@@ -15,7 +15,10 @@ import { parseReplayEvent, replayEventFromRecord } from "@/gateway/event-log/rep
 import { isValidExclusiveClaim } from "@/gateway/event-log/exclusive-claim"
 
 type Props = {
-  /** SQLite file opened or created during construction. ":memory:" for tests. */
+  /**
+   * OS file path opened or created during construction. ":memory:" for tests.
+   * Empty paths, null bytes and SQLite URI filenames are rejected before file operations.
+   */
   path: string
   /** Override for tests. Defaults to `Date.now`. */
   now?: () => number

@@ -132,7 +132,7 @@ const eventLog = new SqliteFunnelEventLog({ path: hostChosenDatabasePath })
 const gateway = funnel.gatewayModule({ token, eventLog })
 ```
 
-SQLite アダプターは Bun 専用です。ファイルを指定したログは生成時に接続し、必要な親ディレクトリと DB の作成・schema の初期化を行います。通常の import では SQLite やファイルシステムを読み込みません。
+SQLite アダプターは Bun 専用です。ファイルを指定したログは生成時に接続し、必要な親ディレクトリと DB の作成・schema の初期化を行います。保存先は空でない OS のファイルパスか `:memory:` を指定します。空パス・NUL を含むパス・SQLite URI（`file:`）はファイル操作前に拒否します。通常の import では SQLite やファイルシステムを読み込みません。
 
 ## 開発と移行
 
