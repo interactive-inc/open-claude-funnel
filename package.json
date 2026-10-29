@@ -1,6 +1,6 @@
 {
   "name": "@interactive-inc/claude-funnel",
-  "version": "0.72.0",
+  "version": "0.73.1",
   "description": "Connection library for routing external events to channel subscribers. Host-owned configuration, runtime and persistence.",
   "keywords": [
     "connections",
@@ -94,7 +94,7 @@
     "access": "public"
   },
   "scripts": {
-    "prepack": "make build",
+    "prepack": "bun run build",
     "test": "bun test",
     "typecheck": "tsgo --noEmit",
     "build": "vp pack",

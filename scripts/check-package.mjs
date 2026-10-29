@@ -4,9 +4,13 @@ import { posix } from "node:path"
 import { execFileSync } from "node:child_process"
 
 // Inspect publication contents without lifecycle scripts or publishing.
-const [pack] = JSON.parse(
-  execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { encoding: "utf8" }),
-)
+// Windows distributes npm as npm.cmd; Node cannot execFile a command script directly.
+const packCommand = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "npm"
+const packArgs =
+  process.platform === "win32"
+    ? ["/d", "/s", "/c", "npm pack --dry-run --json --ignore-scripts"]
+    : ["pack", "--dry-run", "--json", "--ignore-scripts"]
+const [pack] = JSON.parse(execFileSync(packCommand, packArgs, { encoding: "utf8" }))
 const shipped = new Set(pack.files.map((file) => file.path))
 const pkg = JSON.parse(await readFile("package.json", "utf8"))
 assert.equal(pkg.bin, undefined, "Funnel must remain an embedded library")

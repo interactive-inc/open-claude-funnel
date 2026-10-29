@@ -7,7 +7,12 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -18,25 +23,9 @@ jobs:
         with:
           node-version: 22
       - run: bun run lint
-      - run: make check
-      - run: make build
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
       - run: bun run check:package
       - name: Compose SDK input and Channels notifications in Node
-        run: |
-          timeout 10s node --input-type=module <<'JS'
-          import assert from "node:assert/strict";
-          import { Funnel } from "./dist/index.js";
-          import { agentSdkInput, claudeChannelNotification } from "./dist/claude.js";
-          import { scheduleConnector } from "./dist/connectors/schedule.js";
-          const gateway = new Funnel({ connectors: [scheduleConnector()], channels: [{ name: "smoke", connectors: [{ type: "schedule", name: "clock" }] }] }).gatewayModule({ token: "" });
-          const events = gateway.events({ channel: "smoke" });
-          const input = agentSdkInput(events);
-          await gateway.start();
-          gateway.emit({ channel: "smoke", content: "ok" });
-          assert.equal(JSON.parse((await input.next()).value.message.content).content, "ok");
-          assert.equal(claudeChannelNotification({ content: "ok", offset: 1 }).params.meta.funnel_offset, "1");
-          const pending = input.next();
-          await gateway.stop();
-          assert.equal((await pending).done, true);
-          await input.return();
-          JS
+        run: node scripts/check-node-composition.mjs

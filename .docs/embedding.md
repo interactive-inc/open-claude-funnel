@@ -59,6 +59,21 @@ try {
 
 Channels は Claude Code 側で有効化したサーバーにだけ届く。MCP の書き込み成功は Claude の処理完了を意味しない。公式プレビューの有効化・制限は [Channels reference](https://code.claude.com/docs/en/channels-reference) を確認する。SDK 経由と Channels 経由は別々の組み込み先であり、SDK 内で Channels を有効化する実装ではない。
 
+## 別プロセスからの操作
+
+`/gateway` の `FunnelGatewayClient` はホストが既に公開した gateway の HTTP プロトコルを扱う。接続先と token の読み取り関数を渡し、`list()` / `start()` / `stop()` / `restart()` で listener を操作し、`publish(channel, input)` でイベントを配送する。daemon の起動・プロセス確認・ファイル・資格情報保存は持たない。
+
+```ts
+import { FunnelGatewayClient } from "@interactive-inc/claude-funnel/gateway"
+const client = new FunnelGatewayClient({
+  baseUrl: "http://127.0.0.1:4442",
+  token: () => hostCredentials.currentGatewayToken(),
+})
+await client.publish("ops", { content: "host event" })
+```
+
+認証値はリクエストごとに読み、リダイレクト先へ送らない。ホストが `isAvailable` を注入した場合、その値が false の間は通信せず `state: "offline"` を返す。成功は `state: "ok"`、HTTP・認証値の不足・応答形式・通信の失敗は `state: "error"` と reason で返す。HTTP の送信成功は購読者の処理完了を意味しない。
+
 ## 購読・返信・終了
 
 - 購読は `events()` を呼んだ時点で開始する。接続の `start()` より先に購読すると、起動時のイベントもキューに残せる。

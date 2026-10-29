@@ -21,3 +21,6 @@ export * from "@/engine/connectors/base-connector-config"
 export * from "@/engine/error/funnel-error"
 export * from "@/engine/error/on-funnel-error"
 export * from "@/gateway/channel-ws-url"
+// Public injection contracts used by connector hosts.
+export * from "@/engine/http/http-client"
+export * from "@/engine/time/clock"

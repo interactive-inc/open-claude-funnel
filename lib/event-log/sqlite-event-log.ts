@@ -210,23 +210,25 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
       const cols = ["ts", "type", "event", ...this.indexes]
       const placeholders = cols.map(() => "?").join(", ")
-      this.insertStmt = this.db.prepare(
+      // Database.query owns its cached statements and finalizes them on close.
+      // Unmanaged prepare() statements keep SQLite file handles alive after close_v2.
+      this.insertStmt = this.db.query(
         `INSERT INTO logs (${cols.join(", ")}) VALUES (${placeholders})`,
       )
 
       const colsWithSeq = ["seq", ...cols]
       const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
-      this.insertWithSeqStmt = this.db.prepare(
+      this.insertWithSeqStmt = this.db.query(
         `INSERT INTO logs (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
       )
 
-      this.maxSeqStmt = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS max FROM logs")
-      this.countStmt = this.db.prepare("SELECT COUNT(*) AS n FROM logs")
-      this.trimRowsStmt = this.db.prepare(
+      this.maxSeqStmt = this.db.query("SELECT COALESCE(MAX(seq), 0) AS max FROM logs")
+      this.countStmt = this.db.query("SELECT COUNT(*) AS n FROM logs")
+      this.trimRowsStmt = this.db.query(
         "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
       )
-      this.trimAgeStmt = this.db.prepare("DELETE FROM logs WHERE ts < ?")
-      this.trimOldestStmt = this.db.prepare(
+      this.trimAgeStmt = this.db.query("DELETE FROM logs WHERE ts < ?")
+      this.trimOldestStmt = this.db.query(
         "DELETE FROM logs WHERE seq IN (SELECT seq FROM logs ORDER BY seq ASC LIMIT ?)",
       )
     } catch (error) {
@@ -326,12 +328,16 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     // of which end the limit clipped.
     const dir = props.order === "desc" ? "DESC" : "ASC"
     const sql = `SELECT seq, ts, type, event FROM logs WHERE ${conditions.join(" AND ")} ORDER BY seq ${dir} LIMIT ?`
+    // Dynamic IN-list lengths can exceed Bun's bounded query cache. Own these
+    // statements explicitly so even uncached queries release their file handles.
     const stmt = this.db.prepare<EventRow, SQLQueryBindings[]>(sql)
-    const rows = stmt.all(...params)
-
-    if (dir === "DESC") rows.reverse()
-
-    return rows.map(toRecord<E>)
+    try {
+      const rows = stmt.all(...params)
+      if (dir === "DESC") rows.reverse()
+      return rows.map(toRecord<E>)
+    } finally {
+      stmt.finalize()
+    }
   }
 
   /**
@@ -339,7 +345,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
    * to verify migrations ran. Reads `PRAGMA user_version` once per call.
    */
   getSchemaVersion(): number {
-    const row = this.db.prepare<VersionRow, []>("PRAGMA user_version").get()
+    const row = this.db.query<VersionRow, []>("PRAGMA user_version").get()
     return row?.user_version ?? 0
   }
 
@@ -474,8 +480,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   private byteSize(): number {
-    const pageCount = this.db.prepare<PageCountRow, []>("PRAGMA page_count").get()?.page_count ?? 0
-    const pageSize = this.db.prepare<PageSizeRow, []>("PRAGMA page_size").get()?.page_size ?? 0
+    const pageCount = this.db.query<PageCountRow, []>("PRAGMA page_count").get()?.page_count ?? 0
+    const pageSize = this.db.query<PageSizeRow, []>("PRAGMA page_size").get()?.page_size ?? 0
 
     return pageCount * pageSize
   }
@@ -490,7 +496,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   private syncIndexColumns(): void {
     const existing = new Set(
       this.db
-        .prepare<ColumnRow, []>("PRAGMA table_info(logs)")
+        .query<ColumnRow, []>("PRAGMA table_info(logs)")
         .all()
         .map((r) => r.name),
     )
@@ -504,7 +510,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   private migrate(): void {
-    const row = this.db.prepare<VersionRow, []>("PRAGMA user_version").get()
+    const row = this.db.query<VersionRow, []>("PRAGMA user_version").get()
     const current = row?.user_version ?? 0
     if (current >= MIGRATIONS.length) return
 
