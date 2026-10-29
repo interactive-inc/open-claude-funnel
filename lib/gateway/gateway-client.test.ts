@@ -114,3 +114,41 @@ test("host availability failures follow the client's error result contract", asy
     reason: "host probe failed",
   })
 })
+
+for (const operation of ["start", "stop", "restart"] as const) {
+  test(`${operation} rejects malformed successful HTTP responses`, async () => {
+    for (const response of [
+      () => new Response(""),
+      () => new Response("<html>Wrong service</html>"),
+      () => Response.json({}),
+      () => Response.json({ ok: "true" }),
+      () => Response.json({ ok: 1 }),
+      () => Response.json(null),
+      () => Response.json([]),
+    ]) {
+      const client = new FunnelGatewayClient({
+        baseUrl: "http://localhost:1234",
+        token: () => "example-token",
+        fetch: async () => response(),
+      })
+      expect(await client[operation]("ops", "source")).toMatchObject({ state: "error" })
+    }
+  })
+
+  test(`${operation} honors the operation verdict in successful HTTP responses`, async () => {
+    let body: unknown = { ok: false, reason: "operation rejected" }
+    const client = new FunnelGatewayClient({
+      baseUrl: "http://localhost:1234",
+      token: () => "example-token",
+      fetch: async () => Response.json(body),
+    })
+    expect(await client[operation]("ops", "source")).toEqual({
+      state: "error",
+      reason: "operation rejected",
+    })
+    body = { ok: false }
+    expect(await client[operation]("ops", "source")).toMatchObject({ state: "error" })
+    body = { ok: true }
+    expect(await client[operation]("ops", "source")).toEqual({ state: "ok" })
+  })
+}

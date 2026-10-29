@@ -15,6 +15,7 @@ const entrySchema = z.object({
   connected: z.boolean().optional(),
 })
 export type ListenerEntry = z.infer<typeof entrySchema>
+const operationResponseSchema = z.object({ ok: z.boolean(), reason: z.string().optional() })
 export type ListenerOpResult =
   | { state: "ok" }
   | { state: "offline" }
@@ -91,7 +92,12 @@ export class FunnelGatewayClient {
         `/listeners/${encodeURIComponent(channel)}/${encodeURIComponent(connector)}${suffix}`,
         { method },
       )
-      if (response.ok) return { state: "ok" }
+      if (response.ok) {
+        const body = operationResponseSchema.parse(await response.json())
+        return body.ok
+          ? { state: "ok" }
+          : { state: "error", reason: body.reason ?? "listener operation failed" }
+      }
       const body = z
         .object({ reason: z.string().optional() })
         .safeParse(await response.json().catch(() => null))
