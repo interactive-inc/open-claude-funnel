@@ -502,14 +502,12 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     const count = this.insertsSinceByteCheck
     try {
       // Lock before reading so concurrent WAL writers cannot invalidate the snapshot upgrade.
-      return this.db
-        .transaction(() => {
-          this.getMaxSeq()
-          const result = write()
-          this.getMaxSeq()
-          return result
-        })
-        .immediate()
+      return this.runTransaction("BEGIN IMMEDIATE", () => {
+        this.getMaxSeq()
+        const result = write()
+        this.getMaxSeq()
+        return result
+      })
     } catch (error) {
       this.insertsSinceByteCheck = count
       throw error
@@ -619,6 +617,19 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
   }
 
+  /** Own transaction statements so closing does not depend on Bun's controller GC. */
+  private runTransaction<T>(begin: "BEGIN" | "BEGIN IMMEDIATE", write: () => T): T {
+    this.db.run(begin)
+    try {
+      const result = write()
+      this.db.run("COMMIT")
+      return result
+    } catch (error) {
+      if (this.db.inTransaction) this.db.run("ROLLBACK")
+      throw error
+    }
+  }
+
   private migrate(current: number): void {
     if (current === MIGRATIONS.length) return
 
@@ -627,11 +638,10 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
     for (const stmts of pending) {
       version += 1
-      const apply = this.db.transaction(() => {
+      this.runTransaction("BEGIN", () => {
         for (const stmt of stmts) this.db.run(stmt)
         this.db.run(`PRAGMA user_version = ${version}`)
       })
-      apply()
     }
   }
 }

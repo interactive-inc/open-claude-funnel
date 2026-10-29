@@ -54,3 +54,38 @@ test("close finalizes statements and releases database files without waiting for
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test("a constructor failure after migration releases the database before retry", () => {
+  const directory = mkdtempSync(join(tmpdir(), "funnel failed close "))
+  const path = join(directory, "events.db")
+  const failure = new Error("host clock configuration failed")
+  try {
+    expect(
+      () =>
+        new SqliteEventLog<string>({
+          path,
+          get now(): () => number {
+            throw failure
+          },
+        }),
+    ).toThrow(failure)
+    const database = new Database(path)
+    try {
+      // Changing the journal mode requires every previous connection to be released.
+      expect(database.query("PRAGMA journal_mode = DELETE").get()).toEqual({
+        journal_mode: "delete",
+      })
+    } finally {
+      database.close()
+    }
+    const retry = new SqliteEventLog<string>({ path })
+    try {
+      expect(retry.insert({ ts: 0, event: "retry" })).not.toBeInstanceOf(Error)
+      expect(retry.query().map(({ event }) => event)).toEqual(["retry"])
+    } finally {
+      retry.close()
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
