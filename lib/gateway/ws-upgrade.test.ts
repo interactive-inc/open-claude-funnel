@@ -2,13 +2,13 @@ import { expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
 
 /** Exercise validation through the actual HTTP upgrade boundary. */
-const upgradeStatus = async (query: string) => {
-  const gateway = new Funnel({ channels: [{ name: "ops" }] }).gatewayServer({ port: 0, token: "" })
+const upgradeStatus = async (query: string, upgrade = "websocket", token = "") => {
+  const gateway = new Funnel({ channels: [{ name: "ops" }] }).gatewayServer({ port: 0, token })
   try {
     await gateway.start()
     const response = await fetch(`http://127.0.0.1:${gateway.port}/ws${query}`, {
       headers: {
-        upgrade: "websocket",
+        upgrade,
         connection: "Upgrade",
         "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
         "sec-websocket-version": "13",
@@ -19,6 +19,14 @@ const upgradeStatus = async (query: string) => {
     await gateway.stop()
   }
 }
+
+test.each(["WebSocket", "WEBSOCKET", "wEbSoCkEt"])(
+  "WebSocket protocol names are case-insensitive through the HTTP boundary: %s",
+  async (upgrade) => {
+    expect(await upgradeStatus("?channel=ops", upgrade)).toBe(101)
+    expect(await upgradeStatus("?channel=ops", upgrade, "example-token")).toBe(401)
+  },
+)
 
 test.each(["", "?channel="])(
   "a missing channel is rejected instead of silently subscribing to nothing: %s",

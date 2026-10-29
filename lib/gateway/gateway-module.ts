@@ -319,7 +319,7 @@ export class FunnelGatewayModule {
   handleUpgrade(request: Request, server: Server<GatewayWsData>): GatewayUpgradeResult {
     const url = new URL(request.url)
 
-    if (url.pathname !== "/ws" || request.headers.get("upgrade") !== "websocket") {
+    if (url.pathname !== "/ws" || request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return NOT_HANDLED
     }
 
