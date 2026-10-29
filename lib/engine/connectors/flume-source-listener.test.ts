@@ -225,6 +225,39 @@ describe("FunnelFlumeSourceListener", () => {
     await listener.stop()
   })
 
+  for (const property of ["then", "catch"] as const) {
+    test(`host log promises with hidden ${property} preserve their original failure`, async () => {
+      const log = new MemoryConnectorDiagnosticLog()
+      const listener = new TestListener(log)
+      let enabled = false
+      await listener.startWithLogHandler(() => {
+        if (!enabled) return
+        // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host observer's overridden promise method.
+        return Object.defineProperty(
+          Promise.reject(new Error("original log rejection")),
+          property,
+          {
+            value: undefined,
+          },
+        )
+      })
+      try {
+        enabled = true
+        await listener.emitStatus("connected")
+        await Bun.sleep(0)
+        const errors = log.queryConnection({ type: "slack", status: "error" })
+        expect(errors.length).toBeGreaterThan(0)
+        expect(errors.every((row) => row.detail === "original log rejection")).toBe(true)
+        expect(listener.isConnected()).toBe(true)
+      } finally {
+        enabled = false
+        await listener.stop()
+      }
+      expect(listener.source.disconnectCalls).toBe(1)
+      expect(listener.resetCount).toBe(1)
+    })
+  }
+
   test("concurrent stop calls finalize a listener exactly once", async () => {
     const log = new MemoryConnectorDiagnosticLog()
     const listener = new TestListener(log)

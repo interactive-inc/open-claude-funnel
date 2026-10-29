@@ -136,15 +136,12 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
       const statusEvent = readStatusLog(log)
       if (statusEvent) this.handleStatus(statusEvent)
 
-      try {
-        // Host observers may be async despite Flume's void callback type.
-        // Observe their failure without making source shutdown await itself.
-        void Promise.resolve(options.onLog?.(log)).catch((error) => {
-          this.reportError(error, "log observer")
-        })
-      } catch (error) {
-        this.reportError(error, "log observer")
-      }
+      // Host observers may be async despite Flume's void callback type.
+      // Observe their failure without making source shutdown await itself.
+      invokeCallback(
+        () => options.onLog?.(log),
+        (error) => this.reportError(error, "log observer"),
+      )
     }
 
     const flumeOptions: {
