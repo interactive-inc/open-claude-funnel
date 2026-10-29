@@ -58,6 +58,38 @@ function freshSupervisor(options: { signal?: AbortSignal } = {}) {
 }
 
 describe("FunnelChannelSupervisor", () => {
+  it("continues delivery after a sink throws an unprintable value", async () => {
+    const source = new StubSource()
+    const logger = new MemoryFunnelLogger()
+    const delivered = Promise.withResolvers<void>()
+    let calls = 0
+    const supervisor = new FunnelChannelSupervisor({
+      broadcaster: {
+        broadcast() {
+          if (++calls === 1) throw Object.create(null)
+          delivered.resolve()
+        },
+      },
+      logger,
+      clock: new MemoryFunnelClock(),
+    })
+    supervisor.register({ id: "source", build: () => ({ sources: [source] }) })
+    const timer = setTimeout(() => delivered.reject(new Error("delivery timed out")), 1000)
+    try {
+      await supervisor.start()
+      for (let index = 0; index < 2; index++)
+        source.pushEvent?.({ source: "discord", type: "x", data: {}, meta: {}, receivedAt: 0 })
+      await delivered.promise
+      expect(calls).toBe(2)
+      expect(logger.entries.some((entry) => entry.meta?.error === "Unprintable thrown value")).toBe(
+        true,
+      )
+    } finally {
+      clearTimeout(timer)
+      await supervisor.stop()
+    }
+  })
+
   it("stop aborts a manifest build already in progress and never opens its late sources", async () => {
     const { supervisor } = freshSupervisor()
     const source = new StubSource()

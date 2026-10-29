@@ -2,5 +2,13 @@
  * Normalize an unknown thrown value into a loggable message string.
  */
 export const errorMessageOf = (error: unknown): string => {
-  return error instanceof Error ? error.message : String(error)
+  try {
+    if (error instanceof Error) {
+      const message = error.message
+      if (typeof message === "string") return message
+    }
+    return String(error)
+  } catch {
+    return "Unprintable thrown value"
+  }
 }
