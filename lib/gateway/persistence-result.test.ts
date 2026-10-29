@@ -2,12 +2,16 @@ import { expect, test } from "bun:test"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import { Funnel } from "@/funnel"
 
-for (const kind of ["promise", "thenable", "error"] as const) {
+for (const kind of ["promise", "thenable", "hidden-promise", "error"] as const) {
   test(`${kind} persistence results cannot report a successful publication or reach consumers`, async () => {
     const seen: string[] = []
     const broadcaster = new FunnelBroadcaster({
       record: () => {
         if (kind === "promise") return Promise.resolve()
+        if (kind === "hidden-promise") {
+          // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied promise with a hidden method.
+          return Object.defineProperty(Promise.resolve(), "then", { value: undefined })
+        }
         if (kind === "thenable")
           return {
             // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
@@ -51,7 +55,14 @@ test("gateway event-log results are preserved for the broadcaster's failure chec
   }
 })
 
-for (const kind of ["promise", "thenable", "changing-then", "nested-thenable"] as const) {
+for (const kind of [
+  "promise",
+  "thenable",
+  "changing-then",
+  "hidden-then",
+  "throwing-then",
+  "nested-thenable",
+] as const) {
   test(`late ${kind} persistence failures reach the host reporter without delivering`, async () => {
     const errors: string[] = []
     let reads = 0
@@ -59,13 +70,15 @@ for (const kind of ["promise", "thenable", "changing-then", "nested-thenable"] a
       record: () => {
         const failure = new Error("late persistence failure")
         if (kind === "promise") return Promise.reject(failure)
-        if (kind === "changing-then") {
+        if (kind === "changing-then" || kind === "hidden-then" || kind === "throwing-then") {
           const value = Promise.reject(failure)
           const then = value.then
           // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
           Object.defineProperty(value, "then", {
             get() {
-              return ++reads === 1 ? then : undefined
+              reads++
+              if (kind === "throwing-then") throw new Error("method unavailable")
+              return kind === "changing-then" && reads === 1 ? then : undefined
             },
           })
           return value
@@ -85,7 +98,8 @@ for (const kind of ["promise", "thenable", "changing-then", "nested-thenable"] a
     expect(() => broadcaster.broadcast("input")).toThrow("event persistence must be synchronous")
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(errors).toEqual(["late persistence failure"])
-    if (kind === "changing-then") expect(reads).toBe(1)
+    if (kind === "changing-then" || kind === "hidden-then" || kind === "throwing-then")
+      expect(reads).toBe(0)
     expect(broadcaster.getMetrics().eventsBroadcast).toBe(0)
   })
 }

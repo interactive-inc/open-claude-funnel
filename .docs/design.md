@@ -76,6 +76,7 @@ Funnel の生成時に options の値を取得し、registry・チャネル操�
 - createListener・createAdapter・secretTokens も同期の descriptor hook として Promise・thenable を拒否する。生成結果を listener・adapter・token 配列と誤認せず、遅延拒否を監視する。接続ライフサイクルと adapter.call の非同期処理は維持する。
 - 同期 hook の thenable 判定では then を一度取得し、同じ関数を使って拒否を監視する。getter の再読込で監視を外さず、別の Promise への解決でも拒否を取りこぼさない。
 - 設定ストア更新とイベント保存も同じ同期結果の検査を使う。then の再取得で契約エラーを TypeError に変えたり、元の保存失敗の監視・ホスト通知を失ったりしない。
+- 実 Promise は realm に依存しないネイティブ判定と組み込み then で拒否・監視する。then を隠す・getter から例外を投げる Promise も同期の保存・設定結果として通さず、元の拒否を監視する。
 - 再送の例外値も安全に正規化する。同一プロセスの購読は全読み取りを拒否して解除し、WebSocket は1011で閉じる。印字できない例外で登録・socket を残したり、host の open callback へ例外を漏らしたりしない。
 - ライブ配送・監視通知も印字できない例外を安全に正規化する。送信・buffer 取得の失敗はその socket だけを解除して1011で閉じ、他の配信先・監視通知を続ける。監視 callback の失敗も元の通知先へ報告する。
 - Channel の解除は呼び出し時の登録だけを対象にする。未登録 ID の解除は何もせず完了し、後から追加した同じ ID の登録を停止・削除しない。

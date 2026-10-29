@@ -86,7 +86,7 @@ for (const kind of ["promise", "thenable", "changing-then", "nested-thenable"] a
         else expect(run).toThrow(`connector ${stage} must be synchronous`)
         await Bun.sleep(0)
         expect(observed).toBe(1)
-        if (kind === "changing-then") expect(thenReads).toBe(1)
+        if (kind === "changing-then") expect(thenReads).toBe(0)
         expect(funnel.channels.list()).toEqual(before)
       } finally {
         Object.assign(descriptor, original)

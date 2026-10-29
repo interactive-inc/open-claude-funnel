@@ -170,7 +170,7 @@ test("changing then getters cannot bypass async mutation rejection or leak the o
     }),
   ).toThrow("settings updates must be synchronous")
   await Bun.sleep(0)
-  expect(reads).toBe(1)
+  expect(reads).toBe(0)
   expect(store.read()).toEqual(initial())
   expect(() =>
     store.update((draft) => {
