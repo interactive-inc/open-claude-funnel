@@ -198,8 +198,9 @@ export class FunnelChannels {
         throw new Error(`connector "${newName}" already exists in channel "${channelName}"`)
       }
 
+      const updatedAt = this.clock.iso()
       connector.name = newName
-      connector.updatedAt = this.clock.iso()
+      connector.updatedAt = updatedAt
     })
   }
 
