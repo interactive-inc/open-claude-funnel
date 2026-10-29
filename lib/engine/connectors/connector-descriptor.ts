@@ -68,6 +68,8 @@ export type ConnectorOperation = (props: {
  * concrete shape internally (it owns its zod schema), so no schema is exposed
  * here — that also sidesteps the variance trap of a `ZodType<Slack>` field
  * declared as `ZodType<BaseConnectorConfig>`.
+ * Configuration builders, updates and operations must complete synchronously;
+ * Promise/thenable results are rejected before committing settings.
  */
 export type ConnectorDescriptor = {
   type: string

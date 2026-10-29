@@ -15,6 +15,7 @@ import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import { FunnelClock } from "@/engine/time/clock"
 import { NodeFunnelClock } from "@/engine/time/node-clock"
+import { invokeCallback } from "@/invoke-callback"
 
 type Deps = {
   /** Connector types this funnel handles. Each is a self-describing descriptor;
@@ -90,7 +91,7 @@ export class FunnelConnectorRegistry {
   buildConfig(input: Record<string, unknown>, context: ConnectorBuildContext): BaseConnectorConfig {
     const type = typeof input.type === "string" ? input.type : ""
 
-    return this.require(type).buildConfig(input, context)
+    return synchronousResult(this.require(type).buildConfig(input, context), "buildConfig")
   }
 
   applyUpdate(
@@ -98,7 +99,10 @@ export class FunnelConnectorRegistry {
     fields: Record<string, unknown>,
     context: ConnectorUpdateContext,
   ): BaseConnectorConfig {
-    return this.require(config.type).applyUpdate(config, fields, context)
+    return synchronousResult(
+      this.require(config.type).applyUpdate(config, fields, context),
+      "applyUpdate",
+    )
   }
 
   runOperation(
@@ -115,7 +119,7 @@ export class FunnelConnectorRegistry {
       throw new Error(`connector type "${config.type}" has no operation "${name}"`)
     }
 
-    return operation({ config, args, context })
+    return synchronousResult(operation({ config, args, context }), "operation")
   }
 
   private require(type: string): ConnectorDescriptor {
@@ -147,4 +151,17 @@ export class FunnelConnectorRegistry {
       logger: this.logger,
     }
   }
+}
+
+/** Configuration hooks participate in a synchronous settings transaction. */
+function synchronousResult<T>(value: T, operation: string): T {
+  if (
+    value !== null &&
+    (typeof value === "object" || typeof value === "function") &&
+    typeof Reflect.get(value, "then") === "function"
+  ) {
+    invokeCallback(() => value)
+    throw new Error(`connector ${operation} must be synchronous`)
+  }
+  return value
 }
