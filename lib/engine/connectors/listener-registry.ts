@@ -311,10 +311,12 @@ export class FunnelListenerRegistry {
   }): Promise<StartResult> {
     const key = input.key
     const signal = input.controller.signal
+    const isCancelled = () => signal.aborted || this.isStopped || this.stopped.has(key)
 
-    if (signal.aborted) return { ok: false, reason: "start cancelled" }
+    if (isCancelled()) return { ok: false, reason: "start cancelled" }
 
     const current = this.configured(key)
+    if (isCancelled()) return { ok: false, reason: "start cancelled" }
     const channelName = current?.channelName ?? input.channelName
     const connectorName = current?.name ?? input.connectorName
 
@@ -350,6 +352,10 @@ export class FunnelListenerRegistry {
       }
 
       const listener = created.listener
+      if (isCancelled()) {
+        await listener.stop()
+        return { ok: false, reason: "start cancelled" }
+      }
       const opened = listener.start(bind, signal)
       void opened
         .then(
@@ -395,7 +401,7 @@ export class FunnelListenerRegistry {
       return { ok: true }
     } catch (error) {
       const err = normalizeError(error)
-      const wasCancelled = signal.aborted
+      const wasCancelled = isCancelled()
       startup.needsLateCleanup = true
       input.controller.abort()
 
