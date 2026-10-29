@@ -139,6 +139,7 @@ export type ConnectorRawQuery = ConnectorQuery & {
 export type ConnectorProcessedQuery = ConnectorQuery & {
   eventId?: string
   outcome?: string
+  /** Case-sensitive literal prefix; percent, underscore and null characters keep their meaning. */
   outcomePrefix?: string
 }
 

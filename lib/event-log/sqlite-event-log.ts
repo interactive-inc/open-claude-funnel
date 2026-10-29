@@ -55,7 +55,7 @@ export type SqliteEventLogQuery<I extends ReadonlyArray<string>> = {
   type?: string
   /** Filter by indexed columns. Keys are constrained to the declared `indexes`. */
   where?: Partial<IndexValues<I>>
-  /** Prefix-match indexed text columns. */
+  /** Case-sensitive literal prefix match, including embedded null characters. */
   wherePrefix?: IndexPrefixes<I>
   /** Match any value in a set for indexed columns. */
   whereIn?: IndexSets<I>
@@ -433,8 +433,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const value = prefixes[col]
       if (value === undefined) continue
 
-      conditions.push(`${col} LIKE ? ESCAPE '\\'`)
-      params.push(`${escapeLike(value)}%`)
+      conditions.push(`instr(${col}, ?) = 1`)
+      params.push(value)
     }
   }
 
@@ -577,10 +577,6 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       apply()
     }
   }
-}
-
-function escapeLike(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")
 }
 
 function validateIndexNames(names: ReadonlyArray<string>): void {

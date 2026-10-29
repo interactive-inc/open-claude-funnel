@@ -178,6 +178,32 @@ for (const impl of implementations) {
       log.close()
     })
 
+    test("prefix filters match literal case and embedded nulls before clipping rows", () => {
+      const log = impl.build()
+      const outcomes = [
+        "skip:match",
+        "SKIP:upper",
+        "skip:\0a",
+        "skip:\0b",
+        "skip:%_\\literal",
+        "skip:other",
+      ]
+      try {
+        for (const outcome of outcomes) log.recordProcessed(processed({ outcome }))
+        for (const prefix of ["skip:", "SKIP:", "skip:\0a", "skip:%_\\", "", "missing"]) {
+          const expected = outcomes.filter((outcome) => outcome.startsWith(prefix))
+          expect(log.queryProcessed({ outcomePrefix: prefix }).map((row) => row.outcome)).toEqual(
+            expected,
+          )
+          expect(
+            log.queryProcessed({ outcomePrefix: prefix, limit: 1 }).map((row) => row.outcome),
+          ).toEqual(expected.slice(-1))
+        }
+      } finally {
+        log.close()
+      }
+    })
+
     test("filters processed rows by outcome prefix before applying limit", () => {
       const log = impl.build()
 
