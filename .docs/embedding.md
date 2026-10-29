@@ -84,6 +84,7 @@ await client.publish("ops", { content: "host event" })
 - 再送ログの読み取りや exclusive claim の途中で購読を解除しても、その読み取りからイベントを配送しない。購読登録・キュー・待機中の読み取りはすぐ解放し、実行中の再送 iterator は処理が戻ってから閉じる。ログの読み取り中に解除された場合は、その後の未読イベントを claim しない。
 - 未読キューは `maxQueuedEvents`（既定200件）と `maxQueuedBytes`（既定4 MiB、JSON全体のUTF-8バイト数）で制限する。超過すると当該購読を解除し、`next()` がエラーになる。他の購読は継続する。
 - `return()`、`break`、購読の `signal` の abort、gateway の停止で未読入力を破棄し、待機中の `next()` を終了する。使用しなくなった列は、読み始めていなくても解除する。`agentSdkInput` の `return()` も元の列へ解除を伝える。
+- 購読は作成時の `signal` を一度だけ取得し、解除時も同じ signal から abort リスナーを外す。渡した options の signal を後から差し替えても、既存の購読のキャンセル元を変更したり、古い signal に購読を残したりしない。
 - `agentSdkInput` は解除開始時に待機中の読み取りを終了し、その後の読み取りや遅れて届く元の列のイベントを SDK へ渡さない。元の列に `return()` がなくてもこの規則を適用する。同時に複数回解除しても元の列の解除は一度だけ実行し、その完了または失敗を呼び出し元へ返す。
 - gateway の停止は SDK の実行中タスクやホストの MCP サーバーを閉じない。それぞれの既存 API で終了する。
 - `gateway.stop()` の開始後は gateway の HTTP 操作と新たな WebSocket 購読を HTTP 503 で拒否する。認証が必要な入口では認証を先に確認する。既存の WebSocket 購読も閉じ、取得済みの registry は接続を再開できなくなる。ホストの独自ルートと `healthRoute: false` でホストが持つ health は継続できる。

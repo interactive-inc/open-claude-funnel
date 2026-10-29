@@ -23,6 +23,7 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
   private readonly pending: PendingRead[] = []
   private readonly maxQueuedEvents: number
   private readonly maxQueuedBytes: number
+  private readonly signal: AbortSignal | undefined
   private readonly onAbort = () => this.close()
   private bytes = 0
   private readingReplay = false
@@ -30,18 +31,19 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
   private failure: Error | undefined
 
   constructor(
-    private readonly options: EventStreamOptions,
+    options: EventStreamOptions,
     private readonly onClose: () => void,
     private replay?: Iterator<ReplayableEvent>,
   ) {
+    this.signal = options.signal
     this.maxQueuedEvents = options.maxQueuedEvents ?? 200
     this.maxQueuedBytes = options.maxQueuedBytes ?? 4 * 1024 * 1024
     if (!Number.isSafeInteger(this.maxQueuedEvents) || this.maxQueuedEvents < 1)
       throw new Error("maxQueuedEvents must be a positive safe integer")
     if (!Number.isSafeInteger(this.maxQueuedBytes) || this.maxQueuedBytes < 1)
       throw new Error("maxQueuedBytes must be a positive safe integer")
-    if (options.signal?.aborted) this.close()
-    else options.signal?.addEventListener("abort", this.onAbort, { once: true })
+    if (this.signal?.aborted) this.close()
+    else this.signal?.addEventListener("abort", this.onAbort, { once: true })
   }
 
   get isClosed(): boolean {
@@ -106,7 +108,7 @@ export class FunnelEventStream implements AsyncIterableIterator<ReplayableEvent>
     if (this.closed) return
     this.closed = true
     this.failure = error
-    this.options.signal?.removeEventListener("abort", this.onAbort)
+    this.signal?.removeEventListener("abort", this.onAbort)
     this.queue.length = 0
     this.bytes = 0
     this.onClose()
