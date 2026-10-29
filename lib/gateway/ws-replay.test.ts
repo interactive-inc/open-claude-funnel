@@ -2,15 +2,26 @@ import { expect, test } from "bun:test"
 import type { GatewayWsData } from "@/gateway/gateway-module"
 import { Funnel } from "@/funnel"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
+import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 
 /** Real loopback sockets with deterministic storage and transport failures. */
-const failedReplay = async (failure: "read" | "send" | "dropped" | "backpressure") => {
+const failedReplay = async (
+  failure: "read" | "send" | "dropped" | "backpressure",
+  failingReporters = false,
+) => {
   const reported: Error[] = []
   const escaped: unknown[] = []
+  class Logger extends MemoryFunnelLogger {
+    override warn(): void {
+      throw new Error("logger unavailable")
+    }
+  }
   const funnel = new Funnel({
+    logger: failingReporters ? new Logger() : undefined,
     channels: [{ name: "ops" }],
     onError: (error) => {
       reported.push(error)
+      if (failingReporters) throw new Error("reporter unavailable")
     },
   })
   const channel = funnel.channels.get("ops")!
@@ -84,6 +95,10 @@ const failedReplay = async (failure: "read" | "send" | "dropped" | "backpressure
 
 test("WebSocket replay read failure is reported and closes the failed subscription", async () => {
   await failedReplay("read")
+})
+
+test("failed replay reporting cannot escape the host WebSocket callback", async () => {
+  await failedReplay("read", true)
 })
 
 test("WebSocket replay send failure closes instead of leaving an orphan connection", async () => {

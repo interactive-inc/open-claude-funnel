@@ -17,6 +17,7 @@ import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
 import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/event-stream"
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { invokeCallback } from "@/gateway/invoke-callback"
+import { logInfo } from "@/gateway/log-info"
 
 export type GatewayEventsOptions = EventStreamOptions & {
   channel: string
@@ -126,10 +127,12 @@ export class FunnelGatewayModule {
       throw new Error("token is required; use an empty string only with host-owned authentication")
     this.signal = deps.signal
     this.onAbort = () => {
-      void this.stop().catch((error: unknown) =>
-        this.onError(error instanceof Error ? error : new Error(String(error)), {
-          component: "gateway-stop",
-        }),
+      invokeCallback(
+        () => this.stop(),
+        (error: unknown) =>
+          this.onError(error instanceof Error ? error : new Error(String(error)), {
+            component: "gateway-stop",
+          }),
       )
     }
     this.channels = deps.channels
@@ -467,15 +470,17 @@ export class FunnelGatewayModule {
         } catch {
           // The peer may already have closed the transport.
         }
-        this.logger?.warn("replay failed during ws.open", { error: err.message })
-        this.onError(err, { component: "gateway-server.replay" })
+        invokeCallback(() =>
+          this.logger?.warn("replay failed during ws.open", { error: err.message }),
+        )
+        invokeCallback(() => this.onError(err, { component: "gateway-server.replay" }))
         return
       }
     }
 
     this.broadcaster.addClient(ws, ws.data)
 
-    this.logger?.info("channel connected", {
+    logInfo(this.logger, this.onError, "channel connected", {
       event_type: "system",
       action: "channel_connect",
       channel: ws.data.channelName ?? "",
@@ -488,7 +493,7 @@ export class FunnelGatewayModule {
   private handleWsClose(ws: ServerWebSocket<GatewayWsData>): void {
     this.broadcaster.removeClient(ws)
 
-    this.logger?.info("channel disconnected", {
+    logInfo(this.logger, this.onError, "channel disconnected", {
       event_type: "system",
       action: "channel_disconnect",
       channel: ws.data.channelName ?? "",
@@ -550,7 +555,7 @@ export class FunnelGatewayModule {
     await this.registry.startAll()
 
     for (const entry of this.registry.list()) {
-      this.logger?.info(`${entry.type} listener started: ${entry.name}`, {
+      logInfo(this.logger, this.onError, `${entry.type} listener started: ${entry.name}`, {
         event_type: "system",
         action: `${entry.type}_connect`,
         channel: entry.channelName,
@@ -558,7 +563,7 @@ export class FunnelGatewayModule {
       })
     }
 
-    this.logger?.info("funnel gateway running")
+    logInfo(this.logger, this.onError, "funnel gateway running")
   }
 
   private lookupConnectorId(channelId: string, connectorName: string): string | null {

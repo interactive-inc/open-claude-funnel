@@ -15,6 +15,8 @@ import {
   type GatewayEventsOptions,
 } from "@/gateway/gateway-module"
 import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
+import { logInfo } from "@/gateway/log-info"
+import { invokeCallback } from "@/gateway/invoke-callback"
 
 export type { GatewayEventStore }
 
@@ -57,6 +59,7 @@ export class FunnelGatewayServer {
   private readonly configuredPort: number
   private readonly configuredHostname: string
   private readonly logger: FunnelLogger | undefined
+  private readonly onError: OnFunnelError | undefined
   private readonly token: string
   private readonly allowInsecureHost: boolean
   private server: Server<GatewayWsData> | null = null
@@ -70,15 +73,18 @@ export class FunnelGatewayServer {
       throw new Error("port must be an integer between 0 and 65535")
     this.signal = deps.signal
     this.onAbort = () => {
-      void this.stop().catch((error: unknown) =>
-        deps.onError?.(error instanceof Error ? error : new Error(String(error)), {
-          component: "gateway-stop",
-        }),
+      invokeCallback(
+        () => this.stop(),
+        (error: unknown) =>
+          deps.onError?.(error instanceof Error ? error : new Error(String(error)), {
+            component: "gateway-stop",
+          }),
       )
     }
     this.configuredPort = deps.port
     this.configuredHostname = deps.hostname ?? DEFAULT_HOST
     this.logger = deps.logger
+    this.onError = deps.onError
     this.token = deps.token ?? ""
     this.allowInsecureHost = deps.allowInsecureHost ?? false
     this.module = new FunnelGatewayModule({
@@ -235,13 +241,13 @@ export class FunnelGatewayServer {
   }
 
   private logServerStarted(): void {
-    this.logger?.info("gateway started", {
+    logInfo(this.logger, this.onError, "gateway started", {
       event_type: "system",
       action: "gateway_start",
       port: String(this.port),
     })
 
-    this.logger?.info("funnel gateway listening", {
+    logInfo(this.logger, this.onError, "funnel gateway listening", {
       url: `http://localhost:${this.port}`,
       websocket: `ws://localhost:${this.port}/ws`,
       health: `http://localhost:${this.port}/health`,
