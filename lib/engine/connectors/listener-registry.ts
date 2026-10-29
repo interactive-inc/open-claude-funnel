@@ -473,10 +473,16 @@ export class FunnelListenerRegistry {
     channelName: string,
     connectorName: string,
   ): Promise<{ ok: boolean; reason?: string; retriable?: boolean }> {
+    if (this.stoppingAll) return { ok: false, reason: "registry is stopping" }
     const key = this.resolveKey(channelName, connectorName)
-    const stopped = await this.stopKey(key)
+    const lifecycle = this.lifecycle
+    const stopping = this.stopKey(key)
+    const revision = this.revisions.get(key)
+    const stopped = await stopping
 
     if (!stopped.ok) return stopped
+    if (this.stoppingAll || lifecycle !== this.lifecycle || revision !== this.revisions.get(key))
+      return { ok: false, reason: "restart cancelled by a newer lifecycle request" }
 
     const current = this.configured(key)
     if (!current)

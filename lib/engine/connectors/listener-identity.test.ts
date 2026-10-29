@@ -81,6 +81,79 @@ const setup = (
 }
 
 describe("listener identity", () => {
+  test.each(["stop", "stopAll"])(
+    "a later %s cancels a restart waiting for teardown",
+    async (operation) => {
+      const context = setup()
+      const entered = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      class SlowStop extends Listener {
+        override async stop(): Promise<void> {
+          entered.resolve()
+          await release.promise
+          await super.stop()
+        }
+      }
+      context.useFactory(() => new SlowStop())
+      try {
+        await context.registry.startAll()
+        const restarting = context.registry.restart("ops", "inbox")
+        await entered.promise
+        const stopping =
+          operation === "stop" ? context.registry.stop("ops", "inbox") : context.registry.stopAll()
+        release.resolve()
+        const restarted = await restarting
+        await stopping
+        expect(restarted.ok).toBe(false)
+        expect(context.listeners).toHaveLength(1)
+        expect(context.registry.list()).toEqual([])
+      } finally {
+        release.resolve()
+        await context.registry.stopAll()
+      }
+    },
+  )
+
+  test("the latest of two overlapping restarts owns the replacement", async () => {
+    const context = setup()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    class SlowStop extends Listener {
+      override async stop(): Promise<void> {
+        entered.resolve()
+        await release.promise
+        await super.stop()
+      }
+    }
+    context.useFactory(() => new SlowStop())
+    try {
+      await context.registry.startAll()
+      const first = context.registry.restart("ops", "inbox")
+      await entered.promise
+      const second = context.registry.restart("ops", "inbox")
+      release.resolve()
+      expect((await first).ok).toBe(false)
+      expect((await second).ok).toBe(true)
+      expect(context.listeners).toHaveLength(2)
+      expect(context.registry.list()).toHaveLength(1)
+    } finally {
+      release.resolve()
+      await context.registry.stopAll()
+    }
+  })
+
+  test("an explicit restart after a completed stopAll remains available", async () => {
+    const context = setup()
+    try {
+      await context.registry.startAll()
+      await context.registry.stopAll()
+      expect((await context.registry.restart("ops", "inbox")).ok).toBe(true)
+      expect(context.listeners).toHaveLength(2)
+    } finally {
+      await context.registry.stopAll()
+    }
+  })
+
   test("factory failures reach the host and can be retried after the factory is corrected", async () => {
     const { registry, listeners, reported, useFactory } = setup()
     useFactory(() => {
