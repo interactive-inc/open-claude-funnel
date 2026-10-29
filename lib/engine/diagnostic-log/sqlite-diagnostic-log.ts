@@ -87,7 +87,8 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     const rawPath = props.rawPath
     const processedPath = props.processedPath
     const connectionPath = props.connectionPath
-    requireSeparateDiagnosticPaths([rawPath, processedPath, connectionPath])
+    const paths = [rawPath, processedPath, connectionPath]
+    requireSeparateDiagnosticPaths(paths)
     if (props.maxRows !== undefined) requireIntegerLimit(props.maxRows, "maxRows")
     if (props.rawMaxRows !== undefined) requireIntegerLimit(props.rawMaxRows, "rawMaxRows")
     if (props.maxAgeMs !== undefined) requireDurationLimit(props.maxAgeMs, "maxAgeMs")
@@ -119,6 +120,8 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
     // Opening is three separate files; if a later one fails, close the ones
     // already open so a failed constructor does not leak handles.
     try {
+      // Creating a new file reveals case/Unicode equivalence on this filesystem.
+      requireSeparateDiagnosticPaths(paths)
       this.processed = new SqliteEventLog<ConnectorProcessedEvent, ProcessedIndexes>({
         path: processedPath,
         indexes: ["event_id", "connector_id", "channel_id", "outcome"],
@@ -132,7 +135,8 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
         onMaintenanceError: (error) => this.report("processed", error, "compaction"),
       })
       try {
-        this.connection = new SqliteEventLog<ConnectorConnectionEvent, ConnectionIndexes>({
+        requireSeparateDiagnosticPaths(paths)
+        const connection = new SqliteEventLog<ConnectorConnectionEvent, ConnectionIndexes>({
           path: connectionPath,
           indexes: ["connector_id", "channel_id", "status"],
           extractIndexes: (event) => ({
@@ -143,6 +147,13 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
           ...verdictCap,
           onMaintenanceError: (error) => this.report("connection", error, "compaction"),
         })
+        try {
+          requireSeparateDiagnosticPaths(paths)
+        } catch (error) {
+          connection.close()
+          throw error
+        }
+        this.connection = connection
       } catch (error) {
         this.processed.close()
         throw error

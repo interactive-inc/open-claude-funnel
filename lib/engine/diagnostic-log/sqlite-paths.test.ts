@@ -218,3 +218,77 @@ test("a database occupying another store's WAL name keeps its existing history i
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+for (const [first, second] of [
+  ["rawPath", "processedPath"],
+  ["rawPath", "connectionPath"],
+  ["processedPath", "connectionPath"],
+] as const) {
+  for (const [left, right] of [
+    ["Events.db", "events.db"],
+    ["é.db", "e\u0301.db"],
+  ]) {
+    test(`new ${first}/${second} paths respect filesystem name equivalence for ${left}`, () => {
+      const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-paths-"))
+      const paths = {
+        rawPath: join(directory, "raw.db"),
+        processedPath: join(directory, "processed.db"),
+        connectionPath: join(directory, "connection.db"),
+      }
+      paths[first] = join(directory, left!)
+      paths[second] = join(directory, right!)
+      try {
+        // Probe this directory's actual semantics without creating database files.
+        const probe = join(directory, "probe")
+        mkdirSync(probe)
+        writeFileSync(join(probe, left!), "probe")
+        const equivalent = existsSync(join(probe, right!))
+        if (equivalent) {
+          expect(() => new SqliteConnectorDiagnosticLog(paths)).toThrow(
+            "diagnostic database paths must identify separate files",
+          )
+        } else {
+          const log = new SqliteConnectorDiagnosticLog(paths)
+          try {
+            log.recordRaw({
+              eventId: "input",
+              type: "example",
+              channelId: null,
+              connectorId: null,
+              payload: "{}",
+            })
+            expect(log.queryRaw({})).toHaveLength(1)
+            expect(log.queryProcessed({})).toEqual([])
+            expect(log.queryConnection({})).toEqual([])
+          } finally {
+            log.close()
+          }
+        }
+      } finally {
+        rmSync(directory, { recursive: true, force: true })
+      }
+    })
+  }
+}
+
+test("new final database cannot occupy an earlier store's differently cased journal path", () => {
+  const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-paths-"))
+  try {
+    writeFileSync(join(directory, "probe"), "probe")
+    const paths = {
+      rawPath: join(directory, "events.db"),
+      processedPath: join(directory, "processed.db"),
+      connectionPath: join(directory, "Events.db-JOURNAL"),
+    }
+    if (existsSync(join(directory, "PROBE"))) {
+      expect(() => new SqliteConnectorDiagnosticLog(paths)).toThrow(
+        "diagnostic database paths must identify separate files",
+      )
+    } else {
+      const log = new SqliteConnectorDiagnosticLog(paths)
+      log.close()
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
