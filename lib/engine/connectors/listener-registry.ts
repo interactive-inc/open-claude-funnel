@@ -314,16 +314,31 @@ export class FunnelListenerRegistry {
     const connectorName = current?.name ?? input.connectorName
 
     let created: ReturnType<ConnectorRegistry["createListener"]> = null
+    let startupListener: FunnelConnectorListener | undefined
     const startup = { needsLateCleanup: false }
     const deadline = new AbortController()
 
     try {
-      created = current ? this.channels.createListener(channelName, connectorName) : null
-      if (!created) {
+      const candidate = current ? this.channels.createListener(channelName, connectorName) : null
+      if (!candidate) {
         return {
           ok: false,
           reason: `connector "${connectorName}" not found in channel "${channelName}"`,
         }
+      }
+
+      startupListener = candidate.listener
+      const config = candidate.config
+      created = {
+        listener: startupListener,
+        channelId: candidate.channelId,
+        config: {
+          id: config.id,
+          name: config.name,
+          type: config.type,
+          createdAt: config.createdAt,
+          updatedAt: config.updatedAt,
+        },
       }
 
       const bind = async (content: string, meta?: Record<string, string>) => {
@@ -399,7 +414,7 @@ export class FunnelListenerRegistry {
       input.controller.abort()
 
       try {
-        await created?.listener.stop()
+        await startupListener?.stop()
       } catch {
         // best-effort cleanup; the listener may be partially initialized
       }
