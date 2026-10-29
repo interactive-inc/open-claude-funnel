@@ -1,5 +1,6 @@
 import { minifySlackEvent } from "@/engine/connectors/minify-slack-event"
 import type { SlackEvent, SlackMessageEvent } from "@/engine/connectors/slack-event-types"
+import { requireTimestamp } from "@/require-timestamp"
 
 export type SlackRawEvent = Record<string, unknown>
 
@@ -81,7 +82,7 @@ export class FunnelSlackEventProcessor {
     const channelId = getString(event, "channel") ?? ""
     const eventTs = getString(event, "event_ts") || getString(event, "ts") || ""
     const dedupKey = channelId && eventTs ? JSON.stringify([channelId, eventTs]) : null
-    const now = this.now()
+    const now = requireTimestamp(this.now())
     const seenAt = dedupKey === null ? undefined : this.dedup.get(dedupKey)
 
     if (seenAt !== undefined && seenAt >= now - DEDUP_WINDOW)

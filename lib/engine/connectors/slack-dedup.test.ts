@@ -70,3 +70,26 @@ test("a Slack transform that produces no JSON cannot consume the duplicate ident
   )
   expect(processor.process(event).skip).toBe(false)
 })
+
+test("invalid Slack clocks fail before delivery and cannot poison retry history", () => {
+  for (const invalid of [NaN, Infinity, -Infinity, 8.64e15 + 1]) {
+    let now = invalid
+    const processor = make(() => now)
+    expect(() => processor.process(event)).toThrow("time must be a valid timestamp")
+    now = 0
+    expect(processor.process(event).skip).toBe(false)
+    expect(processor.process(event)).toEqual({ skip: true, reason: "skip:dedup" })
+  }
+})
+
+test("an invalid Slack clock cannot bypass an existing duplicate", () => {
+  let now = 0
+  const processor = make(() => now)
+  expect(processor.process(event).skip).toBe(false)
+  now = NaN
+  expect(() => processor.process(event)).toThrow("time must be a valid timestamp")
+  now = 1
+  expect(processor.process(event)).toEqual({ skip: true, reason: "skip:dedup" })
+  now = 10_001
+  expect(processor.process(event).skip).toBe(false)
+})
