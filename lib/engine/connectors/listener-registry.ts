@@ -36,12 +36,12 @@ type RunningEntry = {
 }
 
 type StartResult = { ok: boolean; reason?: string; retriable?: boolean }
-type StartingEntry = {
-  channelName: string
-  connectorName: string
+type ListenerNames = { channelName: string; connectorName: string }
+type StartingEntry = ListenerNames & {
   controller: AbortController
   completion: Promise<StartResult>
 }
+type RecoveryWait = ListenerNames & { controller: AbortController }
 
 type ListenerStats = {
   events: number
@@ -130,7 +130,7 @@ export class FunnelListenerRegistry {
   private readonly stopping = new Map<string, Promise<StartResult>>()
   private readonly stopped = new Set<string>()
   private readonly revisions = new Map<string, number>()
-  private readonly recoveryWaits = new Map<string, AbortController>()
+  private readonly recoveryWaits = new Map<string, RecoveryWait>()
   private lifecycle = 0
   private isStopped = false
   private closed = false
@@ -146,7 +146,7 @@ export class FunnelListenerRegistry {
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null
   private healthCheckInFlight = false
   /** Connectors that failed initial start — retried by the health check. */
-  private readonly pendingRetry = new Map<string, { channelName: string; connectorName: string }>()
+  private readonly pendingRetry = new Map<string, ListenerNames>()
 
   constructor(deps: Deps) {
     this.channels = deps.channels
@@ -197,9 +197,11 @@ export class FunnelListenerRegistry {
       if (entry.channelName === channelName && entry.config.name === connectorName)
         detached.add(key)
     }
-    for (const [key, entry] of this.starting) {
-      if (entry.channelName === channelName && entry.connectorName === connectorName)
-        detached.add(key)
+    for (const state of [this.starting, this.pendingRetry, this.recoveryWaits]) {
+      for (const [key, entry] of state) {
+        if (entry.channelName === channelName && entry.connectorName === connectorName)
+          detached.add(key)
+      }
     }
     if (detached.size > 1) throw new Error("listener name is ambiguous among detached connections")
     return detached.values().next().value ?? JSON.stringify(["missing", channelName, connectorName])
@@ -266,7 +268,7 @@ export class FunnelListenerRegistry {
     this.isStopped = false
     this.stopped.delete(key)
     this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
-    this.recoveryWaits.get(key)?.abort()
+    this.recoveryWaits.get(key)?.controller.abort()
     const controller = new AbortController()
     const completion = Promise.resolve().then(() =>
       this.startLocked({ channelName, connectorName, key, controller }),
@@ -469,7 +471,7 @@ export class FunnelListenerRegistry {
   private async stopKey(key: string): Promise<StartResult> {
     this.stopped.add(key)
     this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
-    this.recoveryWaits.get(key)?.abort()
+    this.recoveryWaits.get(key)?.controller.abort()
 
     return this.stopEntry(key)
   }
@@ -636,7 +638,7 @@ export class FunnelListenerRegistry {
 
     for (const entry of this.starting.values()) entry.controller.abort()
     for (const entry of this.running.values()) entry.controller.abort()
-    for (const controller of this.recoveryWaits.values()) controller.abort()
+    for (const { controller } of this.recoveryWaits.values()) controller.abort()
 
     try {
       await completion
@@ -851,7 +853,7 @@ export class FunnelListenerRegistry {
     for (const [key, entry] of this.starting) {
       if (!configured.has(key)) entry.controller.abort()
     }
-    for (const [key, controller] of this.recoveryWaits) {
+    for (const [key, { controller }] of this.recoveryWaits) {
       if (!configured.has(key)) controller.abort()
     }
     await Promise.all(
@@ -909,7 +911,7 @@ export class FunnelListenerRegistry {
     const backoffMs = Math.min(1000 * 2 ** failureCount, this.maxBackoffMs)
 
     if (!this.canRecover(retry.key, lifecycle, revision)) return
-    await this.waitBackoff(retry.key, backoffMs)
+    await this.waitBackoff(retry.key, backoffMs, retry)
 
     if (!this.canRecover(retry.key, lifecycle, revision)) return
 
@@ -959,7 +961,7 @@ export class FunnelListenerRegistry {
 
     await this.stopEntry(key)
     if (!this.canRecover(key, lifecycle, revision)) return
-    await this.waitBackoff(key, backoffMs)
+    await this.waitBackoff(key, backoffMs, { channelName, connectorName })
 
     if (!this.canRecover(key, lifecycle, revision)) return
 
@@ -987,9 +989,10 @@ export class FunnelListenerRegistry {
     }
   }
 
-  private async waitBackoff(key: string, ms: number): Promise<void> {
+  private async waitBackoff(key: string, ms: number, names: ListenerNames): Promise<void> {
     const controller = new AbortController()
-    this.recoveryWaits.set(key, controller)
+    const wait = { controller, channelName: names.channelName, connectorName: names.connectorName }
+    this.recoveryWaits.set(key, wait)
     try {
       await this.sleep(ms, controller.signal)
     } catch (error) {
@@ -1002,7 +1005,7 @@ export class FunnelListenerRegistry {
       }
       throw error
     } finally {
-      if (this.recoveryWaits.get(key) === controller) this.recoveryWaits.delete(key)
+      if (this.recoveryWaits.get(key) === wait) this.recoveryWaits.delete(key)
     }
   }
 
