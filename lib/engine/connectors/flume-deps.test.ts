@@ -1,6 +1,90 @@
 import { describe, expect, test } from "bun:test"
-import { flumeLogHandler } from "@/engine/connectors/flume-deps"
+import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
+
+describe("resolveFlumeDeps", () => {
+  test("leaves absent overrides to Flume", () => {
+    expect(resolveFlumeDeps(undefined)).toBeUndefined()
+    expect(resolveFlumeDeps({})).toBeUndefined()
+  })
+
+  test("retains prototype methods and their original receiver", async () => {
+    class Runtime {
+      #calls = 0
+
+      async fetch(): Promise<Response> {
+        this.#calls++
+        return new Response(String(this.#calls))
+      }
+
+      now(): number {
+        return this.#calls
+      }
+    }
+    const deps = resolveFlumeDeps(new Runtime())
+    expect(deps).toBeDefined()
+    if (!deps) return
+    expect(await (await deps.fetch("https://example.com")).text()).toBe("1")
+    expect(deps.now()).toBe(1)
+  })
+
+  test("retains non-enumerable overrides", () => {
+    const runtime = Object.defineProperty({}, "now", { value: () => 42 })
+    expect(resolveFlumeDeps(runtime)?.now()).toBe(42)
+  })
+
+  test("preserves the default WebSocket's lazy lookup", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "WebSocket")
+    try {
+      const deps = resolveFlumeDeps({ now: () => 42 })
+      Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: undefined })
+      expect(deps?.WebSocket).toBeNull()
+      Object.defineProperty(globalThis, "WebSocket", {
+        configurable: true,
+        value: WebSocketFixture,
+      })
+      expect(deps?.WebSocket).toBe(WebSocketFixture)
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "WebSocket", descriptor)
+      else Reflect.deleteProperty(globalThis, "WebSocket")
+    }
+  })
+
+  test("retains an explicitly disabled WebSocket", () => {
+    expect(resolveFlumeDeps({ WebSocket: null })?.WebSocket).toBeNull()
+  })
+
+  test("captures host getters once", () => {
+    let reads = 0
+    const deps = resolveFlumeDeps({
+      get now() {
+        reads++
+        return () => reads
+      },
+    })
+    expect(deps?.now()).toBe(1)
+    expect(deps?.now()).toBe(1)
+    expect(reads).toBe(1)
+  })
+
+  test("rejects an explicitly invalid callback without restoring default IO", () => {
+    for (const key of [
+      "fetch",
+      "now",
+      "random",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+    ]) {
+      expect(() => resolveFlumeDeps({ [key]: undefined })).toThrow(
+        `Invalid runtime dependency: ${key}`,
+      )
+    }
+  })
+})
+
+class WebSocketFixture extends WebSocket {}
 
 describe("flumeLogHandler", () => {
   test("returns undefined when no logger is given", () => {

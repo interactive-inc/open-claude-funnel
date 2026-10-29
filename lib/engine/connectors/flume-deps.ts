@@ -16,17 +16,41 @@ import type { FunnelLogger } from "@/engine/logger/logger"
 export const flumeRuntimeDeps = createFlumeDefaultDeps
 
 /**
- * Builds the merged runtime deps Flume listeners pass to a source. Spreads the
- * default IO over any partial test override and returns `undefined` when no
- * override exists so Flume gets to use its own internal default and there is
- * one less degree of freedom to debug.
+ * Builds runtime deps without dropping prototype methods or eagerly resolving
+ * the default WebSocket. Host callbacks keep their original receiver.
  */
 export const resolveFlumeDeps = (
   override: Partial<FlumeRuntimeDeps> | undefined,
 ): FlumeRuntimeDeps | undefined => {
-  if (!override || Object.keys(override).length === 0) return undefined
+  if (!override) return undefined
+  const keys = [
+    "fetch",
+    "WebSocket",
+    "now",
+    "random",
+    "setTimeout",
+    "clearTimeout",
+    "setInterval",
+    "clearInterval",
+  ] as const satisfies readonly (keyof FlumeRuntimeDeps)[]
+  const provided = keys.filter((key) => key in override)
+  if (provided.length === 0) return undefined
 
-  return { ...createFlumeDefaultDeps(), ...override }
+  const deps = createFlumeDefaultDeps()
+  for (const key of provided) {
+    const value = override[key]
+    if (key !== "WebSocket" && typeof value !== "function") {
+      throw new TypeError(`Invalid runtime dependency: ${key}`)
+    }
+    Object.defineProperty(deps, key, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value:
+        key === "WebSocket" ? value : Reflect.apply(Function.prototype.bind, value, [override]),
+    })
+  }
+  return deps
 }
 
 /**
