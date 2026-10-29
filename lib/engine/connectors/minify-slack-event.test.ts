@@ -1,7 +1,56 @@
 import { describe, expect, test } from "vitest"
 import { minifySlackEvent } from "@/engine/connectors/minify-slack-event"
+import { FunnelSlackEventProcessor } from "@/engine/connectors/slack-event-processor"
 
 describe("minifySlackEvent", () => {
+  test("preserves both section text and fields through the delivery processor", () => {
+    const input = {
+      type: "message",
+      user: "UOTHER",
+      channel: "C1",
+      ts: "1.0",
+      attachments: [
+        {
+          text: "Report",
+          blocks: [
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: "Summary" },
+              fields: [
+                { type: "plain_text", text: "Status: pending" },
+                { type: "mrkdwn", text: "Owner: unassigned" },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    const original = structuredClone(input)
+    const result = new FunnelSlackEventProcessor({
+      ownBotUserId: "BOT",
+      ownBotId: "BOT_ID",
+    }).process(input)
+    expect(result.skip).toBe(false)
+    if (result.skip) throw new Error("Expected delivery")
+    expect(JSON.parse(result.content).attachments[0]).toEqual({
+      text: "Report\nSummary\nStatus: pending\nOwner: unassigned",
+      _funnel_omitted: ["blocks"],
+    })
+    expect(input).toEqual(original)
+  })
+
+  test("preserves fields alongside string section text", () => {
+    const result = minifySlackEvent({
+      attachments: [{ blocks: [{ text: "Summary", fields: [{ text: "Details" }] }] }],
+    })
+    expect(result.attachments).toEqual([
+      {
+        text: "Summary\nDetails",
+        _funnel_omitted: ["blocks"],
+      },
+    ])
+  })
+
   test("strips thumb fields from files and keeps url_private/permalink", () => {
     const result = minifySlackEvent({
       type: "message",
