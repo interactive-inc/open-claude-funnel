@@ -1,4 +1,5 @@
 import { requireTimestamp } from "@/require-timestamp"
+import { invokeCallback } from "@/invoke-callback"
 import { normalizeError } from "@/engine/error/error-message-of"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { Database } from "bun:sqlite"
@@ -537,9 +538,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.db.run("VACUUM")
     } catch (error) {
       const failure = normalizeError(error)
-      try {
-        void Promise.resolve(this.onMaintenanceError?.(failure)).catch(() => {})
-      } catch {}
+      invokeCallback(() => this.onMaintenanceError?.(failure))
     }
   }
 
