@@ -363,16 +363,14 @@ export class FunnelListenerRegistry {
       }
 
       const bind = async (content: string, meta?: Record<string, string>) => {
-        if (signal.aborted || this.isStopped || this.stopped.has(key))
-          throw new Error("listener stopped before delivery")
+        if (isCancelled()) throw new Error("listener stopped before delivery")
 
         try {
           const current = this.configured(key)
           if (!current) throw new Error("listener configuration no longer exists")
-          await this.notify(current.channelName, current.name, content, meta, {
-            channelId: current.channelId,
-            connectorId: current.id,
-          })
+          const { channelName, name: connectorName, channelId, id: connectorId } = current
+          if (isCancelled()) throw new Error("listener stopped before delivery")
+          await this.notify(channelName, connectorName, content, meta, { channelId, connectorId })
           this.recordEvent(key)
         } catch (error) {
           this.recordError(key)
