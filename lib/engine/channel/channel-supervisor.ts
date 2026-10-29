@@ -23,6 +23,7 @@ export class FunnelChannelSupervisor {
   private readonly logger: FunnelLogger
   private readonly props: Props
   private stopPromise: Promise<void> | null = null
+  private startPromise: Promise<void> | null = null
   private readonly onAbort = () =>
     invokeCallback(
       () => this.stop(),
@@ -88,10 +89,27 @@ export class FunnelChannelSupervisor {
     this.channels.delete(id)
   }
 
-  async start(): Promise<void> {
-    if (this.closed || this.started || this.props.signal?.aborted) return
+  start(): Promise<void> {
+    if (this.closed || this.props.signal?.aborted) return Promise.resolve()
+    if (this.startPromise) return this.startPromise
+    if (this.started) return Promise.resolve()
+    const completion = Promise.withResolvers<void>()
+    this.startPromise = completion.promise
     this.started = true
-    await Promise.all([...this.channels.values()].map((channel) => this.startChannel(channel)))
+    void Promise.all([...this.channels.values()].map((channel) => this.startChannel(channel))).then(
+      () => {
+        if (this.startPromise === completion.promise) this.startPromise = null
+        completion.resolve()
+      },
+      (error) => {
+        if (this.startPromise === completion.promise) {
+          this.startPromise = null
+          this.started = false
+        }
+        completion.reject(error)
+      },
+    )
+    return completion.promise
   }
 
   stop(): Promise<void> {
