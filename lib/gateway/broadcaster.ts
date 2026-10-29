@@ -63,6 +63,18 @@ export type BroadcastEvent = {
   readonly meta?: Readonly<Record<string, string>>
 }
 
+const snapshotClientData = (data: ClientData): ClientData => {
+  const connectorIds = data.connectorIds
+  return {
+    channel: data.channel,
+    channelName: data.channelName,
+    connectors: [...data.connectors],
+    connectorIds: connectorIds === undefined ? undefined : [...connectorIds],
+    delivery: data.delivery,
+    subscriberId: data.subscriberId,
+  }
+}
+
 export type ReplayableEvent = BroadcastEvent & {
   readonly offset: number
   /** Per-channel exclusive assignment; null means no worker was connected. */
@@ -218,7 +230,7 @@ export class FunnelBroadcaster {
    * Result is sorted ascending by offset and de-duplicated against the in-memory buffer.
    */
   replaySince(since: number, data: ClientData): ReplayableEvent[] {
-    return [...this.replayEvents(since, data)]
+    return [...this.replayEvents(since, snapshotClientData(data))]
   }
 
   /** Pull replay pages only as sends progress, using the same limits as live delivery. */
@@ -228,7 +240,12 @@ export class FunnelBroadcaster {
     data: ClientData,
     isCancelled?: () => boolean,
   ): void {
-    for (const event of this.replayEvents(since, data, this.latestOffset, isCancelled)) {
+    for (const event of this.replayEvents(
+      since,
+      snapshotClientData(data),
+      this.latestOffset,
+      isCancelled,
+    )) {
       if (isCancelled?.()) return
       sendWsPayload(ws, JSON.stringify(event), this.maxBufferedBytes)
     }
@@ -407,7 +424,7 @@ export class FunnelBroadcaster {
   }
 
   addClient(ws: ServerWebSocket<unknown>, data: ClientData): void {
-    this.clients.set(ws, data)
+    this.clients.set(ws, snapshotClientData(data))
   }
 
   /** Channel-scoped native input for SDKs and host-owned MCP notification loops. */
@@ -415,21 +432,17 @@ export class FunnelBroadcaster {
     data: ClientData,
     options: EventStreamOptions & { since?: number } = {},
   ): FunnelEventSubscription {
-    if (data.delivery === "exclusive" && !data.subscriberId)
+    const subscription = snapshotClientData(data)
+    if (subscription.delivery === "exclusive" && !subscription.subscriberId)
       throw new Error("exclusive event streams require a stable subscriber id")
-    if (options.since !== undefined && (!Number.isSafeInteger(options.since) || options.since < 0))
+    const since = options.since
+    if (since !== undefined && (!Number.isSafeInteger(since) || since < 0))
       throw new Error("since must be a non-negative safe integer")
     let stream: FunnelEventStream | undefined
-    const subscription = { ...data }
     const replay =
-      options.since === undefined
+      since === undefined
         ? undefined
-        : this.replayEvents(
-            options.since,
-            subscription,
-            this.latestOffset,
-            () => stream?.isClosed ?? false,
-          )
+        : this.replayEvents(since, subscription, this.latestOffset, () => stream?.isClosed ?? false)
     stream = new FunnelEventStream(
       options,
       () => {
@@ -467,24 +480,22 @@ export class FunnelBroadcaster {
     channelId: string,
     subscription: Pick<ClientData, "connectors" | "connectorIds" | "delivery">,
   ): void {
-    this.channelDelivery.set(channelId, subscription.delivery ?? "fanout")
+    const connectorIds = subscription.connectorIds
+    const update = {
+      connectors: [...subscription.connectors],
+      connectorIds: connectorIds === undefined ? undefined : [...connectorIds],
+      delivery: subscription.delivery,
+    }
+    this.channelDelivery.set(channelId, update.delivery ?? "fanout")
     for (const recipient of this.deliveryRecipients()) {
       const { data } = recipient
       if (data.channel !== channelId) continue
-      if (
-        subscription.delivery === "exclusive" &&
-        recipient.kind === "stream" &&
-        !data.subscriberId
-      ) {
+      if (update.delivery === "exclusive" && recipient.kind === "stream" && !data.subscriberId) {
         recipient.target.close(new Error("exclusive event streams require a stable subscriber id"))
         continue
       }
 
-      Object.assign(data, {
-        connectors: subscription.connectors,
-        connectorIds: subscription.connectorIds,
-        delivery: subscription.delivery,
-      })
+      Object.assign(data, update)
     }
   }
 
@@ -497,7 +508,7 @@ export class FunnelBroadcaster {
   }
 
   listChannels(): { channel: string; connectors: string[] }[] {
-    return this.deliveryRecipients().map(({ data }) => ({ ...data }))
+    return this.deliveryRecipients().map(({ data }) => snapshotClientData(data))
   }
 
   subscribe(handler: BroadcastSubscriber): () => void {
