@@ -15,7 +15,7 @@ import type {
   ScheduleEntry,
 } from "@/engine/connectors/schedule-connector-schema"
 
-/** The observer receives its own Date; changing it cannot alter saved firing checkpoints. */
+/** Detached entry and Date snapshots let observers transform values without changing later fires. */
 export type ScheduleOnFired = (entry: ScheduleEntry, firedAt: Date) => void | Promise<void>
 
 type Deps = {
@@ -55,12 +55,20 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
   constructor(deps: Deps) {
     super()
-    this.config = deps.config
+    const config = deps.config
+    this.config = {
+      id: config.id,
+      name: config.name,
+      type: config.type,
+      entries: config.entries.map((entry) => this.snapshotEntry(entry)),
+      createdAt: config.createdAt,
+      updatedAt: config.updatedAt,
+    }
     this.lastFiredStore = deps.lastFiredStore
     this.logger = deps.logger
     this.diagnostics = new FunnelConnectorDiagnosticsRecorder({
       type: "schedule",
-      connectorId: deps.config.id,
+      connectorId: this.config.id,
       channelId: deps.channelId ?? null,
       log: deps.diagnosticLog,
     })
@@ -398,7 +406,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (this.onFired) {
       try {
-        await this.onFired(entry, new Date(firedAt.getTime()))
+        await this.onFired(this.snapshotEntry(entry), new Date(firedAt.getTime()))
       } catch (error) {
         invokeCallback(() =>
           this.logger?.error("schedule onFired callback failed", {
@@ -475,6 +483,19 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
         error: message,
       }),
     )
+  }
+
+  private snapshotEntry(entry: ScheduleEntry): ScheduleEntry {
+    const base = {
+      id: entry.id,
+      prompt: entry.prompt,
+      enabled: entry.enabled,
+      catchupPolicy: entry.catchupPolicy,
+      createdAt: entry.createdAt,
+    }
+    return entry.kind === "once"
+      ? { ...base, kind: "once", runAt: entry.runAt }
+      : { ...base, kind: "cron", cron: entry.cron }
   }
 
   private readNow(): Date {
