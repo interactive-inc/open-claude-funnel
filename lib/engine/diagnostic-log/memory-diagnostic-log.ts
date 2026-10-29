@@ -36,22 +36,40 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   recordRaw(record: ConnectorRawRecord): void {
-    const event = { ...record, ts: requireTimestamp(this.now()) }
+    const { eventId, type, connectorId, channelId, payload } = record
+    const event = {
+      eventId,
+      type,
+      connectorId,
+      channelId,
+      payload,
+      ts: requireTimestamp(this.now()),
+    }
     this.raws.push({ ...event, seq: ++this.sequences.raw })
   }
 
   recordProcessed(record: ConnectorProcessedRecord): void {
-    const event = { ...record, ts: requireTimestamp(this.now()) }
+    const { eventId, type, connectorId, channelId, outcome, payload } = record
+    const event = {
+      eventId,
+      type,
+      connectorId,
+      channelId,
+      outcome,
+      payload,
+      ts: requireTimestamp(this.now()),
+    }
     this.processeds.push({ ...event, seq: ++this.sequences.processed })
   }
 
   recordConnection(record: ConnectorConnectionRecord): void {
-    const event = { ...record, ts: requireTimestamp(this.now()) }
+    const { type, connectorId, channelId, status, detail } = record
+    const event = { type, connectorId, channelId, status, detail, ts: requireTimestamp(this.now()) }
     this.connections.push({ ...event, seq: ++this.sequences.connection })
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
-    const options = snapshotQuery(query)
+    const options = { ...snapshotQuery(query), eventId: query.eventId }
     const matched = this.raws.filter((event) => {
       if (!matches(event, options)) return false
       if (options.eventId !== undefined && event.eventId !== options.eventId) return false
@@ -63,7 +81,12 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[] {
-    const options = snapshotQuery(query)
+    const options = {
+      ...snapshotQuery(query),
+      eventId: query.eventId,
+      outcome: query.outcome,
+      outcomePrefix: query.outcomePrefix,
+    }
     const matched = this.processeds.filter((event) => {
       if (!matches(event, options)) return false
       if (options.eventId !== undefined && event.eventId !== options.eventId) return false
@@ -79,7 +102,8 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryConnection(query: ConnectorConnectionQuery): StoredConnectionEvent[] {
-    const options = snapshotQuery(query)
+    const options = { ...snapshotQuery(query), status: query.status, statuses: query.statuses }
+    if (options.statuses !== undefined) options.statuses = [...options.statuses]
     const matched = this.connections.filter((event) => {
       if (!matches(event, options)) return false
       if (options.status !== undefined && event.status !== options.status) return false
@@ -122,8 +146,14 @@ const takeRecent = <T extends object>(events: T[], limit: number | undefined): T
 }
 
 /** Validate a stable view of bounds before inspecting any retained rows. */
-function snapshotQuery<T extends ConnectorQuery>(query: T): T {
-  const options = { ...query }
+function snapshotQuery(query: ConnectorQuery): ConnectorQuery {
+  const options: ConnectorQuery = {
+    type: query.type,
+    connectorId: query.connectorId,
+    channelId: query.channelId,
+    seq: query.seq,
+    limit: query.limit,
+  }
   if (options.seq !== undefined) requireIntegerLimit(options.seq, "seq")
   if (options.limit !== undefined) requireIntegerLimit(options.limit, "limit")
   return options
