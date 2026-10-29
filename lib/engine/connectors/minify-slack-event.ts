@@ -55,6 +55,10 @@ const flattenRichText = (node: unknown): string => {
 
   const text = node.text
   const type = node.type
+  if (type === "user" && typeof node.user_id === "string") return `<@${node.user_id}>`
+  if (type === "channel" && typeof node.channel_id === "string") return `<#${node.channel_id}>`
+  if (type === "usergroup" && typeof node.usergroup_id === "string")
+    return `<!subteam^${node.usergroup_id}>`
   const linkUrl = type === "link" ? node.url : undefined
 
   const ownText =

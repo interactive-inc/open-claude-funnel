@@ -3,6 +3,48 @@ import { minifySlackEvent } from "@/engine/connectors/minify-slack-event"
 import { FunnelSlackEventProcessor } from "@/engine/connectors/slack-event-processor"
 
 describe("minifySlackEvent", () => {
+  for (const layout of ["rich_text", "table"] as const) {
+    test(`preserves mention identities through ${layout} attachment delivery`, () => {
+      const section = {
+        type: "rich_text_section",
+        elements: [
+          { type: "text", text: "Ask " },
+          { type: "user", user_id: "U1" },
+          { type: "text", text: " in " },
+          { type: "channel", channel_id: "C2" },
+          { type: "text", text: " with " },
+          { type: "usergroup", usergroup_id: "S3" },
+        ],
+      }
+      const input = {
+        type: "message",
+        user: "UOTHER",
+        channel: "C1",
+        ts: "1.0",
+        attachments: [
+          {
+            blocks: [
+              layout === "table"
+                ? { type: "table", rows: [[section]] }
+                : { type: "rich_text", elements: [section] },
+            ],
+          },
+        ],
+      }
+      const original = structuredClone(input)
+      const result = new FunnelSlackEventProcessor({
+        ownBotUserId: "BOT",
+        ownBotId: "BOT_ID",
+      }).process(input)
+      if (result.skip) throw new Error("Expected delivery")
+      expect(JSON.parse(result.content).attachments[0]).toEqual({
+        text: "Ask <@U1> in <#C2> with <!subteam^S3>",
+        _funnel_omitted: ["blocks"],
+      })
+      expect(input).toEqual(original)
+    })
+  }
+
   for (const style of ["bullet", "ordered"] as const) {
     test(`preserves paragraph and ${style} list boundaries through attachment delivery`, () => {
       const section = (...parts: string[]) => ({

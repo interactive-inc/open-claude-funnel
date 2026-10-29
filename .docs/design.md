@@ -168,6 +168,8 @@ Slack の重複除外で使用する時計は有効なミリ秒時刻に制限�
 
 Slack の添付を軽量化する際、section block の本文と fields は併用されるため両方を順序どおり残す。入力データは変更せず、添付の既存本文に block の内容を追記する。
 
+添付の rich text と表のセルでは、user・channel・usergroup の参照を Slack のメンション表記へ変換し、参照先の識別子を配送本文に残す。
+
 Flume source の入力は Flume の上限付き pull stream で直列に処理する。既定のバッファはログを含めて 1000 件で、超過時は Flume の drop-oldest と overflow ログに従う。無制限の Promise 待機列は作らない。この段階で未処理の入力は Funnel の再送ログへ記録されていないため、再送の保証範囲には含まれない。
 
 停止は待機中の入力を破棄する。実行中のホスト callback の完了は待たず、callback 自身からも停止できる。状態ログの処理は完了させてから stopped を記録する。配送失敗と source の終了失敗は診断ログとホストの logger へ渡す。
