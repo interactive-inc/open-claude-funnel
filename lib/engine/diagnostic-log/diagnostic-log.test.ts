@@ -230,6 +230,38 @@ for (const impl of implementations) {
       log.close()
     })
 
+    test("invalid sequence and limit values are rejected even for empty diagnostic tables", () => {
+      const log = impl.build()
+      try {
+        for (const populated of [false, true]) {
+          if (populated) {
+            log.recordRaw(raw())
+            log.recordProcessed(processed())
+            log.recordConnection(connection())
+          }
+          for (const value of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+            for (const field of ["seq", "limit"] as const) {
+              const query = { [field]: value }
+              expect(() => log.queryRaw(query)).toThrow(
+                `${field} must be a non-negative safe integer`,
+              )
+              expect(() => log.queryProcessed(query)).toThrow(
+                `${field} must be a non-negative safe integer`,
+              )
+              expect(() => log.queryConnection(query)).toThrow(
+                `${field} must be a non-negative safe integer`,
+              )
+            }
+          }
+        }
+        expect(log.queryRaw({ seq: 1, limit: 1 })).toHaveLength(1)
+        expect(log.queryProcessed({ seq: 0 })).toEqual([])
+        expect(log.queryConnection({ limit: 0 })).toEqual([])
+      } finally {
+        log.close()
+      }
+    })
+
     test("limit returns the most recent rows, oldest first", () => {
       const log = impl.build()
 

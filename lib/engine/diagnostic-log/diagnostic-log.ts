@@ -126,9 +126,9 @@ export type ConnectorQuery = {
   type?: string
   connectorId?: string | null
   channelId?: string | null
-  /** Match one table-local sequence number exactly. */
+  /** Non-negative safe integer. Match one table-local sequence number exactly. */
   seq?: number
-  /** Cap on returned rows. The most recent matching rows are returned, oldest first. */
+  /** Non-negative safe integer. The most recent matching rows are returned, oldest first. */
   limit?: number
 }
 

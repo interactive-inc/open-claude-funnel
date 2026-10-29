@@ -1,3 +1,4 @@
+import { requireIntegerLimit } from "@/require-limit"
 import {
   ConnectorDiagnosticLog,
   type ConnectorConnectionQuery,
@@ -45,41 +46,44 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {
+    const options = snapshotQuery(query)
     const matched = this.raws.filter((event) => {
-      if (!matches(event, query)) return false
-      if (query.eventId !== undefined && event.eventId !== query.eventId) return false
+      if (!matches(event, options)) return false
+      if (options.eventId !== undefined && event.eventId !== options.eventId) return false
 
       return true
     })
 
-    return takeRecent(matched, query.limit)
+    return takeRecent(matched, options.limit)
   }
 
   queryProcessed(query: ConnectorProcessedQuery): StoredProcessedEvent[] {
+    const options = snapshotQuery(query)
     const matched = this.processeds.filter((event) => {
-      if (!matches(event, query)) return false
-      if (query.eventId !== undefined && event.eventId !== query.eventId) return false
-      if (query.outcome !== undefined && event.outcome !== query.outcome) return false
-      if (query.outcomePrefix !== undefined && !event.outcome.startsWith(query.outcomePrefix)) {
+      if (!matches(event, options)) return false
+      if (options.eventId !== undefined && event.eventId !== options.eventId) return false
+      if (options.outcome !== undefined && event.outcome !== options.outcome) return false
+      if (options.outcomePrefix !== undefined && !event.outcome.startsWith(options.outcomePrefix)) {
         return false
       }
 
       return true
     })
 
-    return takeRecent(matched, query.limit)
+    return takeRecent(matched, options.limit)
   }
 
   queryConnection(query: ConnectorConnectionQuery): StoredConnectionEvent[] {
+    const options = snapshotQuery(query)
     const matched = this.connections.filter((event) => {
-      if (!matches(event, query)) return false
-      if (query.status !== undefined && event.status !== query.status) return false
-      if (query.statuses !== undefined && !query.statuses.includes(event.status)) return false
+      if (!matches(event, options)) return false
+      if (options.status !== undefined && event.status !== options.status) return false
+      if (options.statuses !== undefined && !options.statuses.includes(event.status)) return false
 
       return true
     })
 
-    return takeRecent(matched, query.limit)
+    return takeRecent(matched, options.limit)
   }
 
   clear(): void {
@@ -110,4 +114,12 @@ const matches = (
 const takeRecent = <T extends object>(events: T[], limit: number | undefined): T[] => {
   const selected = limit === undefined ? events : limit <= 0 ? [] : events.slice(-limit)
   return selected.map((event) => ({ ...event }))
+}
+
+/** Validate a stable view of bounds before inspecting any retained rows. */
+function snapshotQuery<T extends ConnectorQuery>(query: T): T {
+  const options = { ...query }
+  if (options.seq !== undefined) requireIntegerLimit(options.seq, "seq")
+  if (options.limit !== undefined) requireIntegerLimit(options.limit, "limit")
+  return options
 }
