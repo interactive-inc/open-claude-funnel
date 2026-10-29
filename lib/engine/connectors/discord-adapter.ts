@@ -60,7 +60,7 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
       throw new Error(`Discord API failed (${res.status}): ${detail}`)
     }
 
-    if (res.status === 204 || method === "HEAD") {
+    if (res.status === 204 || res.status === 205 || method === "HEAD") {
       signal?.throwIfAborted()
       return null
     }

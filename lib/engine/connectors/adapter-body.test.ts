@@ -48,27 +48,48 @@ test("GitHub HEAD accepts a successful empty response", async () => {
   expect(http.calls[0]?.body).toBeUndefined()
 })
 
-test("authenticated gateway calls preserve empty arrays through the outbound application path", async () => {
-  const http = new MemoryFunnelHttpClient().on(() => ({ status: 204 }))
-  const funnel = new Funnel({
-    http,
-    connectors: [discordConnector()],
-    channels: [{ name: "ops", connectors: [{ ...discordConfig, type: "discord" }] }],
+for (const type of ["gh", "discord"] as const) {
+  test(`${type} accepts a bodyless 205 success response`, async () => {
+    const http = new MemoryFunnelHttpClient().on(() => ({ status: 205 }))
+    const adapter =
+      type === "gh"
+        ? new FunnelGhAdapter({
+            config: { id: "source", name: "source", type, token: "example-token" },
+            http,
+          })
+        : new FunnelDiscordAdapter({
+            config: { id: "source", name: "source", type, botToken: "example-token" },
+            http,
+          })
+    for (const method of ["GET", "POST", "DELETE"])
+      expect(await adapter.call({ method, path: "example" })).toBeNull()
+    expect(http.calls).toHaveLength(3)
   })
-  const gateway = funnel.gatewayModule({ token: "example-gateway-token" })
-  try {
-    const response = await gateway.app.request("/channels/ops/connectors/chat/call", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer example-gateway-token",
-      },
-      body: JSON.stringify({ method: "PUT", path: "/applications/example/commands", body: [] }),
+}
+
+for (const status of [204, 205]) {
+  test(`authenticated gateway calls preserve empty arrays with a ${status} response`, async () => {
+    const http = new MemoryFunnelHttpClient().on(() => ({ status }))
+    const funnel = new Funnel({
+      http,
+      connectors: [discordConnector()],
+      channels: [{ name: "ops", connectors: [{ ...discordConfig, type: "discord" }] }],
     })
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true, result: null })
-    expect(http.calls[0]?.body).toBe("[]")
-  } finally {
-    await gateway.stop()
-  }
-})
+    const gateway = funnel.gatewayModule({ token: "example-gateway-token" })
+    try {
+      const response = await gateway.app.request("/channels/ops/connectors/chat/call", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer example-gateway-token",
+        },
+        body: JSON.stringify({ method: "PUT", path: "/applications/example/commands", body: [] }),
+      })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ ok: true, result: null })
+      expect(http.calls[0]?.body).toBe("[]")
+    } finally {
+      await gateway.stop()
+    }
+  })
+}

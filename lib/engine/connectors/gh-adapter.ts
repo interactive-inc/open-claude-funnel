@@ -47,7 +47,7 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
       signal?.throwIfAborted()
       throw new Error(`GitHub API failed (${response.status}): ${detail}`)
     }
-    if (response.status === 204 || method === "HEAD") {
+    if (response.status === 204 || response.status === 205 || method === "HEAD") {
       signal?.throwIfAborted()
       return null
     }
