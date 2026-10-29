@@ -76,6 +76,8 @@ const authTestResponseSchema = z.object({
 
 const AUTH_TEST_URL = "https://slack.com/api/auth.test"
 
+type ReactionTarget = { channel: string; timestamp: string }
+
 /**
  * Slack listener backed by `@interactive-inc/flume`'s `FlumeSlackSource` (raw
  * Socket Mode WebSocket + Zod). The processor layer
@@ -368,7 +370,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
       rawJson,
       result.content,
       result.meta,
-      result.shouldReact,
+      result.shouldReact ? { channel: result.channel, timestamp: result.timestamp } : null,
       signal,
     )
   }
@@ -379,7 +381,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     rawJson: string,
     content: string,
     meta: Record<string, string>,
-    shouldReact: boolean,
+    reaction: ReactionTarget | null,
     signal?: AbortSignal,
   ): Promise<void> {
     if (signal?.aborted) return
@@ -394,12 +396,12 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
 
     this.diagnostics.recordProcessed(eventId, "emitted", content)
 
-    if (shouldReact && !signal?.aborted) {
+    if (reaction && !signal?.aborted) {
       // Reaction is post-delivery cosmetic — fire-and-forget so a ~300ms
       // round-trip to slack.com/api/reactions.add does not gate the next
       // event's notify. Notify ordering is the contract; reactions are not.
       invokeCallback(
-        () => this.postReaction(meta, signal),
+        () => this.postReaction(reaction, signal),
         (error: unknown) => {
           if (signal?.aborted) return
           const message = errorMessageOf(error)
@@ -412,7 +414,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     }
   }
 
-  private async postReaction(meta: Record<string, string>, signal?: AbortSignal): Promise<void> {
+  private async postReaction(target: ReactionTarget, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted()
     const res = await this.http.fetch({
       method: "POST",
@@ -423,8 +425,8 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        channel: meta.channel_id ?? "",
-        timestamp: meta.thread_ts ?? "",
+        channel: target.channel,
+        timestamp: target.timestamp,
         name: "eyes",
       }).toString(),
     })

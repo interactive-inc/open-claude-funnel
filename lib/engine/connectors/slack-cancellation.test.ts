@@ -102,6 +102,41 @@ const cancel = async (
   else context[owner].abort()
 }
 
+for (const threaded of [false, true]) {
+  for (const mutate of [false, true]) {
+    test(`reaction targets the received message (threaded=${threaded}, mutate=${mutate})`, async () => {
+      const requested = Promise.withResolvers<HttpRequest>()
+      let thread: string | undefined
+      const context = await setup({
+        preprocessEvent: (event) => (threaded ? { ...event, thread_ts: "0" } : event),
+        notify: async (_content, meta) => {
+          thread = meta?.thread_ts
+          if (mutate && meta) {
+            meta.channel_id = "OTHER"
+            meta.thread_ts = "changed"
+          }
+        },
+        reaction: (request) => {
+          requested.resolve(request)
+          return { body: JSON.stringify({ ok: true }) }
+        },
+      })
+      const timer = setTimeout(() => requested.reject(new Error("reaction timed out")), 1000)
+      try {
+        context.emit("hello <@BOT>")
+        const request = await requested.promise
+        const form = new URLSearchParams(request.body)
+        expect(form.get("channel")).toBe("C1")
+        expect(form.get("timestamp")).toBe("1")
+        expect(thread).toBe(threaded ? "0" : "1")
+      } finally {
+        clearTimeout(timer)
+        await context.listener.stop()
+      }
+    })
+  }
+}
+
 for (const owner of ["host", "ownership", "direct"] as const) {
   test(`${owner} cancellation prevents delayed preprocessing from delivering new input`, async () => {
     const entered = Promise.withResolvers<void>()
