@@ -131,6 +131,7 @@ export class FunnelListenerRegistry {
   private readonly stopped = new Set<string>()
   private readonly revisions = new Map<string, number>()
   private readonly recoveryWaits = new Map<string, RecoveryWait>()
+  private readonly healthTaskNames = new Map<string, ListenerNames>()
   private lifecycle = 0
   private isStopped = false
   private closed = false
@@ -197,7 +198,12 @@ export class FunnelListenerRegistry {
       if (entry.channelName === channelName && entry.config.name === connectorName)
         detached.add(key)
     }
-    for (const state of [this.starting, this.pendingRetry, this.recoveryWaits]) {
+    for (const state of [
+      this.starting,
+      this.pendingRetry,
+      this.recoveryWaits,
+      this.healthTaskNames,
+    ]) {
       for (const [key, entry] of state) {
         if (entry.channelName === channelName && entry.connectorName === connectorName)
           detached.add(key)
@@ -834,12 +840,22 @@ export class FunnelListenerRegistry {
     op: "recover" | "retry",
     task: () => Promise<void>,
   ): Promise<void> {
+    const running = this.running.get(key)
+    const target = running
+      ? { channelName: running.channelName, connectorName: running.config.name }
+      : this.pendingRetry.get(key)
+    const names = target
+      ? { channelName: target.channelName, connectorName: target.connectorName }
+      : undefined
+    if (names) this.healthTaskNames.set(key, names)
     try {
       await task()
     } catch (error) {
       const err = normalizeError(error)
       this.logger?.warn("listener health task failed", { key, op, error: errorMessageOf(err) })
       this.onError(err, { component: "listener-registry.health-task", key, op })
+    } finally {
+      if (this.healthTaskNames.get(key) === names) this.healthTaskNames.delete(key)
     }
   }
 
@@ -947,6 +963,11 @@ export class FunnelListenerRegistry {
     if (!initial) return
     const channelName = initial.channelName
     const connectorName = initial.name
+    const names = this.healthTaskNames.get(key)
+    if (names) {
+      names.channelName = channelName
+      names.connectorName = connectorName
+    }
     const lifecycle = this.lifecycle
     const revision = this.revisions.get(key)
     const failureCount = this.failureCounts.get(key) ?? 0
