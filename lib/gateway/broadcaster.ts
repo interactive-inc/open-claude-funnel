@@ -5,6 +5,7 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { sendWsPayload } from "@/gateway/send-ws-payload"
+import { invokeCallback } from "@/gateway/invoke-callback"
 import {
   FunnelEventStream,
   type EventStreamOptions,
@@ -429,6 +430,7 @@ export class FunnelBroadcaster {
   }
 
   broadcast(content: string, meta?: Record<string, string>): ReplayableEvent {
+    const observers = [...this.subscribers]
     if (this.channels) {
       this.channelDelivery.clear()
       for (const channel of this.channels()) this.updateChannel(channel.id, channel)
@@ -481,51 +483,47 @@ export class FunnelBroadcaster {
           try {
             ws.close(1009, "backpressure")
           } catch {}
-          this.logger?.warn("dropping slow WS client (backpressure)", {
-            channel: data?.channel,
-            buffered: err.buffered,
-            max: this.maxBufferedBytes,
-          })
+          invokeCallback(() =>
+            this.logger?.warn("dropping slow WS client (backpressure)", {
+              channel: data?.channel,
+              buffered: err.buffered,
+              max: this.maxBufferedBytes,
+            }),
+          )
           continue
         }
         try {
           ws.close(1011, "send failed")
         } catch {}
-        this.logger?.warn("ws.send failed; dropping client", {
-          channel: data?.channel,
-          error: err.message,
-        })
+        invokeCallback(() =>
+          this.logger?.warn("ws.send failed; dropping client", {
+            channel: data?.channel,
+            error: err.message,
+          }),
+        )
       }
     }
 
-    for (const handler of this.subscribers) {
-      const captureError = (error: unknown): void => {
-        const err = error instanceof Error ? error : new Error(String(error))
+    for (const handler of observers) {
+      if (!this.subscribers.has(handler)) continue
+      invokeCallback(
+        () => handler(delivered),
+        (error) => {
+          const err = error instanceof Error ? error : new Error(String(error))
 
-        this.logger?.error("broadcast subscriber threw", { error: err.message })
-        this.onError(err, {
-          component: "broadcaster.subscriber",
-          offset: event.offset,
-          connector: event.meta?.connector ?? null,
-          channel: event.meta?.channel ?? null,
-        })
-      }
-
-      // BroadcastSubscriber is typed sync `(event) => void` but a host can
-      // still pass an async function — TS will accept it because Promise<void>
-      // is assignable to void. Wrap with Promise.resolve so a rejected
-      // async subscriber lands in onError instead of becoming an
-      // unhandled rejection that crashes the daemon under
-      // unhandledRejection=strict.
-      try {
-        // The cast widens the typed-void return to "could be a thenable" so
-        // a host-supplied async subscriber (TS allows Promise<void> where
-        // void is expected) does not slip through as a rejected microtask.
-        const result = handler(delivered) as unknown
-        if (result instanceof Promise) result.catch(captureError)
-      } catch (error) {
-        captureError(error)
-      }
+          invokeCallback(() =>
+            this.logger?.error("broadcast subscriber threw", { error: err.message }),
+          )
+          invokeCallback(() =>
+            this.onError(err, {
+              component: "broadcaster.subscriber",
+              offset: event.offset,
+              connector: event.meta?.connector ?? null,
+              channel: event.meta?.channel ?? null,
+            }),
+          )
+        },
+      )
     }
 
     return delivered
