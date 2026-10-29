@@ -16,7 +16,7 @@ import {
 } from "@/gateway/gateway-module"
 import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import { logInfo } from "@/gateway/log-info"
-import { invokeCallback } from "@/gateway/invoke-callback"
+import { invokeCallback } from "@/invoke-callback"
 
 export type { GatewayEventStore }
 

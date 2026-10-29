@@ -16,7 +16,7 @@ import { FunnelListenerRegistry } from "@/engine/connectors/listener-registry"
 import { gatewayRoutes, gatewayRoutesWithoutHealth } from "@/gateway/routes"
 import type { EventStreamOptions, FunnelEventSubscription } from "@/gateway/event-stream"
 import { WebSocketBackpressureError } from "@/gateway/errors"
-import { invokeCallback } from "@/gateway/invoke-callback"
+import { invokeCallback } from "@/invoke-callback"
 import { logInfo } from "@/gateway/log-info"
 
 export type GatewayEventsOptions = EventStreamOptions & {

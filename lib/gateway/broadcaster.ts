@@ -5,7 +5,7 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { sendWsPayload } from "@/gateway/send-ws-payload"
-import { invokeCallback } from "@/gateway/invoke-callback"
+import { invokeCallback } from "@/invoke-callback"
 import {
   FunnelEventStream,
   type EventStreamOptions,

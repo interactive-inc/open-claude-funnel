@@ -1,6 +1,6 @@
 import type { FunnelLogger } from "@/engine/logger/logger"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
-import { invokeCallback } from "@/gateway/invoke-callback"
+import { invokeCallback } from "@/invoke-callback"
 
 /** Informational logging must not alter connection lifecycle or delivery. */
 export function logInfo(

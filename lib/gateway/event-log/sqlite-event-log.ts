@@ -9,7 +9,7 @@ import {
 import { SqliteEventLog } from "@/event-log/sqlite-event-log"
 import { SqliteExclusiveClaims } from "@/gateway/event-log/sqlite-exclusive-claims"
 import { eventSnapshot } from "@/gateway/event-snapshot"
-import { invokeCallback } from "@/gateway/invoke-callback"
+import { invokeCallback } from "@/invoke-callback"
 
 type Props = {
   /** SQLite database file path. Created on first write. ":memory:" for tests. */

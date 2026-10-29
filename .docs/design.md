@@ -44,6 +44,7 @@ Funnel のジョブは外部の接続を共有し、Agent SDK・Claude Code Chan
 - observer から停止を待っても循環待ちしない。callback の配送と source の停止を混同しない。
 - 配信 observer の例外、Promise / thenable の失敗は logger と `onError` へ独立して渡す。エラー通知先の同期例外や非同期失敗で、他の配送やプロセスを止めない。配送中に登録した observer は次回から参加し、解除・再登録で同じイベントを二度呼ばない。
 - gateway の起動・購読・切断の通常ログも、接続状態を変更する処理と分ける。logger の失敗は `onError` へ渡し、待受だけが残った起動失敗や WebSocket callback の例外にしない。再送失敗の logger と `onError` は独立して呼び、通知先の失敗をホストの WebSocket callback へ漏らさない。
+- listener registry もログと `onError` の同期例外・非同期失敗を接続管理へ戻さない。通常ログの失敗で接続を停止したり、停止結果・再試行可否・自動復旧を変更したりしない。起動の期限後に完了した接続の後始末でも、元の失敗を通知して未処理の Promise 拒否を残さない。
 - 起動の期限と復旧待ちにキャンセルを伝え、正常起動や停止後に不要なタイマーを残さない。ホストが独自の sleep を渡す場合も、渡された AbortSignal に従う。
 - 組み込みの Slack / Discord / GitHub listener はホストの停止信号と registry の接続所有信号を合成して Flume へ渡す。Slack の事前認証 HTTP と応答本文の読み取りにも同じ信号を伝え、取り消された起動から遅れて接続を開かない。
 

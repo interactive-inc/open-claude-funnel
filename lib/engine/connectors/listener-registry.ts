@@ -4,6 +4,8 @@ import type { ChannelConnectorView } from "@/engine/channels/channels"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelAuthFailedError } from "@/engine/error/funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { ObservedFunnelLogger } from "@/engine/logger/observed-logger"
+import { invokeCallback } from "@/invoke-callback"
 
 type ConnectorRegistry = {
   listAllConnectors(): ChannelConnectorView[]
@@ -129,8 +131,16 @@ export class FunnelListenerRegistry {
   constructor(deps: Deps) {
     this.channels = deps.channels
     this.notify = deps.notify
-    this.logger = deps.logger
-    this.onError = deps.onError ?? defaultOnError
+    const onError = deps.onError ?? defaultOnError
+    this.onError = (error, context) => invokeCallback(() => onError(error, context))
+    this.logger =
+      deps.logger === undefined
+        ? undefined
+        : new ObservedFunnelLogger(deps.logger, (error) =>
+            this.onError(error instanceof Error ? error : new Error(String(error)), {
+              component: "listener-registry.logger",
+            }),
+          )
     this.healthCheckIntervalMs = deps.healthCheckIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
     this.maxBackoffMs = deps.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
     this.startTimeoutMs = deps.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
