@@ -1,3 +1,4 @@
+import { requireDurationLimit } from "@/require-limit"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
 import type { ChannelConnectorView } from "@/engine/channels/channels"
@@ -47,11 +48,13 @@ type Deps = {
   logger?: FunnelLogger
   /** Host hook for surfacing listener lifecycle exceptions. Defaults to no-op. */
   onError?: OnFunnelError
+  /** Finite milliseconds between 0 and 2147483647. Defaults to 30 seconds. */
   healthCheckIntervalMs?: number
+  /** Finite milliseconds between 0 and 2147483647. Defaults to 60 seconds. */
   maxBackoffMs?: number
   /** Per-listener timeout for `start()`. A listener that hangs beyond this is
    *  treated as a startup failure — it won't block other listeners or the
-   *  health-check loop. Defaults to 30 seconds. */
+   *  health-check loop. Finite milliseconds between 0 and 2147483647. Defaults to 30 seconds. */
   startTimeoutMs?: number
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
   now?: () => number
@@ -61,6 +64,14 @@ const defaultOnError: OnFunnelError = () => {}
 const DEFAULT_HEALTH_INTERVAL_MS = 30_000
 const DEFAULT_MAX_BACKOFF_MS = 60_000
 const DEFAULT_START_TIMEOUT_MS = 30_000
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+
+function requireTimerDelay(value: number | undefined, name: string, fallback: number): number {
+  const delay = requireDurationLimit(value === undefined ? fallback : value, name)
+  if (delay > MAX_TIMER_DELAY_MS)
+    throw new RangeError(`${name} must not exceed ${MAX_TIMER_DELAY_MS}ms`)
+  return delay
+}
 
 const defaultSleep = (ms: number, signal?: AbortSignal): Promise<void> => {
   if (signal?.aborted) return Promise.resolve()
@@ -142,9 +153,17 @@ export class FunnelListenerRegistry {
               component: "listener-registry.logger",
             }),
           )
-    this.healthCheckIntervalMs = deps.healthCheckIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
-    this.maxBackoffMs = deps.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
-    this.startTimeoutMs = deps.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
+    this.healthCheckIntervalMs = requireTimerDelay(
+      deps.healthCheckIntervalMs,
+      "healthCheckIntervalMs",
+      DEFAULT_HEALTH_INTERVAL_MS,
+    )
+    this.maxBackoffMs = requireTimerDelay(deps.maxBackoffMs, "maxBackoffMs", DEFAULT_MAX_BACKOFF_MS)
+    this.startTimeoutMs = requireTimerDelay(
+      deps.startTimeoutMs,
+      "startTimeoutMs",
+      DEFAULT_START_TIMEOUT_MS,
+    )
     this.sleep = deps.sleep ?? defaultSleep
     this.now = deps.now ?? (() => Date.now())
   }
