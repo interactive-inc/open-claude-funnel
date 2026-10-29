@@ -52,12 +52,15 @@ export class FunnelGatewayClient {
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
     const token = this.options.token()
     if (!token) throw new Error("gateway token is unavailable")
-    return (this.options.fetch ?? fetch)(`${this.base}${path}`, {
+    const send = this.options.fetch
+    const request: RequestInit = {
       ...init,
       redirect: "error",
       signal: AbortSignal.timeout(30_000),
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    })
+    }
+    const url = `${this.base}${path}`
+    return send ? send.call(this.options, url, request) : globalThis.fetch(url, request)
   }
   private available(): boolean {
     return this.options.isAvailable?.() ?? true

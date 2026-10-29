@@ -2,6 +2,58 @@ import { expect, test } from "bun:test"
 import { Funnel } from "@/funnel"
 import { FunnelGatewayClient } from "@/gateway/gateway-client"
 
+test("injected HTTP methods retain their host receiver across all operations", async () => {
+  class Host {
+    readonly baseUrl = "https://gateway.example"
+    #token = "first-token"
+    #requests: { url: string; authorization: string | null }[] = []
+
+    token() {
+      return this.#token
+    }
+
+    isAvailable() {
+      return this.#token !== ""
+    }
+
+    async fetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
+      this.#requests.push({
+        url: String(url),
+        authorization: new Headers(init?.headers).get("authorization"),
+      })
+      return Response.json({ listeners: [], ok: true, offset: 1 })
+    }
+
+    rotate() {
+      this.#token = "second-token"
+    }
+
+    get requests() {
+      return this.#requests
+    }
+  }
+  const host = new Host()
+  const client = new FunnelGatewayClient(host)
+  expect(await client.list()).toEqual({ state: "ok", listeners: [] })
+  host.rotate()
+  expect(await client.start("ops", "source")).toEqual({ state: "ok" })
+  expect(await client.stop("ops", "source")).toEqual({ state: "ok" })
+  expect(await client.restart("ops", "source")).toEqual({ state: "ok" })
+  expect(await client.publish("ops", { content: "input" })).toEqual({ state: "ok", offset: 1 })
+  expect(host.requests).toEqual([
+    { url: "https://gateway.example/listeners", authorization: "Bearer first-token" },
+    ...[
+      "/listeners/ops/source/start",
+      "/listeners/ops/source",
+      "/listeners/ops/source/restart",
+      "/channels/ops/publish",
+    ].map((path) => ({
+      url: `https://gateway.example${path}`,
+      authorization: "Bearer second-token",
+    })),
+  ])
+})
+
 for (const cleanup of ["complete", "throw", "reject", "pending"] as const) {
   test(`listener list cancels an unused error body without waiting for cleanup (${cleanup})`, async () => {
     let cancellations = 0
