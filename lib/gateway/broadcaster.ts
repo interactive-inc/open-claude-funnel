@@ -160,6 +160,7 @@ export class FunnelBroadcaster {
   private droppedSlowClients = 0
   private lastBroadcastAt: number | null = null
   private latestOffset = 0
+  private publishing = false
 
   constructor(deps: Deps = {}) {
     this.logger = deps.logger
@@ -449,9 +450,45 @@ export class FunnelBroadcaster {
   }
 
   broadcast(content: string, meta?: Record<string, string>): ReplayableEvent {
+    if (this.publishing) throw new Error("cannot broadcast during event persistence or delivery")
+    const observers = [...this.subscribers]
+    let delivered: ReplayableEvent
+    this.publishing = true
+    try {
+      delivered = this.deliverEvent(content, meta)
+    } finally {
+      this.publishing = false
+    }
+
+    for (const handler of observers) {
+      if (!this.subscribers.has(handler)) continue
+      invokeCallback(
+        () => handler(delivered),
+        (error) => {
+          const err = error instanceof Error ? error : new Error(String(error))
+
+          invokeCallback(() =>
+            this.logger?.error("broadcast subscriber threw", { error: err.message }),
+          )
+          invokeCallback(() =>
+            this.onError(err, {
+              component: "broadcaster.subscriber",
+              offset: delivered.offset,
+              connector: delivered.meta?.connector ?? null,
+              channel: delivered.meta?.channel ?? null,
+            }),
+          )
+        },
+      )
+    }
+    return delivered
+  }
+
+  /** Persist and complete live delivery before observers may publish derived input. */
+  private deliverEvent(content: string, meta?: Record<string, string>): ReplayableEvent {
     if (this.latestOffset >= Number.MAX_SAFE_INTEGER)
       throw new RangeError("event offset range exhausted")
-    const observers = [...this.subscribers]
+    const broadcastAt = this.now()
     if (this.channels) {
       this.channelDelivery.clear()
       for (const channel of this.channels()) this.updateChannel(channel.id, channel)
@@ -464,15 +501,14 @@ export class FunnelBroadcaster {
     }
     const recipients = this.pickRecipients(event)
     const delivered = eventSnapshot(event)
-    this.record?.(delivered)
     const payload = JSON.stringify(delivered)
+    const eventBytes = this.replayBufferSize > 0 ? byteLengthOf(event) : 0
+    this.record?.(delivered)
 
     this.eventsBroadcast += 1
-    this.lastBroadcastAt = this.now()
+    this.lastBroadcastAt = broadcastAt
 
     if (this.replayBufferSize > 0) {
-      const eventBytes = byteLengthOf(event)
-
       this.replayBuffer.push(event)
       this.replayBufferBytes += eventBytes
 
@@ -523,28 +559,6 @@ export class FunnelBroadcaster {
           }),
         )
       }
-    }
-
-    for (const handler of observers) {
-      if (!this.subscribers.has(handler)) continue
-      invokeCallback(
-        () => handler(delivered),
-        (error) => {
-          const err = error instanceof Error ? error : new Error(String(error))
-
-          invokeCallback(() =>
-            this.logger?.error("broadcast subscriber threw", { error: err.message }),
-          )
-          invokeCallback(() =>
-            this.onError(err, {
-              component: "broadcaster.subscriber",
-              offset: event.offset,
-              connector: event.meta?.connector ?? null,
-              channel: event.meta?.channel ?? null,
-            }),
-          )
-        },
-      )
     }
 
     return delivered
