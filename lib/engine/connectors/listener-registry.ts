@@ -923,6 +923,11 @@ export class FunnelListenerRegistry {
     this.recoveryWaits.set(key, controller)
     try {
       await this.sleep(ms, controller.signal)
+    } catch (error) {
+      const canceled =
+        error === controller.signal.reason ||
+        (error instanceof Error && error.name === "AbortError")
+      if (!controller.signal.aborted || !canceled) throw error
     } finally {
       if (this.recoveryWaits.get(key) === controller) this.recoveryWaits.delete(key)
     }
