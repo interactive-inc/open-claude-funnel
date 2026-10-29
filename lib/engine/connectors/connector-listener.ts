@@ -14,11 +14,12 @@ export type NotifyFn = (content: string, meta?: Record<string, string>) => Promi
 export abstract class FunnelConnectorListener {
   abstract start(notify: NotifyFn, signal?: AbortSignal): Promise<void>
   abstract stop(): Promise<void>
-  /** Actual transport availability; reconnecting listeners may still be alive. */
+  /** Synchronous boolean transport availability; reconnecting listeners may still be alive. */
   isConnected(): boolean {
     return this.isAlive()
   }
 
+  /** Synchronous boolean health state. Unknown state must throw. */
   isAlive(): boolean {
     return true
   }

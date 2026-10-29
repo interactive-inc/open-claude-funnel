@@ -9,6 +9,7 @@ import { FunnelAuthFailedError } from "@/engine/error/funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 import { ObservedFunnelLogger } from "@/engine/logger/observed-logger"
 import { invokeCallback } from "@/invoke-callback"
+import { requireSynchronous } from "@/require-synchronous"
 
 type ConnectorRegistry = {
   listAllConnectors(): ChannelConnectorView[]
@@ -206,8 +207,8 @@ export class FunnelListenerRegistry {
         channelId: entry.channelId,
         name: current?.name ?? entry.config.name,
         type: entry.config.type,
-        alive: entry.listener.isAlive(),
-        connected: entry.listener.isConnected(),
+        alive: this.readListenerState(key, entry, "isAlive"),
+        connected: this.readListenerState(key, entry, "isConnected"),
         events: stats?.events ?? 0,
         errors: stats?.errors ?? 0,
         failureCount: this.failureCounts.get(key) ?? 0,
@@ -674,6 +675,26 @@ export class FunnelListenerRegistry {
     this.ensureStats(key).errors += 1
   }
 
+  private readListenerState(
+    key: string,
+    entry: RunningEntry,
+    method: "isAlive" | "isConnected",
+  ): boolean {
+    const message = `listener ${method} must return a boolean synchronously`
+    const state: unknown = requireSynchronous(entry.listener[method](), message, (error) =>
+      this.onError(normalizeError(error), {
+        component: "listener-registry.health-state",
+        key,
+        method,
+        channelId: entry.channelId,
+        connectorId: entry.config.id,
+        type: entry.config.type,
+      }),
+    )
+    if (typeof state !== "boolean") throw new Error(message)
+    return state
+  }
+
   private startHealthCheck(): void {
     if (this.healthCheckTimer) return
 
@@ -725,7 +746,7 @@ export class FunnelListenerRegistry {
       for (const [key, entry] of this.running.entries()) {
         let alive: boolean
         try {
-          alive = entry.listener.isAlive()
+          alive = this.readListenerState(key, entry, "isAlive")
         } catch (error) {
           const err = normalizeError(error)
           const context = {
