@@ -3,6 +3,7 @@ import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-tok
 import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
+import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
 
 const SLACK_API_BASE = "https://slack.com/api/"
 
@@ -46,7 +47,7 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
     for (const [key, value] of Object.entries(
       body !== null && typeof body === "object" ? body : {},
     )) {
-      form.set(key, typeof value === "string" ? value : JSON.stringify(value))
+      form.set(key, typeof value === "string" ? value : serializeJsonBody(value))
     }
 
     const request = {

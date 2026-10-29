@@ -3,6 +3,7 @@ import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-tok
 import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
+import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
 
 const DISCORD_API_BASE = "https://discord.com/api/v10"
 
@@ -46,7 +47,7 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
         Authorization: `Bot ${this.token}`,
         "Content-Type": "application/json",
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? serializeJsonBody(body) : undefined,
       signal,
     }
     signal?.throwIfAborted()

@@ -3,6 +3,7 @@ import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-tok
 import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
 import type { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
+import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
 
 type Deps = { config: GhConnectorConfig; http?: FunnelHttpClient; env?: NodeJS.ProcessEnv }
 
@@ -35,7 +36,7 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
         Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? serializeJsonBody(body) : undefined,
       signal,
     }
     signal?.throwIfAborted()

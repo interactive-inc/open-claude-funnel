@@ -2,7 +2,8 @@
  * A JSON-serializable value. Connector call bodies are sent to external APIs as
  * JSON, so the body must be representable as JSON — `JsonValue` says exactly
  * that, replacing a bare `unknown` that let non-serializable values (functions,
- * symbols, class instances) slip through to `JSON.stringify`.
+ * symbols, class instances) slip through to `JSON.stringify`. Numbers are also
+ * checked for finiteness when serialized; TypeScript's number type includes NaN and infinities.
  */
 export type JsonValue =
   | string
