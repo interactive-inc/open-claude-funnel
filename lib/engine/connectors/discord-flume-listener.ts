@@ -195,14 +195,15 @@ export class FunnelFlumeDiscordListener extends FunnelFlumeSourceListener {
   }
 
   private adoptReady(data: Record<string, unknown>): void {
+    // READY replaces the session identity, even when validation or reporting fails.
+    this.processor = null
     const fromUser = isRecord(data.user) ? readString(data.user, "id") : undefined
     const fromTop = readString(data, "user_id")
-    const ownUserId = fromUser ?? fromTop ?? ""
+    const ownUserId = fromUser || fromTop || ""
 
     if (!ownUserId) {
-      // A READY without a usable user id leaves self-skip disabled forever,
-      // and every subsequent event would have to be silently dropped. Surface
-      // it loudly so an operator sees the listener is wedged.
+      // Keep dispatches blocked until a usable READY arrives, and surface the
+      // missing identity so the host can distinguish this from idle traffic.
       const skipId = crypto.randomUUID()
       this.diagnostics.recordRaw(skipId, JSON.stringify(data))
       this.diagnostics.recordProcessed(skipId, "skip:ready-missing-user-id", "")

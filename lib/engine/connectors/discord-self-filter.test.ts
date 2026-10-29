@@ -1,3 +1,4 @@
+import { NoopFunnelLogger } from "@/engine/logger/noop-logger"
 import { expect, test } from "bun:test"
 import type { FlumeRuntimeDeps } from "@interactive-inc/flume"
 import { FunnelDiscordEventProcessor } from "@/engine/connectors/discord-event-processor"
@@ -101,6 +102,107 @@ test("a partial self MESSAGE_UPDATE cannot loop back through the real Flume disp
     expect(delivered.map((content) => JSON.parse(content).id)).toEqual(["other"])
     expect(diagnostics.queryProcessed({ outcome: "skip:bot" })).toHaveLength(1)
     expect(diagnostics.queryProcessed({ outcome: "emitted" })).toHaveLength(1)
+  } finally {
+    await listener.stop()
+  }
+})
+
+for (const failingLogger of [false, true]) {
+  test(`a malformed replacement READY invalidates the old identity even when reporting fails: ${failingLogger}`, async () => {
+    class Logger extends NoopFunnelLogger {
+      override error(): void {
+        throw new Error("reporter failed")
+      }
+    }
+    const diagnostics = new MemoryConnectorDiagnosticLog()
+    const listener = new Listener({
+      config: { id: "source", name: "events", type: "discord", botToken: "example-token" },
+      diagnosticLog: diagnostics,
+      logger: failingLogger ? new Logger() : undefined,
+      flumeDeps: { WebSocket: Socket as unknown as NonNullable<FlumeRuntimeDeps["WebSocket"]> },
+    })
+    const delivered: string[] = []
+    try {
+      await listener.start(async (content) => {
+        delivered.push(content)
+      })
+      await listener.flush()
+      Socket.latest.emit({
+        op: 0,
+        t: "MESSAGE_CREATE",
+        s: 2,
+        d: { id: "before", channel_id: "channel", author: { id: "USER" } },
+      })
+      Socket.latest.emit({ op: 0, t: "READY", s: 3, d: { session_id: "replacement-session" } })
+      Socket.latest.emit({
+        op: 0,
+        t: "MESSAGE_CREATE",
+        s: 4,
+        d: { id: "blocked", channel_id: "channel", author: { id: "USER" } },
+      })
+      Socket.latest.emit({
+        op: 0,
+        t: "READY",
+        s: 5,
+        d: { session_id: "valid-session", user: { id: "NEXT_BOT" } },
+      })
+      Socket.latest.emit({
+        op: 0,
+        t: "MESSAGE_UPDATE",
+        s: 6,
+        d: { id: "self", channel_id: "channel", author: { id: "NEXT_BOT" } },
+      })
+      Socket.latest.emit({
+        op: 0,
+        t: "MESSAGE_CREATE",
+        s: 7,
+        d: { id: "after", channel_id: "channel", author: { id: "USER" } },
+      })
+      await listener.flush()
+      expect(delivered.map((content) => JSON.parse(content).id)).toEqual(["before", "after"])
+      expect(diagnostics.queryProcessed({ outcome: "skip:ready-missing-user-id" })).toHaveLength(1)
+      expect(diagnostics.queryProcessed({ outcome: "skip:pre-ready" })).toHaveLength(1)
+      expect(diagnostics.queryProcessed({ outcome: "skip:bot" })).toHaveLength(1)
+    } finally {
+      await listener.stop()
+    }
+  })
+}
+
+test("a replacement READY can use user_id when nested user.id is empty", async () => {
+  const diagnostics = new MemoryConnectorDiagnosticLog()
+  const listener = new Listener({
+    config: { id: "source", name: "events", type: "discord", botToken: "example-token" },
+    diagnosticLog: diagnostics,
+    flumeDeps: { WebSocket: Socket as unknown as NonNullable<FlumeRuntimeDeps["WebSocket"]> },
+  })
+  const delivered: string[] = []
+  try {
+    await listener.start(async (content) => {
+      delivered.push(content)
+    })
+    await listener.flush()
+    Socket.latest.emit({
+      op: 0,
+      t: "READY",
+      s: 2,
+      d: { session_id: "replacement-session", user: { id: "" }, user_id: "NEXT_BOT" },
+    })
+    Socket.latest.emit({
+      op: 0,
+      t: "MESSAGE_UPDATE",
+      s: 3,
+      d: { id: "self", channel_id: "channel", author: { id: "NEXT_BOT" } },
+    })
+    Socket.latest.emit({
+      op: 0,
+      t: "MESSAGE_CREATE",
+      s: 4,
+      d: { id: "other", channel_id: "channel", author: { id: "USER" } },
+    })
+    await listener.flush()
+    expect(delivered.map((content) => JSON.parse(content).id)).toEqual(["other"])
+    expect(diagnostics.queryProcessed({ outcome: "skip:ready-missing-user-id" })).toEqual([])
   } finally {
     await listener.stop()
   }
