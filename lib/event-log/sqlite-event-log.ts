@@ -89,7 +89,7 @@ type PageSizeRow = { page_size: number }
 /** Conservative whitelist for column names interpolated into SQL. */
 const COLUMN_NAME_RE = /^[a-z_][a-z0-9_]*$/
 
-/** How many inserts between on-disk size checks (see insertsSinceByteCheck). */
+/** How many inserted rows between on-disk size checks (see insertsSinceByteCheck). */
 const BYTE_CHECK_INTERVAL = 500
 
 const RESERVED_COLUMNS: ReadonlySet<string> = new Set(["seq", "ts", "type", "event"])
@@ -263,11 +263,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     try {
       const { ts, event } = input
       const params = this.buildInsertParams(ts, event)
-      const result = this.db.transaction(() => {
+      const result = this.writeTransaction(() => {
         const seq = this.nextSequence()
         this.insertWithSeqStmt.run(seq, ...params)
         return { record: { seq, ts, event }, compact: this.trim() }
-      })()
+      })
       this.compact(result.compact)
       return result.record
     } catch (e) {
@@ -280,8 +280,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
     try {
       const records: EventLogEntry<E>[] = []
-      const apply = this.db.transaction((batch: ReadonlyArray<{ ts: number; event: E }>) => {
-        for (const input of batch) {
+      const compact = this.writeTransaction(() => {
+        for (const input of inputs) {
           const { ts, event } = input
           const params = this.buildInsertParams(ts, event)
           const seq = this.nextSequence()
@@ -292,9 +292,9 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
             event,
           })
         }
-        return this.trim()
+        return this.trim(records.length)
       })
-      this.compact(apply(inputs))
+      this.compact(compact)
       return records
     } catch (e) {
       return normalizeError(e)
@@ -308,11 +308,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
         throw new Error("event log sequence must be a positive safe integer")
       const { ts, event } = record
       const params: SQLQueryBindings[] = [seq, ...this.buildInsertParams(ts, event)]
-      const compact = this.db.transaction(() => {
+      const compact = this.writeTransaction(() => {
         this.insertWithSeqStmt.run(...params)
         this.advanceSeqStmt.run(seq)
         return this.trim()
-      })()
+      })
       this.compact(compact)
     } catch (e) {
       return normalizeError(e)
@@ -478,7 +478,18 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
   }
 
-  private trim(): boolean {
+  /** The byte-check cadence advances only with committed payload changes. */
+  private writeTransaction<T>(write: () => T): T {
+    const count = this.insertsSinceByteCheck
+    try {
+      return this.db.transaction(write)()
+    } catch (error) {
+      this.insertsSinceByteCheck = count
+      throw error
+    }
+  }
+
+  private trim(insertedRows = 1): boolean {
     if (this.maxRows !== null) {
       const row = this.countStmt.get()
       if (row && row.n > this.maxRows) this.trimRowsStmt.run(this.maxRows)
@@ -488,7 +499,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.trimAgeStmt.run(requireTimestamp(this.now()) - this.maxAgeMs)
     }
 
-    return this.maybeTrimBytes()
+    return this.maybeTrimBytes(insertedRows)
   }
 
   private indexKeys(): ReadonlyArray<I[number]> {
@@ -496,18 +507,18 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   }
 
   /**
-   * Throttled byte-size enforcement. Only every BYTE_CHECK_INTERVAL inserts do
-   * we measure the file; on overflow we estimate how many of the oldest rows to
+   * Measure once a write reaches BYTE_CHECK_INTERVAL accumulated inserted rows.
+   * On overflow we estimate how many of the oldest rows to
    * drop to land near targetBytes (by the byte/row ratio), delete them in one
    * statement, then VACUUM once to return the freed pages to the filesystem (a
    * plain DELETE only frees pages inside the file). One DELETE + one VACUUM per
    * overflow keeps the expensive rewrite rare — the file must refill the whole
    * maxBytes→targetBytes delta before the next overflow can trigger.
    */
-  private maybeTrimBytes(): boolean {
+  private maybeTrimBytes(insertedRows: number): boolean {
     if (this.maxBytes === null || this.targetBytes === null) return false
 
-    this.insertsSinceByteCheck += 1
+    this.insertsSinceByteCheck += insertedRows
 
     if (this.insertsSinceByteCheck < BYTE_CHECK_INTERVAL) return false
 
@@ -552,8 +563,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
   /** Drop every row and reclaim the file space. Used by `<log>.clear()`. */
   clear(): void {
     this.db.run("DELETE FROM logs")
-    this.compact(true)
     this.insertsSinceByteCheck = 0
+    this.compact(true)
   }
 
   private syncIndexColumns(): void {
