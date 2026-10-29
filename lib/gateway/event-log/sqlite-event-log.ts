@@ -15,7 +15,7 @@ import { parseReplayEvent, replayEventFromRecord } from "@/gateway/event-log/rep
 import { isValidExclusiveClaim } from "@/gateway/event-log/exclusive-claim"
 
 type Props = {
-  /** SQLite database file path. Created on first write. ":memory:" for tests. */
+  /** SQLite file opened or created during construction. ":memory:" for tests. */
   path: string
   /** Override for tests. Defaults to `Date.now`. */
   now?: () => number
@@ -50,10 +50,9 @@ type Props = {
  * offset assignment for a store.
  *
  * System events (gateway lifecycle, channel connect/disconnect, etc.) do
- * NOT go through this store. They are diagnostic only and live in
- * `FunnelLogger`'s file so the seq space here stays exclusive to
- * broadcaster traffic. This is what makes the broadcaster's seq seeding
- * (`getMaxSeq()` at startup) correct without per-event coordination.
+ * NOT go through this store. They belong to the host's diagnostic logger,
+ * so this store's offset space stays exclusive to broadcaster traffic.
+ * The broadcaster seeds its startup offset from the store's high watermark.
  */
 export class SqliteFunnelEventLog extends FunnelEventLog {
   private readonly sink: SqliteEventLog<FunnelEvent, ["channel_id", "connector_id"]>

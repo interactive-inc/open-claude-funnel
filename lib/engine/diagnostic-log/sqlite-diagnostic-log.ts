@@ -65,12 +65,11 @@ type Props = {
 type WhereClause = { connector_id?: string | null; channel_id?: string | null }
 
 /**
- * Default `ConnectorDiagnosticLog`: three independent `FunnelLogSqliteSink`s, one
- * per table (raw / processed / connection), in separate files. Each sink
+ * Optional `ConnectorDiagnosticLog` backed by three independent indexed tables
+ * (raw / processed / connection) in separate SQLite files. Each table
  * indexes the columns its queries filter on — `event_id` / `connector_id` /
  * `channel_id` for raw, plus `outcome` for processed and `status` for
- * connection — so those lookups are indexed scans (`type` is a fixed column
- * the sink extracts separately, not an index, so filtering by it is a scan).
+ * connection. The shared sink also indexes the `type` column.
  *
  * The raw table offloads any payload over `RAW_PAYLOAD_CAP`: rather than
  * truncating mid-string (which yields unparseable JSON), it replaces the

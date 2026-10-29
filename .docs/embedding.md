@@ -91,7 +91,7 @@ await client.publish("ops", { content: "host event" })
 - `gateway.stop()` の開始後は gateway の HTTP 操作と新たな WebSocket 購読を HTTP 503 で拒否する。認証が必要な入口では認証を先に確認する。既存の WebSocket 購読も閉じ、取得済みの registry は接続を再開できなくなる。ホストの独自ルートと `healthRoute: false` でホストが持つ health は継続できる。
 - 返信は利用側が登録した SDK / MCP ツールから `funnel.channels.call(channel, connector, request)` を呼ぶ。受信時のサービス固有メタデータを使って返信先を指定する。投稿可否・送信者の許可・対象ツールの公開はホストで決める。
 
-Discord / GitHub の JSON 送信では、本文の省略と空配列・空オブジェクト・`null` を区別する。GET / HEAD は本文を送らず、成功した HEAD と HTTP 204 の戻り値は `null` とする。空の応答を JSON として読み取らない。
+Discord / GitHub の JSON 送信では、本文の省略と空配列・空オブジェクト・`null` を区別する。GET / HEAD は本文を送らず、成功した HEAD と HTTP 204 / 205 の戻り値は `null` とする。空の応答を JSON として読み取らない。
 
 独自の `FunnelHttpClient` を注入する場合は `HttpRequest.signal` を通信処理と応答本文の読み取りへ渡す。Slack の起動中の認証は、個別接続の停止・タイムアウトとホスト全体の停止のどちらでも取り消される。注入したクライアントが取消を無視して応答しても、取消後に Flume 接続は開始しない。
 
