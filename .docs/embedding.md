@@ -86,6 +86,7 @@ await client.publish("ops", { content: "host event" })
 - `return()`、`break`、購読の `signal` の abort、gateway の停止で未読入力を破棄し、待機中の `next()` を終了する。使用しなくなった列は、読み始めていなくても解除する。`agentSdkInput` の `return()` も元の列へ解除を伝える。
 - 購読は作成時の `signal` を一度だけ取得し、解除時も同じ signal から abort リスナーを外す。渡した options の signal を後から差し替えても、既存の購読のキャンセル元を変更したり、古い signal に購読を残したりしない。
 - `agentSdkInput` は解除開始時に待機中の読み取りを終了し、その後の読み取りや遅れて届く元の列のイベントを SDK へ渡さない。元の列に `return()` がなくてもこの規則を適用する。同時に複数回解除しても元の列の解除は一度だけ実行し、その完了または失敗を呼び出し元へ返す。
+- `agentSdkInput` の読込・メッセージ変換に失敗した場合も入力列を閉じ、元の列の解除を一度だけ開始する。後始末の失敗や未完了で元の読込・変換エラーを隠さず、以後の `next()` は終了を返す。明示的な `return()` から後始末の完了・失敗を確認できる。
 - gateway の停止は SDK の実行中タスクやホストの MCP サーバーを閉じない。それぞれの既存 API で終了する。
 - `gateway.stop()` の開始後は gateway の HTTP 操作と新たな WebSocket 購読を HTTP 503 で拒否する。認証が必要な入口では認証を先に確認する。既存の WebSocket 購読も閉じ、取得済みの registry は接続を再開できなくなる。ホストの独自ルートと `healthRoute: false` でホストが持つ health は継続できる。
 - 返信は利用側が登録した SDK / MCP ツールから `funnel.channels.call(channel, connector, request)` を呼ぶ。受信時のサービス固有メタデータを使って返信先を指定する。投稿可否・送信者の許可・対象ツールの公開はホストで決める。

@@ -6,6 +6,87 @@ import type { ReplayableEvent } from "@/gateway/broadcaster"
 const event: ReplayableEvent = { content: "late", offset: 1 }
 const done = { value: undefined, done: true } as const
 
+test("SDK input failure settles sibling reads and discards late source events", async () => {
+  const read = Promise.withResolvers<IteratorResult<ReplayableEvent>>()
+  const failure = new Error("read failed")
+  let reads = 0
+  let returns = 0
+  const input = agentSdkInput({
+    [Symbol.asyncIterator]() {
+      return {
+        next() {
+          if (++reads === 1) return read.promise
+          return Promise.reject(failure)
+        },
+        async return() {
+          returns++
+          return done
+        },
+      }
+    },
+  })
+  const pending = input.next()
+  try {
+    await expect(input.next()).rejects.toBe(failure)
+    expect(await pending).toEqual(done)
+    read.resolve({ value: event, done: false })
+    expect(await input.next()).toEqual(done)
+    await input.return!()
+    expect(returns).toBe(1)
+  } finally {
+    read.resolve(done)
+    await input.return!()
+  }
+})
+
+for (const stage of ["read", "transform"] as const) {
+  for (const cleanup of ["complete", "reject", "pending"] as const) {
+    test(`SDK input closes on ${stage} failure while cleanup is ${cleanup}`, async () => {
+      const failure = new Error("input failed")
+      const cleanupFailure = new Error("cleanup failed")
+      const release = Promise.withResolvers<void>()
+      let reads = 0
+      let returns = 0
+      const broken: ReplayableEvent = {
+        offset: 1,
+        get content(): string {
+          throw failure
+        },
+      }
+      const input = agentSdkInput({
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              reads++
+              if (stage === "read") throw failure
+              return { done: false, value: broken } as const
+            },
+            async return() {
+              returns++
+              if (cleanup === "reject") throw cleanupFailure
+              if (cleanup === "pending") await release.promise
+              return done
+            },
+          }
+        },
+      })
+      try {
+        await expect(input.next()).rejects.toBe(failure)
+        expect(returns).toBe(1)
+        expect(await input.next()).toEqual(done)
+        expect(reads).toBe(1)
+        release.resolve()
+        if (cleanup === "reject") await expect(input.return!()).rejects.toBe(cleanupFailure)
+        else expect(await input.return!()).toEqual(done)
+        expect(returns).toBe(1)
+      } finally {
+        release.resolve()
+        await input.return!().catch(() => {})
+      }
+    })
+  }
+}
+
 test("closing SDK input without a source return method prevents later reads", async () => {
   let reads = 0
   const input = agentSdkInput({

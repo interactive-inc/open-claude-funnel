@@ -35,6 +35,19 @@ export function agentSdkInput(
     for (const cancel of pending) cancel()
     pending.clear()
   }
+  const finish = () => {
+    close()
+    if (closing) return closing
+    // Install the cleanup guard before invoking host code, which may reenter.
+    const completion = Promise.withResolvers<IteratorReturnResult<undefined>>()
+    closing = completion.promise
+    const cleanup = async () => {
+      await iterator.return?.()
+      return done()
+    }
+    void cleanup().then(completion.resolve, completion.reject)
+    return closing
+  }
   return {
     [Symbol.asyncIterator]() {
       return this
@@ -55,23 +68,15 @@ export function agentSdkInput(
       }
       try {
         return await Promise.race([read(), canceled.promise])
+      } catch (error) {
+        // Cleanup must not replace or delay the original read/transform failure.
+        void finish().catch(() => {})
+        throw error
       } finally {
         pending.delete(cancel)
       }
     },
-    return() {
-      close()
-      if (closing) return closing
-      // Install the cleanup guard before invoking host code, which may reenter.
-      const completion = Promise.withResolvers<IteratorReturnResult<undefined>>()
-      closing = completion.promise
-      const cleanup = async () => {
-        await iterator.return?.()
-        return done()
-      }
-      void cleanup().then(completion.resolve, completion.reject)
-      return closing
-    },
+    return: finish,
   }
 }
 
