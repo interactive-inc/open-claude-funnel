@@ -269,7 +269,8 @@ export class FunnelChannels {
   /**
    * Run a connector-type-specific operation (e.g. schedule `addEntry` /
    * `removeEntry` / `listEntries`). The descriptor returns the next config and a
-   * result; the config is persisted only when the operation actually mutated it.
+   * result inside the store update. A changed config reference replaces the
+   * current entry; credential checks also cover operations that return the input.
    */
   connectorOp(
     channelName: string,
@@ -290,6 +291,7 @@ export class FunnelChannels {
         now: this.clock.iso(),
       })
 
+      this.assertNoTokenCollision(settings, outcome.config, connector)
       if (outcome.config !== connector) {
         this.replaceConnector(channel, connector.name, outcome.config)
       }

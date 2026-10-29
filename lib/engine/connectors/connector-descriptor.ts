@@ -48,9 +48,9 @@ export type ConnectorOperationContext = {
 
 /**
  * One named operation a connector type exposes beyond plain CRUD (e.g. schedule
- * entry add/remove/list). Returns the next config and an arbitrary result; when
- * the returned config is reference-equal to the input, the channels layer treats
- * the call as a read and skips persistence.
+ * entry add/remove/list). Returns the next config and an arbitrary result.
+ * Operations run inside the settings store update. A different config reference
+ * replaces the current entry; returning the input keeps that entry.
  */
 export type ConnectorOperation = (props: {
   config: BaseConnectorConfig

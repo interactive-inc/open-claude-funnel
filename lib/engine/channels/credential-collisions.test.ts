@@ -27,7 +27,24 @@ const setup = (withSecond: boolean) => {
   })
   const channels = new FunnelChannels({
     store,
-    registry: new FunnelConnectorRegistry({ descriptors: [slackConnector()] }),
+    registry: new FunnelConnectorRegistry({
+      descriptors: [
+        {
+          ...slackConnector(),
+          operations: {
+            rotateToken: ({ config, args }) => ({
+              config: { ...config, botToken: args },
+              result: "updated",
+            }),
+            mutateToken: ({ config, args }) => ({
+              config: Object.assign(config, { botToken: args }),
+              result: "updated",
+            }),
+            inspect: ({ config }) => ({ config, result: "read" }),
+          },
+        },
+      ],
+    }),
     idGenerator: { generate: () => "shared" },
   })
   return { store, channels }
@@ -67,4 +84,22 @@ test("only the actual connector being replaced is excluded from credential check
     minify: true,
     botToken: "xoxb-first",
   })
+})
+
+for (const operation of ["rotateToken", "mutateToken"]) {
+  test(`${operation} cannot bypass cross-channel credential collision checks`, () => {
+    const { store, channels } = setup(true)
+    const before = store.read()
+    expect(() => channels.connectorOp("second", "source", operation, "xoxb-first")).toThrow(
+      "token already in use",
+    )
+    expect(store.read()).toEqual(before)
+  })
+}
+
+test("a valid credential operation returns its result and persists the new credential", () => {
+  const { channels } = setup(true)
+  expect(channels.connectorOp("second", "source", "rotateToken", "xoxb-third")).toBe("updated")
+  expect(channels.getConnector("second", "source")).toMatchObject({ botToken: "xoxb-third" })
+  expect(channels.connectorOp("second", "source", "inspect", undefined)).toBe("read")
 })
