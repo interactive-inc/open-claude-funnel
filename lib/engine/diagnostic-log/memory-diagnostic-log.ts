@@ -16,7 +16,7 @@ import {
 /**
  * In-process `ConnectorDiagnosticLog` backed by one array per table. Used by tests
  * and embedders that do not need durability. Like the SQLite log it keeps
- * `seq` per-table (each array's 1-based position) and returns the most recent
+ * monotonic `seq` per-table, preserved after clear, and returns the most recent
  * `limit` rows oldest-first; unlike it, it never prunes and never offloads
  * oversized payloads — it keeps whatever the caller hands it, which is fine
  * for the bounded volumes a test produces. Payload-validity is therefore a
@@ -27,6 +27,7 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
   private readonly raws: StoredRawEvent[] = []
   private readonly processeds: StoredProcessedEvent[] = []
   private readonly connections: StoredConnectionEvent[] = []
+  private readonly sequences = { raw: 0, processed: 0, connection: 0 }
 
   constructor(private readonly now: () => number = () => Date.now()) {
     super()
@@ -35,17 +36,17 @@ export class MemoryConnectorDiagnosticLog extends ConnectorDiagnosticLog {
 
   recordRaw(record: ConnectorRawRecord): void {
     const event = { ...record, ts: this.now() }
-    this.raws.push({ ...event, seq: this.raws.length + 1 })
+    this.raws.push({ ...event, seq: ++this.sequences.raw })
   }
 
   recordProcessed(record: ConnectorProcessedRecord): void {
     const event = { ...record, ts: this.now() }
-    this.processeds.push({ ...event, seq: this.processeds.length + 1 })
+    this.processeds.push({ ...event, seq: ++this.sequences.processed })
   }
 
   recordConnection(record: ConnectorConnectionRecord): void {
     const event = { ...record, ts: this.now() }
-    this.connections.push({ ...event, seq: this.connections.length + 1 })
+    this.connections.push({ ...event, seq: ++this.sequences.connection })
   }
 
   queryRaw(query: ConnectorRawQuery): StoredRawEvent[] {

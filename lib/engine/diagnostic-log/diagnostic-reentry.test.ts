@@ -27,8 +27,34 @@ const tables: {
   },
 ]
 
+const createLog = (storage: "memory" | "sqlite", now: () => number): ConnectorDiagnosticLog =>
+  storage === "memory"
+    ? new MemoryConnectorDiagnosticLog(now)
+    : new SqliteConnectorDiagnosticLog({
+        rawPath: ":memory:",
+        processedPath: ":memory:",
+        connectionPath: ":memory:",
+        now,
+      })
+
 for (const storage of ["memory", "sqlite"] as const) {
   for (const table of tables) {
+    test(`${storage} ${table.name} clear does not reassign an old sequence to a new diagnostic`, () => {
+      const log = createLog(storage, () => 0)
+      try {
+        table.write(log, "old-first")
+        table.write(log, "old-second")
+        log.clear()
+        expect(table.read(log)).toEqual([])
+        table.write(log, "new")
+        expect(table.read(log, 1)).toEqual([])
+        expect(table.read(log, 2)).toEqual([])
+        expect(table.read(log, 3).map((row) => row.connectorId)).toEqual(["new"])
+      } finally {
+        log.close()
+      }
+    })
+
     test(`${storage} ${table.name} sequences remain unique when the clock records a nested diagnostic`, () => {
       let nested = false
       const now = () => {
@@ -38,15 +64,7 @@ for (const storage of ["memory", "sqlite"] as const) {
         }
         return 0
       }
-      const log =
-        storage === "memory"
-          ? new MemoryConnectorDiagnosticLog(now)
-          : new SqliteConnectorDiagnosticLog({
-              rawPath: ":memory:",
-              processedPath: ":memory:",
-              connectionPath: ":memory:",
-              now,
-            })
+      const log = createLog(storage, now)
       try {
         table.write(log, "outer")
         expect(table.read(log).map(({ seq, connectorId }) => ({ seq, connectorId }))).toEqual([
