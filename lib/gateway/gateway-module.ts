@@ -4,7 +4,10 @@ import { HTTPException } from "hono/http-exception"
 import type { FunnelChannels } from "@/engine/channels/channels"
 import type { ConnectorDiagnosticLog } from "@/engine/diagnostic-log/diagnostic-log"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
-import { FunnelChannelNotFoundError } from "@/engine/error/funnel-error"
+import {
+  FunnelChannelAmbiguousError,
+  FunnelChannelNotFoundError,
+} from "@/engine/error/funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelClock } from "@/engine/time/clock"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
@@ -29,6 +32,14 @@ export type GatewayEventsOptions = EventStreamOptions & {
 }
 
 export type GatewayEventStore = { eventLog?: FunnelEventLog }
+type ResolvedChannel = {
+  id: string
+  name: string
+  connectors: string[]
+  connectorIds: string[]
+  delivery: "fanout" | "exclusive"
+}
+
 export type GatewayModuleDeps = GatewayEventStore & {
   channels: FunnelChannels
   clock?: FunnelClock
@@ -307,7 +318,14 @@ export class FunnelGatewayModule {
     if (!requestedChannel) {
       return { handled: true, response: new Response("channel is required", { status: 400 }) }
     }
-    const channel = this.resolveChannel(requestedChannel)
+    let channel: ResolvedChannel | null
+    try {
+      channel = this.resolveChannel(requestedChannel)
+    } catch (error) {
+      if (error instanceof FunnelChannelAmbiguousError)
+        return { handled: true, response: new Response(error.message, { status: 400 }) }
+      throw error
+    }
 
     if (!channel) {
       // Reject rather than upgrade: a client subscribing to a channel this
@@ -579,14 +597,12 @@ export class FunnelGatewayModule {
     return false
   }
 
-  private resolveChannel(requested: string): {
-    id: string
-    name: string
-    connectors: string[]
-    connectorIds: string[]
-    delivery: "fanout" | "exclusive"
-  } | null {
-    const channel = this.channels.get(requested) ?? this.channels.getById(requested)
+  private resolveChannel(requested: string): ResolvedChannel | null {
+    const channels = this.channels.list()
+    const byName = channels.find((channel) => channel.name === requested)
+    const byId = channels.find((channel) => channel.id === requested)
+    if (byName && byId && byName.id !== byId.id) throw new FunnelChannelAmbiguousError(requested)
+    const channel = byName ?? byId
 
     if (!channel) return null
 

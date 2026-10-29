@@ -42,6 +42,8 @@ await gateway.stop()
 
 `channel` の欠落や不正な `since` は HTTP 400 で拒否します。再送の読み取り・送信に失敗した接続は code 1011 で閉じるため、最後に処理できた offset から再接続してください。
 
+gateway のチャネル指定は名前または ID で解決します。同じ値が別々のチャネルの名前と ID に一致する場合は配送先を選ばず、同一プロセスでは `FunnelChannelAmbiguousError`（code: `channel-ambiguous`）、HTTP 公開と WebSocket 購読では HTTP 400 を返します。対象を一意に識別できる別の名前・IDを指定するか、衝突する名前を変更してください。
+
 ホスト自身が Bun の HTTP/WebSocket サーバーを持つ場合は、`gatewayModule({ token })` の `app`、`handleUpgrade`、`websocket` を組み込みます。Node.js では同一プロセスの配信 API と Hono の `app` を利用できます。`gatewayServer()` と WebSocket upgrade helper は Bun 専用です。
 
 ## Agent SDK / Channels に組み込む

@@ -28,6 +28,17 @@ export class FunnelChannelNotFoundError extends FunnelError {
   }
 }
 
+export class FunnelChannelAmbiguousError extends FunnelError {
+  readonly code = "channel-ambiguous"
+
+  constructor(
+    readonly channel: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`ambiguous channel reference: ${channel}`, options)
+  }
+}
+
 export class FunnelChannelAlreadyExistsError extends FunnelError {
   readonly code = "channel-already-exists"
 
