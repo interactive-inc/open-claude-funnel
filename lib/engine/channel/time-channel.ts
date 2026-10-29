@@ -23,22 +23,25 @@ type Options = {
 
 /** Optional time source. Catch-up persistence is supplied by the host. */
 export function timeChannel(options: Options): Channel {
-  const persist = options.statePersister !== undefined
-  const catchupPolicy: FlumeCatchupPolicy = options.catchupPolicy ?? { mode: "lastOnly" }
+  const { id, name, cron, transform, statePersister } = options
+  const policy = options.catchupPolicy ?? { mode: "lastOnly" }
+  const mode = policy.mode
+  const catchupPolicy: FlumeCatchupPolicy =
+    mode === "missed" ? { mode, maxWindowMs: policy.maxWindowMs } : { mode }
 
   return defineChannel({
-    id: options.id,
-    name: options.name ?? options.id,
+    id,
+    name: name ?? id,
     build: () => {
       const source = new FlumeTimeSource({
-        cron: options.cron,
-        statePersister: options.statePersister,
-        catchupPolicy: persist ? catchupPolicy : { mode: "off" },
+        cron,
+        statePersister,
+        catchupPolicy: statePersister !== undefined ? catchupPolicy : { mode: "off" },
       })
 
       return {
         sources: [source],
-        transform: options.transform,
+        transform,
       }
     },
   })
