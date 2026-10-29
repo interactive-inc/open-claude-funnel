@@ -121,6 +121,7 @@ export class FunnelGatewayModule {
   private readonly signal: AbortSignal | undefined
   private readonly onAbort: () => void
   private stopPromise: Promise<void> | null = null
+  private startPromise: Promise<void> | null = null
   private disposed = false
 
   constructor(deps: GatewayModuleDeps) {
@@ -206,14 +207,40 @@ export class FunnelGatewayModule {
       // cannot publish, matching FunnelGatewayServer's single-use contract.
       throw new Error("FunnelGatewayModule is single-use: construct a new instance to start again")
     }
+    if (this.startPromise) return this.startPromise
+    const completion = Promise.withResolvers<void>()
+    this.startPromise = completion.promise
+    void this.startAttempt().then(completion.resolve, completion.reject)
+    try {
+      await completion.promise
+    } finally {
+      if (this.startPromise === completion.promise) this.startPromise = null
+    }
+  }
 
+  private async startAttempt(): Promise<void> {
     // Stamp on every attempt, matching the pre-split server: if a previous
     // attempt rolled back after its listeners failed to boot, a retry must
     // measure uptime from the attempt that actually succeeded, not from the
     // failed one.
     this.startedAt = this.nowMs()
-    await this.bootListeners()
-    this.signal?.throwIfAborted()
+    try {
+      await this.bootListeners()
+      this.signal?.throwIfAborted()
+      if (this.disposed || this.stopPromise) throw new Error("gateway stopped during startup")
+    } catch (error) {
+      try {
+        await this.registry.stopAll()
+      } catch (cleanupError) {
+        invokeCallback(() =>
+          this.onError(
+            cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
+            { component: "gateway-start-cleanup" },
+          ),
+        )
+      }
+      throw error
+    }
   }
 
   /** Stop the listeners. Does not touch the event log — see `dispose()`. */

@@ -66,6 +66,7 @@ export class FunnelGatewayServer {
   private readonly signal: AbortSignal | undefined
   private readonly onAbort: () => void
   private stopPromise: Promise<void> | null = null
+  private startPromise: Promise<void> | null = null
   private disposed = false
 
   constructor(deps: Deps) {
@@ -125,8 +126,19 @@ export class FunnelGatewayServer {
       throw new Error("FunnelGatewayServer is single-use: construct a new instance to start again")
     }
 
+    if (this.startPromise) return this.startPromise
     if (this.server) return
+    const completion = Promise.withResolvers<void>()
+    this.startPromise = completion.promise
+    void this.startAttempt().then(completion.resolve, completion.reject)
+    try {
+      await completion.promise
+    } finally {
+      if (this.startPromise === completion.promise) this.startPromise = null
+    }
+  }
 
+  private async startAttempt(): Promise<void> {
     if (!this.token && !LOOPBACK_HOSTS.has(this.configuredHostname) && !this.allowInsecureHost) {
       // Fail fast: a non-loopback bind with no token would expose every
       // privileged endpoint to the network. Refuse rather than warn — a missed
@@ -159,6 +171,7 @@ export class FunnelGatewayServer {
     try {
       await this.module.start()
       this.signal?.throwIfAborted()
+      if (this.disposed || this.stopPromise) throw new Error("gateway stopped during startup")
     } catch (error) {
       this.server?.stop(true)
       this.server = null
