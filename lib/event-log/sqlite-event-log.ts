@@ -234,7 +234,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const colsWithSeq = ["seq", ...cols]
       const placeholdersWithSeq = colsWithSeq.map(() => "?").join(", ")
       this.insertWithSeqStmt = this.db.query(
-        `INSERT INTO logs (${colsWithSeq.join(", ")}) VALUES (${placeholdersWithSeq})`,
+        `INSERT INTO logs (${colsWithSeq.map(quoteIdentifier).join(", ")}) VALUES (${placeholdersWithSeq})`,
       )
 
       this.nextSeqStmt = this.db.query(
@@ -422,10 +422,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     for (const col of this.indexKeys()) {
       const value = where[col]
       if (value === undefined) continue
+      const column = quoteIdentifier(col)
       if (value === null) {
-        conditions.push(`${col} IS NULL`)
+        conditions.push(`${column} IS NULL`)
       } else {
-        conditions.push(`${col} = ?`)
+        conditions.push(`${column} = ?`)
         params.push(value)
       }
     }
@@ -440,7 +441,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const value = prefixes[col]
       if (value === undefined) continue
 
-      conditions.push(`instr(${col}, ?) = 1`)
+      conditions.push(`instr(${quoteIdentifier(col)}, ?) = 1`)
       params.push(value)
     }
   }
@@ -461,13 +462,14 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       const nonNull = values.filter((value): value is string => value !== null)
       const hasNull = nonNull.length !== values.length
       const alternatives: string[] = []
+      const column = quoteIdentifier(col)
 
       if (nonNull.length > 0) {
-        alternatives.push(`${col} IN (${nonNull.map(() => "?").join(", ")})`)
+        alternatives.push(`${column} IN (${nonNull.map(() => "?").join(", ")})`)
         params.push(...nonNull)
       }
 
-      if (hasNull) alternatives.push(`${col} IS NULL`)
+      if (hasNull) alternatives.push(`${column} IS NULL`)
 
       conditions.push(`(${alternatives.join(" OR ")})`)
     }
@@ -563,9 +565,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 
     for (const col of this.indexes) {
       if (!existing.has(col)) {
-        this.db.run(`ALTER TABLE logs ADD COLUMN ${col} TEXT`)
+        this.db.run(`ALTER TABLE logs ADD COLUMN ${quoteIdentifier(col)} TEXT`)
       }
-      this.db.run(`CREATE INDEX IF NOT EXISTS idx_logs_${col} ON logs (${col})`)
+      this.db.run(
+        `CREATE INDEX IF NOT EXISTS ${quoteIdentifier(`idx_logs_${col}`)} ON logs (${quoteIdentifier(col)})`,
+      )
     }
   }
 
@@ -587,6 +591,7 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
 }
 
 function validateIndexNames(names: ReadonlyArray<string>): void {
+  const seen = new Set<string>()
   for (const name of names) {
     if (!COLUMN_NAME_RE.test(name)) {
       throw new Error(`invalid index column name: ${name}`)
@@ -594,7 +599,13 @@ function validateIndexNames(names: ReadonlyArray<string>): void {
     if (RESERVED_COLUMNS.has(name)) {
       throw new Error(`reserved index column name: ${name}`)
     }
+    if (seen.has(name)) throw new Error(`duplicate index column name: ${name}`)
+    seen.add(name)
   }
+}
+
+function quoteIdentifier(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`
 }
 
 function extractType(event: unknown): string | null {
