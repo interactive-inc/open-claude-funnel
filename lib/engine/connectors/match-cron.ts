@@ -11,20 +11,20 @@ const parseField = (expr: string, min: number, max: number): Field => {
 
     const rangePart = stepSegments[0]
     const stepPart = stepSegments[1]
-    if (stepSegments.length === 2 && stepPart === "") {
+    if (!rangePart) throw new Error(`invalid cron value: "${part}"`)
+    if (stepPart !== undefined && !/^\d+$/.test(stepPart))
       throw new Error(`invalid cron step: "${part}"`)
-    }
 
-    const step = stepPart ? Number(stepPart) : 1
+    const step = stepPart === undefined ? 1 : Number(stepPart)
 
-    if (!Number.isInteger(step) || step <= 0) {
+    if (!Number.isSafeInteger(step) || step <= 0) {
       throw new Error(`invalid cron step: "${stepPart}"`)
     }
 
     let lo = min
     let hi = max
 
-    if (rangePart === "*" || rangePart === undefined || rangePart === "") {
+    if (rangePart === "*") {
       lo = min
       hi = max
     } else if (rangePart.includes("-")) {
@@ -33,6 +33,8 @@ const parseField = (expr: string, min: number, max: number): Field => {
 
       const aStr = rangeSegments[0]
       const bStr = rangeSegments[1]
+      if (!aStr || !bStr || !/^\d+$/.test(aStr) || !/^\d+$/.test(bStr))
+        throw new Error(`invalid cron range: "${rangePart}"`)
       const a = Number(aStr)
       const b = Number(bStr)
 
@@ -43,12 +45,13 @@ const parseField = (expr: string, min: number, max: number): Field => {
       lo = a
       hi = b
     } else {
+      if (!/^\d+$/.test(rangePart)) throw new Error(`invalid cron value: "${rangePart}"`)
       const n = Number(rangePart)
 
       if (!Number.isInteger(n)) throw new Error(`invalid cron value: "${rangePart}"`)
 
       lo = n
-      hi = stepPart ? max : n
+      hi = stepPart === undefined ? n : max
     }
 
     if (lo < min || hi > max || lo > hi) {
@@ -92,8 +95,8 @@ const parseCron = (
     dayOfMonth: parseField(dom, 1, 31),
     month: parseField(month, 1, 12),
     dayOfWeek: parseField(dow, 0, 7),
-    dayOfMonthRestricted: dom !== "*",
-    dayOfWeekRestricted: dow !== "*",
+    dayOfMonthRestricted: !dom.startsWith("*"),
+    dayOfWeekRestricted: !dow.startsWith("*"),
   }
 }
 
@@ -104,8 +107,8 @@ export const validateCronExpression = (expr: string): void => {
 
 /**
  * Returns true when `date` (local time) satisfies a standard 5-field cron
- * expression. Sunday accepts both 0 and 7. When day-of-month and day-of-week
- * are both restricted, either field matching is sufficient (Vixie cron).
+ * expression. Sunday accepts both 0 and 7. If neither day field starts with
+ * a wildcard, either field matching is sufficient; otherwise both must match.
  */
 export const matchCron = (expr: string, date: Date): boolean => {
   const cron = parseCron(expr)
