@@ -1,3 +1,4 @@
+import { snapshotScheduleState } from "@/engine/connectors/schedule-state-snapshot"
 import { requireTimestamp } from "@/require-timestamp"
 import { invokeCallback } from "@/invoke-callback"
 import { FunnelConnectorListener, type NotifyFn } from "@/engine/connectors/connector-listener"
@@ -163,8 +164,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
   private async tickEntries(notify: NotifyFn): Promise<void> {
     const now = this.truncateToMinute(this.readNow())
-    const state = this.lastFiredStore.load()
-    if (this.pruneRemovedEntries(state)) this.lastFiredStore.save(state)
+    const state = snapshotScheduleState(this.lastFiredStore.load())
+    if (this.pruneRemovedEntries(state)) this.lastFiredStore.save(snapshotScheduleState(state))
 
     for (const entry of this.config.entries) {
       if (this.stopped) break
@@ -202,7 +203,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     if (entry.catchupPolicy === "skip" && lateness >= 60_000) {
       state.set(entry.id, runAt)
-      this.lastFiredStore.save(state)
+      this.lastFiredStore.save(snapshotScheduleState(state))
       return true
     }
 
@@ -276,7 +277,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     if (lastFired !== undefined) return false
 
     state.set(entryId, now)
-    this.lastFiredStore.save(state)
+    this.lastFiredStore.save(snapshotScheduleState(state))
     return true
   }
 
@@ -331,7 +332,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     // Preserve successful delivery even if a later fire or host callback fails.
     props.state.set(entry.id, firedAt)
-    this.lastFiredStore.save(props.state)
+    this.lastFiredStore.save(snapshotScheduleState(props.state))
     this.diagnostics.recordProcessed(eventId, "emitted", entry.prompt)
 
     if (this.onFired) {
