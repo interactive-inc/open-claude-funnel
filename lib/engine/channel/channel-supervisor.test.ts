@@ -58,6 +58,51 @@ function freshSupervisor(options: { signal?: AbortSignal } = {}) {
 }
 
 describe("FunnelChannelSupervisor", () => {
+  it("reads a runtime transform once per event and preserves its class receiver and error context", async () => {
+    const { supervisor, received, logger } = freshSupervisor()
+    const source = new StubSource()
+    class Runtime {
+      readonly sources = [source]
+      reads = 0
+      #calls = 0
+      get transform() {
+        if (++this.reads > 2) return undefined
+        return function (this: Runtime) {
+          if (++this.#calls === 1) throw Object.create(null)
+          return { content: "converted" }
+        }
+      }
+      get calls() {
+        return this.#calls
+      }
+    }
+    const runtime = new Runtime()
+    supervisor.register({ id: "source", build: () => runtime })
+    try {
+      await supervisor.start()
+      for (let index = 0; index < 3; index++)
+        source.pushEvent?.({
+          source: "discord",
+          type: "input",
+          data: { raw: true },
+          meta: {},
+          receivedAt: 0,
+        })
+      await waitForCondition(() => received.length === 2)
+      expect(received.map((item) => item.content)).toEqual(["converted", '{"raw":true}'])
+      expect(runtime.reads).toBe(3)
+      expect(runtime.calls).toBe(2)
+      expect(logger.entries.filter((entry) => entry.level === "error")).toMatchObject([
+        {
+          message: 'channel "source" transform threw',
+          meta: { error: "Unprintable thrown value" },
+        },
+      ])
+    } finally {
+      await supervisor.stop()
+    }
+  })
+
   it("continues delivery after a sink throws an unprintable value", async () => {
     const source = new StubSource()
     const logger = new MemoryFunnelLogger()

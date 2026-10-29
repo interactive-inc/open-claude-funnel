@@ -2,6 +2,7 @@ import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume
 import type { Channel, ChannelBuildContext } from "@/engine/channel/channel"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
+import { errorMessageOf } from "@/engine/error/error-message-of"
 
 type Props = Pick<ChannelBuildContext, "logger" | "clock"> & {
   channel: Channel
@@ -44,13 +45,14 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
         if (combinedSignal.aborted) return
         let payload
         try {
+          const transform = runtime.transform
           payload =
-            runtime.transform === undefined
+            transform === undefined
               ? { content: JSON.stringify(event.data), meta: event.meta }
-              : runtime.transform(event)
+              : transform.call(runtime, event)
         } catch (error) {
           this.props.logger.error(`channel "${channel.id}" transform threw`, {
-            error: String(error),
+            error: errorMessageOf(error),
           })
           return
         }
