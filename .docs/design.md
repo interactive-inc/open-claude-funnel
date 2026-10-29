@@ -137,6 +137,7 @@ Funnel の生成時に options の値を取得し、registry・チャネル操�
 - gateway の起動・購読・切断の通常ログも、接続状態を変更する処理と分ける。logger の失敗は `onError` へ渡し、待受だけが残った起動失敗や WebSocket callback の例外にしない。再送失敗の logger と `onError` は独立して呼び、通知先の失敗をホストの WebSocket callback へ漏らさない。
 - 通常ログの失敗値は安全に Error へ正規化してから `onError` へ渡す。文字列化できない値や revoked proxy の同期例外・非同期拒否でも通知を失わず、通常の Error は元のインスタンスを保持する。
 - HTTP の connector call も adapter 生成・呼出の失敗値を Error へ正規化してから framework へ渡す。文字列・null・revoked proxy や message を取得できない Error でも500の JSON エラー応答を保ち、停止中の503と既存の HTTPException は維持する。
+- 組み込み HTTP ルートは共通の例外境界を通す。イベント保存・診断検索・設定読込・listener 操作の同期例外と非同期拒否を framework の検査前に正規化し、JSON 応答を維持する。保存失敗を公開成功に変えず、既存の HTTPException の status・header・body はそのまま返す。
 - listener registry もログと `onError` の同期例外・非同期失敗を接続管理へ戻さない。通常ログの失敗で接続を停止したり、停止結果・再試行可否・自動復旧を変更したりしない。起動の期限後に完了した接続の後始末でも、元の失敗を通知して未処理の Promise 拒否を残さない。
 - 起動の期限と復旧待ちにキャンセルを伝え、正常起動や停止後に不要なタイマーを残さない。ホストが独自の sleep を渡す場合も、渡された AbortSignal に従う。
 - 組み込みの Slack / Discord / GitHub listener はホストの停止信号と registry の接続所有信号を合成して Flume へ渡す。Slack の事前認証 HTTP と応答本文の読み取りにも同じ信号を伝え、取り消された起動から遅れて接続を開かない。

@@ -5,6 +5,7 @@ import { factory } from "@/gateway/factory"
 import { publishRequestSchema } from "@/gateway/publish-schema"
 import type { PublishResponse } from "@/gateway/publish-schema"
 import { zParam } from "@/gateway/routes/validator"
+import { withHttpErrorBoundary } from "@/gateway/routes/with-http-error-boundary"
 
 /**
  * POST /channels/:channel/publish
@@ -28,22 +29,23 @@ export const channelsPublishHandler = factory.createHandlers(
 
     return c.json({ ok: false, reason }, 400)
   }),
-  (c) => {
-    const param = c.req.valid("param")
-    const body = c.req.valid("json")
+  (c) =>
+    withHttpErrorBoundary(() => {
+      const param = c.req.valid("param")
+      const body = c.req.valid("json")
 
-    const meta = body.target ? { ...body.meta, target: body.target } : body.meta
+      const meta = body.target ? { ...body.meta, target: body.target } : body.meta
 
-    c.var.deps.assertActive()
-    const event = c.var.deps.emit({
-      channel: param.channel,
-      connector: body.connector,
-      content: body.content,
-      meta,
-    })
+      c.var.deps.assertActive()
+      const event = c.var.deps.emit({
+        channel: param.channel,
+        connector: body.connector,
+        content: body.content,
+        meta,
+      })
 
-    const response: PublishResponse = { ok: true, offset: event.offset }
+      const response: PublishResponse = { ok: true, offset: event.offset }
 
-    return c.json(response)
-  },
+      return c.json(response)
+    }),
 )
