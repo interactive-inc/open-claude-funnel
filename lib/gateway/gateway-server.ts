@@ -69,9 +69,25 @@ export class FunnelGatewayServer {
   private startPromise: Promise<void> | null = null
   private disposed = false
 
-  constructor(deps: Deps) {
-    if (!Number.isInteger(deps.port) || deps.port < 0 || deps.port > 65535)
+  constructor(input: Deps) {
+    const port = input.port
+    if (!Number.isInteger(port) || port < 0 || port > 65535)
       throw new Error("port must be an integer between 0 and 65535")
+    const deps: Deps = {
+      port,
+      channels: input.channels,
+      hostname: input.hostname,
+      clock: input.clock,
+      logger: input.logger,
+      onError: input.onError,
+      token: input.token,
+      signal: input.signal,
+      allowInsecureHost: input.allowInsecureHost,
+      extraRoutes: input.extraRoutes,
+      diagnosticLog: input.diagnosticLog,
+      healthRoute: input.healthRoute,
+      eventLog: input.eventLog,
+    }
     this.signal = deps.signal
     this.onAbort = () => {
       invokeCallback(

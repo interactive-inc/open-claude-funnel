@@ -138,9 +138,22 @@ export class FunnelGatewayModule {
   private startPromise: Promise<void> | null = null
   private disposed = false
 
-  constructor(deps: GatewayModuleDeps) {
-    if (typeof deps.token !== "string")
+  constructor(input: GatewayModuleDeps) {
+    const token = input.token
+    if (typeof token !== "string")
       throw new Error("token is required; use an empty string only with host-owned authentication")
+    const deps: GatewayModuleDeps = {
+      token,
+      channels: input.channels,
+      clock: input.clock,
+      logger: input.logger,
+      onError: input.onError,
+      signal: input.signal,
+      extraRoutes: input.extraRoutes,
+      diagnosticLog: input.diagnosticLog,
+      healthRoute: input.healthRoute,
+      eventLog: input.eventLog,
+    }
     this.signal = deps.signal
     this.onAbort = () => {
       invokeCallback(
