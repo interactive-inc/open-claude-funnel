@@ -1,3 +1,4 @@
+import { requireTimestamp } from "@/require-timestamp"
 import { requireDurationLimit } from "@/require-limit"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
@@ -627,7 +628,13 @@ export class FunnelListenerRegistry {
     const stats = this.ensureStats(key)
 
     stats.events += 1
-    stats.lastEventAt = new Date(this.now()).toISOString()
+    try {
+      stats.lastEventAt = new Date(requireTimestamp(this.now())).toISOString()
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+      this.logger?.warn("listener event time unavailable", { key, error: err.message })
+      this.onError(err, { component: "listener-registry.event-time", key })
+    }
   }
 
   private recordError(key: string): void {
