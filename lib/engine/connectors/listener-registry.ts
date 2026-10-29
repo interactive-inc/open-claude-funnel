@@ -187,10 +187,12 @@ export class FunnelListenerRegistry {
       .find((view) => view.channelName === channelName && view.name === connectorName)
     if (configured) return FunnelListenerRegistry.keyOf(configured.channelId, configured.id)
     // An orphaned source can still be stopped before the next health pass.
-    const detached = [...this.running].find(
+    const detached = [...this.running].filter(
       ([, entry]) => entry.channelName === channelName && entry.config.name === connectorName,
     )
-    return detached?.[0] ?? JSON.stringify(["missing", channelName, connectorName])
+    if (detached.length > 1)
+      throw new Error("listener name is ambiguous among detached connections")
+    return detached[0]?.[0] ?? JSON.stringify(["missing", channelName, connectorName])
   }
 
   isRunning(channelName: string, connectorName: string): boolean {
