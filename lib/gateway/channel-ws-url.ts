@@ -3,10 +3,8 @@
  *
  * The gateway's `/ws` upgrade handler reads three query params — `channel`
  * (required), `id` (the subscriber id for targeted delivery), and `since`
- * (replay offset). Forgetting `channel=` silently drops the subscription
- * (the broadcaster never matches the client), which has caused outages when
- * callers hand-built the URL with string concatenation. This builder makes
- * `channel` a required field, so the mistake becomes a compile error.
+ * (replay offset). The gateway rejects missing channels. This builder makes
+ * `channel` a required field so omission is caught before opening a connection.
  *
  * `subscriberId` enables targeted delivery: events carrying `meta.target=<id>`
  * reach only this client. Exclusive replay requires a stable subscriberId;
@@ -22,7 +20,7 @@ export type ChannelWsUrlInput = {
   channel: string
   /** Opaque subscriber id for targeted delivery (`meta.target=<id>`). Omit for fanout. */
   subscriberId?: string
-  /** Replay events strictly after this offset. Omit to receive only new events. */
+  /** Non-negative safe integer. Replay strictly after this offset; omit for live input only. */
   since?: number
 }
 

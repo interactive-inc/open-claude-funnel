@@ -250,9 +250,12 @@ export class FunnelGatewayModule {
     }
 
     const requestedChannel = url.searchParams.get("channel") ?? ""
-    const channel = requestedChannel ? this.resolveChannel(requestedChannel) : null
+    if (!requestedChannel) {
+      return { handled: true, response: new Response("channel is required", { status: 400 }) }
+    }
+    const channel = this.resolveChannel(requestedChannel)
 
-    if (requestedChannel && !channel) {
+    if (!channel) {
       // Reject rather than upgrade: a client subscribing to a channel this
       // gateway does not know would connect "successfully" and then silently
       // receive nothing (matchesClient filters every event). That is the
@@ -264,11 +267,16 @@ export class FunnelGatewayModule {
     }
 
     const sinceRaw = url.searchParams.get("since")
-    const sinceParsed = sinceRaw === null ? Number.NaN : Number.parseInt(sinceRaw, 10)
-    const since = Number.isFinite(sinceParsed) && sinceParsed >= 0 ? sinceParsed : undefined
+    const since = sinceRaw === null ? undefined : Number(sinceRaw)
+    if (sinceRaw !== null && (!/^\d+$/.test(sinceRaw) || !Number.isSafeInteger(since))) {
+      return {
+        handled: true,
+        response: new Response("since must be a non-negative safe integer", { status: 400 }),
+      }
+    }
     const subscriberId = url.searchParams.get("id") || undefined
 
-    if (channel?.delivery === "exclusive" && since !== undefined && !subscriberId) {
+    if (channel.delivery === "exclusive" && since !== undefined && !subscriberId) {
       return {
         handled: true,
         response: new Response("exclusive replay requires a stable subscriber id", { status: 400 }),
@@ -276,11 +284,11 @@ export class FunnelGatewayModule {
     }
     const upgraded = server.upgrade(request, {
       data: {
-        channel: channel?.id ?? requestedChannel,
-        channelName: channel?.name ?? null,
-        connectors: channel?.connectors ?? [],
-        connectorIds: channel?.connectorIds ?? [],
-        delivery: channel?.delivery ?? "fanout",
+        channel: channel.id,
+        channelName: channel.name,
+        connectors: channel.connectors,
+        connectorIds: channel.connectorIds,
+        delivery: channel.delivery,
         subscriberId,
         since,
       },
@@ -407,18 +415,19 @@ export class FunnelGatewayModule {
 
   private handleWsOpen(ws: ServerWebSocket<GatewayWsData>): void {
     if (typeof ws.data.since === "number") {
-      const replay = this.broadcaster.replaySince(ws.data.since, ws.data)
-
-      // ws.send can throw if the client raced a close before we got here.
-      // Wrap the whole replay so one failure does not skip both the
-      // remaining replay events AND the addClient call below — without
-      // the catch, addClient would never run and the client would silently
-      // miss live broadcasts.
+      // A partial replay must close the subscription so the consumer can resume
+      // from its last handled offset rather than wait forever for live input.
       try {
+        const replay = this.broadcaster.replaySince(ws.data.since, ws.data)
         for (const event of replay) ws.send(JSON.stringify(event))
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
-        this.logger?.warn("replay send failed during ws.open", { error: err.message })
+        try {
+          ws.close(1011, "replay failed")
+        } catch {
+          // The peer may already have closed the transport.
+        }
+        this.logger?.warn("replay failed during ws.open", { error: err.message })
         this.onError(err, { component: "gateway-server.replay" })
         return
       }

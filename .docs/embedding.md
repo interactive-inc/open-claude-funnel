@@ -89,4 +89,6 @@ await client.publish("ops", { content: "host event" })
 
 配信されたイベントの本文・メタデータ・exclusive 割当は読み取り専用で凍結される。値を加工する場合は自分のコピーを作り、Funnel が保持する履歴を変更しない。
 
+WebSocket の `/ws` 購読には `channel` が必要。`since` を指定する場合は、非負の安全な整数を十進数の数字列で渡す。空値・負数・小数・末尾の文字・安全な整数の上限超過は HTTP 400 で拒否し、再送を省略した接続として受け付けない。履歴の読み取りまたは再送の送信が失敗した場合は `onError` / logger へ通知し、接続を code 1011・reason `replay failed` で閉じる。利用側は最後に処理できた offset から再接続する。
+
 入力列の形式は [Streaming Input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)、通知と capability は [Channels reference](https://code.claude.com/docs/en/channels-reference) に準拠する。ローカル検証では Agent SDK 0.3.299 の `SDKUserMessage` / `query` / `Query.streamInput` に型が適合し、MCP SDK 1.30.0 の実 Server/Client 間で通知を送受信できることを確認した。Claude への実問い合わせと実際の Claude Code Channels セッションは未検証。
