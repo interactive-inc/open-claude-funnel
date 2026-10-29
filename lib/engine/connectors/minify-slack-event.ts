@@ -54,7 +54,8 @@ const flattenRichText = (node: unknown): string => {
   if (!isRecord(node)) return ""
 
   const text = node.text
-  const linkUrl = node.type === "link" ? node.url : undefined
+  const type = node.type
+  const linkUrl = type === "link" ? node.url : undefined
 
   const ownText =
     typeof text === "string"
@@ -76,7 +77,8 @@ const flattenRichText = (node: unknown): string => {
 
   if (!Array.isArray(elements)) return ""
 
-  return elements.map(flattenRichText).join("")
+  const separator = type === "rich_text" || type === "rich_text_list" ? "\n" : ""
+  return elements.map(flattenRichText).join(separator)
 }
 
 const flattenTableRow = (row: unknown): string => {
