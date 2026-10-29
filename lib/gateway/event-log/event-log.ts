@@ -48,7 +48,11 @@ export type FunnelEventRecord = {
 export abstract class FunnelEventLog {
   abstract record(record: FunnelEventRecord): void
 
-  /** Ascending offsets strictly after since. Honor limit when provided to bound replay read-ahead. */
+  /**
+   * Ascending offsets strictly after since. since and an explicit limit must
+   * be non-negative safe integers. An omitted limit reads all retained rows;
+   * zero returns no rows. Reject invalid bounds before reading any records.
+   */
   abstract loadSince(since: number, limit?: number): ReplayableEvent[]
 
   /** Highest recorded offset, preserved after retention and clear remove payloads. */

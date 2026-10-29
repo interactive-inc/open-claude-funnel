@@ -80,7 +80,9 @@ export class MemoryFunnelEventLog extends FunnelEventLog {
     )
   }
 
-  loadSince(since: number, limit = Infinity): ReplayableEvent[] {
+  loadSince(since: number, limit = Number.MAX_SAFE_INTEGER): ReplayableEvent[] {
+    requireIntegerLimit(since, "sinceSeq")
+    requireIntegerLimit(limit, "limit")
     const out: ReplayableEvent[] = []
 
     for (const event of this.events) {

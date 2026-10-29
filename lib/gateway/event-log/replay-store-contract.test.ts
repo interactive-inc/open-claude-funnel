@@ -35,6 +35,26 @@ for (const type of ["memory", "sqlite"] as const) {
     }
   })
 
+  test(`${type} rejects invalid replay bounds even without retained rows`, () => {
+    const store = createStore()
+    try {
+      for (const populated of [false, true]) {
+        if (populated) for (const offset of [1, 2, 3]) record(store, offset)
+        for (const invalid of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+          expect(() => store.loadSince(invalid, 1)).toThrow("non-negative safe integer")
+          expect(() => store.loadSince(0, invalid)).toThrow("non-negative safe integer")
+        }
+      }
+      expect(store.loadSince(0, 0)).toEqual([])
+      expect(store.loadSince(1, 1).map((event) => event.offset)).toEqual([2])
+      expect(store.loadSince(0).map((event) => event.offset)).toEqual([1, 2, 3])
+      expect(store.loadSince(Number.MAX_SAFE_INTEGER)).toEqual([])
+      expect(store.findMaxOffset()).toBe(3)
+    } finally {
+      store.close()
+    }
+  })
+
   test(`${type} rejects duplicate retained offsets without replacing their original content`, () => {
     const store = createStore()
     try {
