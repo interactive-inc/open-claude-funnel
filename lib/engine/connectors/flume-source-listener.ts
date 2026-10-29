@@ -85,6 +85,7 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   /** Flume owns the bounded queue; stopping never waits for a host callback. */
   private delivery: AsyncIterableIterator<FlumeStreamItem> | null = null
   private stopTask: Promise<void> | null = null
+  private startController: AbortController | null = null
 
   constructor(props: Props) {
     super()
@@ -112,6 +113,33 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
           }
         : undefined,
     })
+  }
+
+  /** Own direct startup cancellation before a Flume handle exists. */
+  protected async startLifecycle(
+    signal: AbortSignal | undefined,
+    start: (signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
+    if (this.startController || this.running || this.stopTask)
+      throw new Error(`${this.type} listener is already starting or running`)
+    signal?.throwIfAborted()
+    const controller = new AbortController()
+    this.startController = controller
+    const scoped = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal
+    try {
+      await start(scoped)
+      scoped.throwIfAborted()
+    } catch (error) {
+      controller.abort()
+      if (this.startController === controller) {
+        try {
+          await this.stop()
+        } catch (cleanupError) {
+          this.reportError(cleanupError, "startup cleanup")
+        }
+      }
+      throw error
+    }
   }
 
   /**
@@ -221,6 +249,16 @@ export abstract class FunnelFlumeSourceListener extends FunnelConnectorListener 
   }
 
   async stop(): Promise<void> {
+    const controller = this.startController
+    controller?.abort()
+    try {
+      await this.stopSources()
+    } finally {
+      if (this.startController === controller) this.startController = null
+    }
+  }
+
+  private async stopSources(): Promise<void> {
     if (this.stopTask) return this.stopTask
     const running = this.running
     if (!running) return

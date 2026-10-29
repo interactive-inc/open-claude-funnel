@@ -43,7 +43,12 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
   }
 
   async start(notify: NotifyFn, signal?: AbortSignal): Promise<void> {
-    const startupSignal = listenerSignal(this.signal, signal)
+    await this.startLifecycle(listenerSignal(this.signal, signal), (startupSignal) =>
+      this.startScope(notify, startupSignal),
+    )
+  }
+
+  private async startScope(notify: NotifyFn, startupSignal: AbortSignal): Promise<void> {
     startupSignal?.throwIfAborted()
     this.diagnostics.recordConnection("started", "")
 
