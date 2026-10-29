@@ -6,14 +6,6 @@ import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-s
 
 const SLACK_API_BASE = "https://slack.com/api/"
 
-const toRecord = (value: object): Record<string, unknown> => {
-  const result: Record<string, unknown> = {}
-
-  for (const [key, val] of Object.entries(value)) result[key] = val
-
-  return result
-}
-
 type Deps = {
   config: SlackConnectorConfig
   env?: NodeJS.ProcessEnv
@@ -48,10 +40,12 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
     const signal = input.signal
     signal?.throwIfAborted()
     const url = `${SLACK_API_BASE}${input.path}`
-    const body = input.body !== null && typeof input.body === "object" ? toRecord(input.body) : {}
+    const body = input.body
     const form = new URLSearchParams()
 
-    for (const [key, value] of Object.entries(body)) {
+    for (const [key, value] of Object.entries(
+      body !== null && typeof body === "object" ? body : {},
+    )) {
       form.set(key, typeof value === "string" ? value : JSON.stringify(value))
     }
 
