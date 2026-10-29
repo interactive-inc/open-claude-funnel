@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test"
-import { existsSync, linkSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { SqliteConnectorDiagnosticLog } from "@/engine/diagnostic-log/sqlite-diagnostic-log"
@@ -109,6 +117,55 @@ test("dangling database symlinks are rejected before any database is created", (
         }),
     ).toThrow("dangling symbolic links")
     expect(existsSync(rawPath)).toBe(false)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("parent traversal after a directory symlink resolves its physical parent before alias checks", () => {
+  const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-paths-"))
+  const target = join(directory, "target")
+  mkdirSync(join(target, "child"), { recursive: true })
+  symlinkSync(join(target, "child"), join(directory, "alias"))
+  const rawPath = join(target, "raw.db")
+  // Keep the original path: path.join would erase the traversal being tested.
+  const processedPath = `${directory}/alias/../raw.db`
+  const connectionPath = join(directory, "connection.db")
+  try {
+    expect(
+      () => new SqliteConnectorDiagnosticLog({ rawPath, processedPath, connectionPath }),
+    ).toThrow("diagnostic database paths must identify separate files")
+    expect(existsSync(rawPath)).toBe(false)
+    expect(existsSync(connectionPath)).toBe(false)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("lexically similar paths through a symlink may still identify separate databases", () => {
+  const directory = mkdtempSync(join(tmpdir(), "funnel-diagnostic-paths-"))
+  mkdirSync(join(directory, "target", "child"), { recursive: true })
+  symlinkSync(join(directory, "target", "child"), join(directory, "alias"))
+  try {
+    const log = new SqliteConnectorDiagnosticLog({
+      rawPath: join(directory, "raw.db"),
+      processedPath: `${directory}/alias/../raw.db`,
+      connectionPath: join(directory, "connection.db"),
+    })
+    try {
+      log.recordRaw({
+        eventId: "input",
+        type: "example",
+        channelId: null,
+        connectorId: null,
+        payload: "{}",
+      })
+      expect(log.queryRaw({})).toHaveLength(1)
+      expect(log.queryProcessed({})).toEqual([])
+      expect(log.queryConnection({})).toEqual([])
+    } finally {
+      log.close()
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
