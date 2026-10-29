@@ -91,10 +91,12 @@ export class FunnelConnectorRegistry {
   }
 
   secretTokens(config: BaseConnectorConfig): string[] {
-    return requireSynchronous(
-      this.require(config.type).secretTokens(config),
-      "connector secretTokens must be synchronous",
-    )
+    return [
+      ...requireSynchronous(
+        this.require(config.type).secretTokens(config),
+        "connector secretTokens must be synchronous",
+      ),
+    ]
   }
 
   buildConfig(input: Record<string, unknown>, context: ConnectorBuildContext): BaseConnectorConfig {
