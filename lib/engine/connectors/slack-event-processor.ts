@@ -73,9 +73,10 @@ export class FunnelSlackEventProcessor {
 
     if (!eventType || !ALLOWED_EVENTS.has(eventType)) return { skip: true, reason: "skip:type" }
 
-    const subtype = getString(event, "subtype")
+    const subtype = event.subtype
 
-    if (!ALLOWED_SUBTYPES.has(subtype)) return { skip: true, reason: "skip:subtype" }
+    if ((subtype !== undefined && typeof subtype !== "string") || !ALLOWED_SUBTYPES.has(subtype))
+      return { skip: true, reason: "skip:subtype" }
 
     const channelId = getString(event, "channel") ?? ""
     const eventTs = getString(event, "event_ts") || getString(event, "ts") || ""
@@ -89,11 +90,12 @@ export class FunnelSlackEventProcessor {
     const userId = getString(event, "user")
     const botId = getString(event, "bot_id")
 
-    if (userId === this.ownBotUserId) return { skip: true, reason: "skip:self-user" }
-    if (botId === this.ownBotId) return { skip: true, reason: "skip:self-bot" }
+    if (this.ownBotUserId && userId === this.ownBotUserId)
+      return { skip: true, reason: "skip:self-user" }
+    if (this.ownBotId && botId === this.ownBotId) return { skip: true, reason: "skip:self-bot" }
 
     const rawText = getString(event, "text") ?? ""
-    const mentioned = rawText.includes(`<@${this.ownBotUserId}>`)
+    const mentioned = this.ownBotUserId !== "" && rawText.includes(`<@${this.ownBotUserId}>`)
     const threadTs = getString(event, "thread_ts") ?? getString(event, "ts") ?? ""
     const ts = getString(event, "ts") ?? ""
     const source = eventType === "app_mention" ? "app_mention" : "message"
@@ -137,4 +139,4 @@ export class FunnelSlackEventProcessor {
 }
 
 const stripMention = (text: string, botUserId: string): string =>
-  text.replace(new RegExp(`<@${botUserId}>`, "g"), "").trim()
+  (botUserId ? text.replaceAll(`<@${botUserId}>`, "") : text).trim()
