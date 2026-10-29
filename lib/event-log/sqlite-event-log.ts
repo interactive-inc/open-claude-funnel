@@ -209,8 +209,11 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     // handle so a failed constructor does not leak it to the caller's retry.
     try {
       applySqliteBusyTimeout(this.db)
+      const version = this.getSchemaVersion()
+      if (version < 0 || version > MIGRATIONS.length)
+        throw new Error(`unsupported event log schema version: ${version}`)
       this.db.run("PRAGMA journal_mode = WAL")
-      this.migrate()
+      this.migrate(version)
 
       this.now = props.now ?? (() => Date.now())
       this.onMaintenanceError = props.onMaintenanceError
@@ -559,10 +562,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     }
   }
 
-  private migrate(): void {
-    const row = this.db.query<VersionRow, []>("PRAGMA user_version").get()
-    const current = row?.user_version ?? 0
-    if (current >= MIGRATIONS.length) return
+  private migrate(current: number): void {
+    if (current === MIGRATIONS.length) return
 
     const pending = MIGRATIONS.slice(current)
     let version = current

@@ -61,6 +61,19 @@ describe("SQLite stores close handles when opening fails", () => {
     expect(opened).toHaveLength(0)
   })
 
+  it("closes the handle when rejecting an unsupported schema version", () => {
+    const path = join(tempDir(), "events.db")
+    const seed = new Database(path)
+    seed.run("PRAGMA user_version = 99")
+    seed.close()
+    opened = []
+    closed = []
+    expect(() => new SqliteEventLog<string>({ path })).toThrow(
+      "unsupported event log schema version",
+    )
+    expect(closed).toHaveLength(1)
+  })
+
   it("closes the handle when a statement after open fails", () => {
     const path = join(tempDir(), "events.db")
     const seed = new Database(path)
