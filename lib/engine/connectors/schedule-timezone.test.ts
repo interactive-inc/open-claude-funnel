@@ -112,3 +112,31 @@ test("historical offsets with seconds keep local minute boundaries", async () =>
     await run({ zone: "Asia/Kolkata", now: "1900-01-01T00:00:45.123Z", entry: once(at) }),
   ).toEqual({ offset: -321, delivered: [fire(at)], checkpoints: [["entry", at]] })
 })
+
+test("a checkpoint containing seconds before a repeated hour resumes on actual minute boundaries", async () => {
+  const end = "2026-11-01T06:01:00.000Z"
+  expect(
+    await run({
+      zone: "America/New_York",
+      now: "2026-11-01T06:01:45.123Z",
+      entry: cron("2026-11-01T05:00:00.000Z"),
+      checkpoint: "2026-11-01T05:59:30.123Z",
+    }),
+  ).toEqual({
+    offset: 300,
+    delivered: [fire("2026-11-01T06:00:00.000Z", true), fire(end)],
+    checkpoints: [["entry", end]],
+  })
+})
+
+test("checkpoint rounding preserves historical local minute boundaries with second offsets", async () => {
+  const at = "1899-12-31T23:59:50.000Z"
+  expect(
+    await run({
+      zone: "Asia/Kolkata",
+      now: "1900-01-01T00:00:45.123Z",
+      entry: cron("1899-12-31T23:58:50.000Z"),
+      checkpoint: "1899-12-31T23:58:59.123Z",
+    }),
+  ).toEqual({ offset: -321, delivered: [fire(at)], checkpoints: [["entry", at]] })
+})

@@ -292,7 +292,9 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   ): Promise<boolean> {
     const lastFired = state.get(entry.id)
     const createdAt = entry.createdAt ? this.truncateToMinute(new Date(entry.createdAt)) : now
-    const searchFrom = lastFired ? new Date(lastFired.getTime() + 60_000) : createdAt
+    const searchFrom = lastFired
+      ? new Date(this.truncateToMinute(lastFired).getTime() + 60_000)
+      : createdAt
 
     if (searchFrom.getTime() > now.getTime()) return false
 
