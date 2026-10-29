@@ -58,13 +58,19 @@ export function agentSdkInput(
       const cancel = () => canceled.resolve(done())
       pending.add(cancel)
       const read = async (): Promise<IteratorResult<AgentSdkInputMessage>> => {
-        const item = await iterator.next()
+        const next = iterator.next
         if (closed) return done()
-        if (item.done) {
+        const item = await Reflect.apply(next, iterator, [])
+        if (closed) return done()
+        const isDone = item.done
+        if (closed) return done()
+        if (isDone) {
           close()
           return done()
         }
-        return { done: false, value: agentSdkMessage(item.value) }
+        const event = item.value
+        if (closed) return done()
+        return { done: false, value: agentSdkMessage(event) }
       }
       try {
         return await Promise.race([read(), canceled.promise])

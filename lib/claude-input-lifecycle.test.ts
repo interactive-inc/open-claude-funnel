@@ -227,3 +227,80 @@ test("SDK input does not read the source again after natural completion", async 
   expect(await input.next()).toEqual(done)
   expect(reads).toBe(1)
 })
+
+for (const stage of ["next", "done", "value"] as const) {
+  test(`SDK input stops source work when the ${stage} getter closes it`, async () => {
+    let input: ReturnType<typeof agentSdkInput>
+    let closed = false
+    let workAfterClose = 0
+    let returns = 0
+    const late: ReplayableEvent = {
+      offset: 1,
+      get content() {
+        if (closed) workAfterClose++
+        return "late"
+      },
+    }
+    const item = {
+      get done(): false {
+        if (stage === "done") void input.return!()
+        return false
+      },
+      get value() {
+        if (closed) workAfterClose++
+        if (stage === "value") void input.return!()
+        return late
+      },
+    }
+    input = agentSdkInput({
+      [Symbol.asyncIterator]() {
+        return {
+          get next() {
+            if (stage === "next") void input.return!()
+            return async () => {
+              if (closed) workAfterClose++
+              return item
+            }
+          },
+          async return() {
+            returns++
+            closed = true
+            return done
+          },
+        }
+      },
+    })
+    try {
+      expect(await input.next()).toEqual(done)
+      expect(workAfterClose).toBe(0)
+      expect(await input.next()).toEqual(done)
+      await input.return!()
+      expect(returns).toBe(1)
+    } finally {
+      await input.return!()
+    }
+  })
+}
+
+test("SDK input captures the source next method once and preserves its receiver", async () => {
+  let reads = 0
+  const iterator = {
+    get next() {
+      reads++
+      return async function (this: unknown) {
+        expect(this).toBe(iterator)
+        return { value: event, done: false } as const
+      }
+    },
+    async return() {
+      return done
+    },
+  }
+  const input = agentSdkInput({ [Symbol.asyncIterator]: () => iterator })
+  try {
+    expect(JSON.parse((await input.next()).value.message.content).content).toBe("late")
+    expect(reads).toBe(1)
+  } finally {
+    await input.return!()
+  }
+})
