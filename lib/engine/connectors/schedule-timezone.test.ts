@@ -9,7 +9,7 @@ const once = (runAt: string): ScheduleEntry => ({
   enabled: true,
   catchupPolicy: "latest",
 })
-const cron = (createdAt: string): ScheduleEntry => ({
+const cron = (createdAt: string): Extract<ScheduleEntry, { kind: "cron" }> => ({
   id: "entry",
   kind: "cron",
   cron: "* * * * *",
@@ -139,4 +139,84 @@ test("checkpoint rounding preserves historical local minute boundaries with seco
       checkpoint: "1899-12-31T23:58:59.123Z",
     }),
   ).toEqual({ offset: -321, delivered: [fire(at)], checkpoints: [["entry", at]] })
+})
+
+for (const policy of ["all", "latest", "skip"] as const) {
+  test(`${policy} rounds to a real minute during an offset transition containing seconds`, async () => {
+    const at = "1905-12-31T18:37:50.000Z"
+    expect(
+      await run({
+        zone: "Asia/Kolkata",
+        now: "1905-12-31T18:38:55.123Z",
+        entry: { ...cron("1905-12-31T18:36:50.000Z"), catchupPolicy: policy },
+        checkpoint: "1905-12-31T18:36:50.000Z",
+      }),
+    ).toEqual({ offset: -330, delivered: [fire(at)], checkpoints: [["entry", at]] })
+  })
+}
+
+test("all catch-up realigns after a timezone offset changes seconds", async () => {
+  const end = "1905-12-31T18:41:00.000Z"
+  expect(
+    await run({
+      zone: "Asia/Kolkata",
+      now: "1905-12-31T18:41:30.123Z",
+      entry: cron("1905-12-31T18:36:50.000Z"),
+      checkpoint: "1905-12-31T18:37:50.000Z",
+    }),
+  ).toEqual({
+    offset: -330,
+    delivered: [
+      fire("1905-12-31T18:39:00.000Z", true),
+      fire("1905-12-31T18:40:00.000Z", true),
+      fire(end),
+    ],
+    checkpoints: [["entry", end]],
+  })
+})
+
+for (const policy of ["all", "latest"] as const) {
+  test(`${policy} finds a match before a timezone offset changed seconds`, async () => {
+    const at = "1905-12-31T18:37:50.000Z"
+    expect(
+      await run({
+        zone: "Asia/Kolkata",
+        now: "1905-12-31T18:41:30.123Z",
+        entry: { ...cron("1905-12-31T18:36:50.000Z"), cron: "59 23 * * *", catchupPolicy: policy },
+        checkpoint: "1905-12-31T18:36:50.000Z",
+      }),
+    ).toEqual({ offset: -330, delivered: [fire(at, true)], checkpoints: [["entry", at]] })
+  })
+}
+
+test("all catch-up preserves real minutes across a backward second-offset transition", async () => {
+  const end = "1911-03-10T23:52:00.000Z"
+  expect(
+    await run({
+      zone: "Europe/Paris",
+      now: "1911-03-10T23:52:30.123Z",
+      entry: cron("1911-03-10T23:48:39.000Z"),
+      checkpoint: "1911-03-10T23:48:39.000Z",
+    }),
+  ).toEqual({
+    offset: 0,
+    delivered: [
+      fire("1911-03-10T23:49:39.000Z", true),
+      fire("1911-03-10T23:51:00.000Z", true),
+      fire(end),
+    ],
+    checkpoints: [["entry", end]],
+  })
+})
+
+test("latest catch-up finds the old minute phase before a backward offset transition", async () => {
+  const at = "1911-03-10T23:49:39.000Z"
+  expect(
+    await run({
+      zone: "Europe/Paris",
+      now: "1911-03-10T23:52:30.123Z",
+      entry: { ...cron("1911-03-10T23:48:39.000Z"), cron: "59 23 * * *", catchupPolicy: "latest" },
+      checkpoint: "1911-03-10T23:48:39.000Z",
+    }),
+  ).toEqual({ offset: 0, delivered: [fire(at, true)], checkpoints: [["entry", at]] })
 })

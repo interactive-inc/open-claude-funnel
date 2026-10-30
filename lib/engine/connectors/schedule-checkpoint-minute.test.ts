@@ -120,3 +120,22 @@ test("a cron entry can resume from a one-shot checkpoint with the same entry ID"
     await once.stop()
   }
 })
+
+for (const policy of ["all", "latest", "skip"] as const) {
+  test(`${policy} does not search past the final representable checkpoint`, async () => {
+    const state = new FunnelScheduleStateStore()
+    const final = new Date(8_640_000_000_000_000)
+    state.save(new Map([["entry", final]]))
+    const listener = create(state, policy, () => final)
+    let delivered = 0
+    try {
+      await listener.tick(async () => {
+        delivered++
+      })
+      expect(delivered).toBe(0)
+      expect(state.load().get("entry")?.getTime()).toBe(final.getTime())
+    } finally {
+      await listener.stop()
+    }
+  })
+}

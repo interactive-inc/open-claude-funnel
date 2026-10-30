@@ -293,10 +293,10 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     const lastFired = state.get(entry.id)
     const createdAt = entry.createdAt ? this.truncateToMinute(new Date(entry.createdAt)) : now
     const searchFrom = lastFired
-      ? new Date(this.truncateToMinute(lastFired).getTime() + 60_000)
+      ? this.adjacentMinute(this.truncateToMinute(lastFired), 1)
       : createdAt
 
-    if (searchFrom.getTime() > now.getTime()) return false
+    if (!Number.isFinite(searchFrom.getTime()) || searchFrom.getTime() > now.getTime()) return false
 
     if (entry.catchupPolicy === "skip") {
       try {
@@ -443,14 +443,16 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private findMostRecentMatch(cron: string, from: Date, until: Date, entryId: string): Date | null {
-    const maxIterations = Math.min(
-      MAX_CATCHUP_MINUTES,
-      Math.floor((until.getTime() - from.getTime()) / 60_000) + 1,
+    const searchStart = Math.max(
+      from.getTime(),
+      until.getTime() - (MAX_CATCHUP_MINUTES - 1) * 60_000,
     )
 
-    for (let i = 0; i < maxIterations; i++) {
-      const candidate = new Date(until.getTime() - i * 60_000)
-
+    for (
+      let candidate = until;
+      candidate.getTime() >= searchStart;
+      candidate = this.adjacentMinute(candidate, -1)
+    ) {
       try {
         if (matchCron(cron, candidate)) return candidate
       } catch (error) {
@@ -467,17 +469,15 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
       from.getTime(),
       until.getTime() - (MAX_CATCHUP_MINUTES - 1) * 60_000,
     )
-    const maxIterations = Math.min(
-      MAX_CATCHUP_MINUTES,
-      Math.floor((until.getTime() - searchStart) / 60_000) + 1,
-    )
     const matches: Date[] = []
+    let first = this.truncateToMinute(new Date(searchStart))
+    if (first.getTime() < searchStart) first = this.adjacentMinute(first, 1)
 
-    for (let i = 0; i < maxIterations; i++) {
-      const candidate = new Date(searchStart + i * 60_000)
-
-      if (candidate.getTime() > until.getTime()) break
-
+    for (
+      let candidate = first;
+      candidate.getTime() <= until.getTime();
+      candidate = this.adjacentMinute(candidate, 1)
+    ) {
       try {
         if (matchCron(cron, candidate)) matches.push(candidate)
       } catch (error) {
@@ -529,7 +529,27 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
     // Local setters can choose an earlier occurrence of an ambiguous DST hour.
     const timestamp = requireTimestamp(date.getTime())
     const rounded = timestamp - date.getSeconds() * 1000 - date.getMilliseconds()
-    return new Date(requireTimestamp(rounded))
+    const candidate = new Date(requireTimestamp(rounded))
+    if (candidate.getSeconds() === 0) return candidate
+    // A historical offset transition can place the tentative floor in a
+    // different second phase. Find the actual preceding local minute instead.
+    return this.seekMinute(timestamp - date.getMilliseconds(), -1)
+  }
+
+  private adjacentMinute(date: Date, direction: 1 | -1): Date {
+    const candidate = new Date(date.getTime() + direction * 60_000)
+    if (!Number.isFinite(candidate.getTime()) || candidate.getSeconds() === 0) return candidate
+    // UTC minute steps preserve local boundaries until an offset changes seconds.
+    return this.seekMinute(date.getTime() + direction * 1000, direction)
+  }
+
+  private seekMinute(timestamp: number, direction: 1 | -1): Date {
+    let candidate = new Date(timestamp)
+    while (Number.isFinite(candidate.getTime()) && candidate.getSeconds() !== 0) {
+      timestamp += direction * 1000
+      candidate = new Date(timestamp)
+    }
+    return candidate
   }
 
   private pruneRemovedEntries(state: Map<string, Date>): boolean {
