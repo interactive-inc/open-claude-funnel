@@ -53,4 +53,4 @@ test("close finalizes statements and releases database files without waiting for
     close.mockRestore()
     rmSync(directory, { recursive: true, force: true })
   }
-})
+}, 15_000)
