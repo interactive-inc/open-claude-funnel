@@ -15,7 +15,10 @@ export function requireSynchronous<T>(
       invokeCallback(
         () =>
           new Promise((resolve, reject) => {
-            Reflect.apply(then, value, [resolve, reject])
+            const returned = Reflect.apply(then, value, [resolve, reject])
+            // Host then methods can fail through a separate native promise,
+            // even after settling the bridge. Do not re-assimilate returned thenables.
+            if (returned !== value && isPromise(returned)) invokeCallback(() => returned, onError)
           }),
         onError,
       )

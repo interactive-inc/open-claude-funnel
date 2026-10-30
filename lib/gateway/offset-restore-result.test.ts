@@ -4,7 +4,7 @@ import { FunnelBroadcaster } from "@/gateway/broadcaster"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 
 for (const path of ["direct", "gateway"] as const) {
-  for (const kind of ["resolved", "rejected", "hidden-then", "thenable"] as const) {
+  for (const kind of ["resolved", "rejected", "hidden-then", "thenable", "then-return"] as const) {
     test(`${path} offset restore rejects a ${kind} async result, reports failure and recovers`, async () => {
       const failure = new Error("sequence read unavailable")
       const reported: unknown[] = []
@@ -12,6 +12,16 @@ for (const path of ["direct", "gateway"] as const) {
         reported.push({ error, context })
       }
       const bad = (): unknown => {
+        if (kind === "then-return")
+          return {
+            // oxlint-disable-next-line unicorn/no-thenable -- A host then method can reject after resolving its callback.
+            then(resolve: (value: unknown) => void) {
+              resolve(7)
+              const returned = Promise.reject(failure)
+              void returned.catch(() => {})
+              return returned
+            },
+          }
         if (kind === "thenable")
           return {
             // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied asynchronous offset.

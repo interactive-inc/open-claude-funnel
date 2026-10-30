@@ -95,6 +95,7 @@ Funnel の生成時に options の値を取得し、registry・チャネル操�
 - コネクタの buildConfig・applyUpdate・operation は同期の設定 transaction 内で完了する。Promise・thenable は明示的な契約エラーとして commit 前に拒否し、遅延拒否も監視して未処理拒否にしない。
 - createListener・createAdapter・secretTokens も同期の descriptor hook として Promise・thenable を拒否する。生成結果を listener・adapter・token 配列と誤認せず、遅延拒否を監視する。接続ライフサイクルと adapter.call の非同期処理は維持する。
 - 同期 hook の thenable 判定では then を一度取得し、同じ関数を使って拒否を監視する。getter の再読込で監視を外さず、別の Promise への解決でも拒否を取りこぼさない。
+- then メソッドが返す別の native Promise も監視する。callback を解決した後や callback を呼ばない場合の遅延拒否も失わず、返された thenable 自体を再度呼び出して処理を増やさない。
 - 設定ストアの読込・更新とイベント保存も同じ同期結果の検査を使う。ホストの `read()` と `update()` は同期的に完了する必要がある。Promise や thenable を空設定や更新成功として扱わず、遅延した拒否も監視する。読込結果には `channels` 配列が必要で、省略を空設定に変換しない。空の初期設定を受け付ける既定メモリストアも、読込時は配列を返す。then の再取得で契約エラーを TypeError に変えたり、元の保存失敗の監視・ホスト通知を失ったりしない。
 - 実 Promise は realm に依存しないネイティブ判定と組み込み then で拒否・監視する。then を隠す・getter から例外を投げる Promise も同期の保存・設定結果として通さず、元の拒否を監視する。
 - 再送の例外値も安全に正規化する。同一プロセスの購読は全読み取りを拒否して解除し、WebSocket は1011で閉じる。印字できない例外で登録・socket を残したり、host の open callback へ例外を漏らしたりしない。

@@ -64,3 +64,86 @@ test("synchronous results retain their original values and identities", () => {
   for (const value of [undefined, null, false, 0, "input", {}, () => {}, new Error("value")])
     expect(requireSynchronous(value, "unused")).toBe(value)
 })
+
+for (const settlement of ["pending", "resolve", "reject"] as const) {
+  for (const kind of ["native", "hidden", "throwing", "other-realm"] as const) {
+    test(`a ${kind} promise returned by then is observed after ${settlement}`, async () => {
+      const returnedFailure = new Error("then method failed")
+      const callbackFailure = new Error("thenable rejected")
+      const reported: unknown[] = []
+      let reads = 0
+      let returnedReads = 0
+      class Thenable {
+        #calls = 0
+        // oxlint-disable-next-line unicorn/no-thenable -- Exercise a host-supplied thenable.
+        get then() {
+          reads++
+          return function (
+            this: Thenable,
+            resolve: (value: unknown) => void,
+            reject: (error: unknown) => void,
+          ) {
+            this.#calls++
+            if (settlement === "resolve") resolve("value")
+            if (settlement === "reject") reject(callbackFailure)
+            const promise: Promise<unknown> =
+              kind === "other-realm"
+                ? runInNewContext("Promise.reject(error)", { error: returnedFailure })
+                : Promise.reject(returnedFailure)
+            // Keep the old implementation safe while checking that the error reaches the host.
+            void promise.catch(() => {})
+            if (kind === "hidden" || kind === "throwing") {
+              // oxlint-disable-next-line unicorn/no-thenable -- Native promise observation must bypass own then getters.
+              Object.defineProperty(promise, "then", {
+                get() {
+                  returnedReads++
+                  if (kind === "throwing") throw new Error("method unavailable")
+                  return undefined
+                },
+              })
+            }
+            return promise
+          }
+        }
+        get calls() {
+          return this.#calls
+        }
+      }
+      const value = new Thenable()
+      expect(() =>
+        requireSynchronous(value, "must be synchronous", (error) => {
+          reported.push(error)
+        }),
+      ).toThrow("must be synchronous")
+      await Bun.sleep(0)
+      expect(reads).toBe(1)
+      expect(value.calls).toBe(1)
+      expect(returnedReads).toBe(0)
+      const failures =
+        settlement === "reject" ? [returnedFailure, callbackFailure] : [returnedFailure]
+      expect(reported).toHaveLength(failures.length)
+      expect(new Set(reported)).toEqual(new Set(failures))
+    })
+  }
+}
+
+test("a then method returning its original thenable is not invoked again", async () => {
+  let calls = 0
+  const errors: unknown[] = []
+  const value = {
+    // oxlint-disable-next-line unicorn/no-thenable -- Exercise a chainable host-supplied thenable.
+    then(resolve: (value: unknown) => void) {
+      calls++
+      resolve("value")
+      return value
+    },
+  }
+  expect(() =>
+    requireSynchronous(value, "must be synchronous", (error) => {
+      errors.push(error)
+    }),
+  ).toThrow("must be synchronous")
+  await Bun.sleep(0)
+  expect(calls).toBe(1)
+  expect(errors).toEqual([])
+})
