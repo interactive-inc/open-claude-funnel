@@ -27,8 +27,11 @@ export class FunnelGhAdapter extends FunnelConnectorAdapter {
     const signal = input.signal
     signal?.throwIfAborted()
     const method = (input.method || "GET").toUpperCase()
+    signal?.throwIfAborted()
     const path = input.path.replace(/^\/+/, "")
+    signal?.throwIfAborted()
     const body = method !== "GET" && method !== "HEAD" ? input.body : undefined
+    signal?.throwIfAborted()
     const request = {
       method,
       url: `https://api.github.com/${path}`,

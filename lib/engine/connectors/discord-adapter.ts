@@ -37,9 +37,12 @@ export class FunnelDiscordAdapter extends FunnelConnectorAdapter {
     const signal = input.signal
     signal?.throwIfAborted()
     const method = (input.method || "GET").toUpperCase()
+    signal?.throwIfAborted()
     const requestedPath = input.path
     const path = requestedPath.startsWith("/") ? requestedPath : `/${requestedPath}`
+    signal?.throwIfAborted()
     const body = method !== "GET" && method !== "HEAD" ? input.body : undefined
+    signal?.throwIfAborted()
 
     const request = {
       method,

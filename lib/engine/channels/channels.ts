@@ -301,14 +301,20 @@ export class FunnelChannels {
   }
 
   async call(channelName: string, connectorName: string, input: CallInput): Promise<unknown> {
-    const request: CallInput = {
-      method: input.method,
-      path: input.path,
-      body: input.body,
-      signal: input.signal,
-    }
-    const signal = request.signal
+    const signal = input.signal
     signal?.throwIfAborted()
+    const method = input.method
+    signal?.throwIfAborted()
+    const path = input.path
+    signal?.throwIfAborted()
+    const body = input.body
+    signal?.throwIfAborted()
+    const request: CallInput = {
+      method,
+      path,
+      body,
+      signal,
+    }
     const connector = this.getConnector(channelName, connectorName)
     signal?.throwIfAborted()
 

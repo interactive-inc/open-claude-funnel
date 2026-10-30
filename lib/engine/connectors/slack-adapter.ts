@@ -41,7 +41,9 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
     const signal = input.signal
     signal?.throwIfAborted()
     const url = `${SLACK_API_BASE}${input.path}`
+    signal?.throwIfAborted()
     const body = input.body
+    signal?.throwIfAborted()
     const form = new URLSearchParams()
 
     for (const [key, value] of Object.entries(

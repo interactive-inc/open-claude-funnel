@@ -56,6 +56,44 @@ for (const { name, create } of adapters) {
     expect(http.calls).toHaveLength(0)
   })
 
+  for (const phase of name === "Slack" ? ["path", "body"] : ["method", "path", "body"]) {
+    test(`${name} stops reading input after the ${phase} getter cancels`, async () => {
+      const http = new MemoryFunnelHttpClient().on(() => ({ body: '{"ok":true}' }))
+      const controller = new AbortController()
+      const reason = new Error("call cancelled")
+      const reads: string[] = []
+      const read = (key: string) => {
+        if (controller.signal.aborted) throw new Error("input accessed after cancellation")
+        reads.push(key)
+        if (key === phase) controller.abort(reason)
+      }
+      await expect(
+        create(http).call({
+          signal: controller.signal,
+          get method() {
+            read("method")
+            return "POST"
+          },
+          get path() {
+            read("path")
+            return "messages"
+          },
+          get body() {
+            read("body")
+            return {
+              get content(): string {
+                throw new Error("body serialized after cancellation")
+              },
+            }
+          },
+        }),
+      ).rejects.toBe(reason)
+      const keys = name === "Slack" ? ["path", "body"] : ["method", "path", "body"]
+      expect(reads).toEqual(keys.slice(0, keys.indexOf(phase) + 1))
+      expect(http.calls).toHaveLength(0)
+    })
+  }
+
   test(`${name} checks cancellation after serializing the body`, async () => {
     const http = new MemoryFunnelHttpClient().on(() => ({ body: '{"ok":true}' }))
     const controller = new AbortController()
