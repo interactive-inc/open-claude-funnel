@@ -34,6 +34,7 @@ export type ChannelRuntime = {
    * Converts each source's FlumeEvent into a broadcast payload. Defaults to
    * `{ content: JSON.stringify(event.data), meta: event.meta }` when omitted
    * Data that cannot produce a JSON string is reported and dropped.
+   * Asynchronous JSON values and non-finite numbers are also rejected.
    */
   readonly transform?: ChannelTransform
 }

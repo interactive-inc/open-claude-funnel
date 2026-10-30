@@ -6,6 +6,7 @@ import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { requireSynchronous } from "@/require-synchronous"
 import { recordSchema } from "@/record-schema"
+import { serializeJsonBody } from "@/engine/serialize-json-body"
 
 type Props = Pick<ChannelBuildContext, "logger" | "clock"> & {
   channel: Channel
@@ -79,7 +80,7 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
           const transform = runtime.transform
           const converted =
             transform === undefined
-              ? { content: JSON.stringify(event.data), meta: event.meta }
+              ? { content: serializeJsonBody(event.data, reportTransformError), meta: event.meta }
               : transform.call(runtime, event)
           const result = requireSynchronous(
             converted,

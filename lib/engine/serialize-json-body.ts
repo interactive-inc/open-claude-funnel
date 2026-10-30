@@ -1,8 +1,10 @@
 import { isNumberObject } from "node:util/types"
+import { requireSynchronous } from "@/require-synchronous"
 
-/** Reject numeric coercion to null before any external request can be dispatched. */
-export function serializeJsonBody(value: unknown): string {
+/** Serialize synchronous JSON values without coercing non-finite numbers to null. */
+export function serializeJsonBody(value: unknown, onError?: (error: unknown) => unknown): string {
   const serialized = JSON.stringify(value, (_key, entry: unknown) => {
+    requireSynchronous(entry, "JSON body values must be synchronous", onError)
     // JSON coerces boxed numbers after the replacer. Coerce once here so that
     // custom conversion cannot turn an unchecked value into null afterward.
     const converted = isNumberObject(entry) ? +entry : entry

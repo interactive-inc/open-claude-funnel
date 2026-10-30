@@ -3,7 +3,8 @@ import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-tok
 import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { SlackConnectorConfig } from "@/engine/connectors/slack-connector-schema"
-import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
+import { serializeJsonBody } from "@/engine/serialize-json-body"
+import { requireSynchronous } from "@/require-synchronous"
 
 const SLACK_API_BASE = "https://slack.com/api/"
 
@@ -42,7 +43,7 @@ export class FunnelSlackAdapter extends FunnelConnectorAdapter {
     signal?.throwIfAborted()
     const url = `${SLACK_API_BASE}${input.path}`
     signal?.throwIfAborted()
-    const body = input.body
+    const body = requireSynchronous(input.body, "JSON body values must be synchronous")
     signal?.throwIfAborted()
     const form = new URLSearchParams()
 

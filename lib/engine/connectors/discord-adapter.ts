@@ -3,7 +3,7 @@ import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-tok
 import { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
 import type { DiscordConnectorConfig } from "@/engine/connectors/discord-connector-schema"
-import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
+import { serializeJsonBody } from "@/engine/serialize-json-body"
 import { readHttpErrorDetail } from "@/read-http-error-detail"
 
 const DISCORD_API_BASE = "https://discord.com/api/v10"

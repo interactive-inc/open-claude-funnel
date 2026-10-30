@@ -736,3 +736,103 @@ it("does not inspect a transform payload after the transform stops the superviso
     await supervisor.stop()
   }
 })
+
+describe("default channel JSON values", () => {
+  for (const placement of ["field", "array", "toJSON"] as const) {
+    for (const kind of ["resolved", "rejected", "hidden-then", "thenable"] as const) {
+      it(`rejects ${kind} asynchronous ${placement} JSON data and continues delivery`, async () => {
+        const { supervisor, received, logger } = freshSupervisor()
+        const source = new StubSource()
+        const failure = new Error("JSON value unavailable")
+        const bad = () => {
+          if (kind === "thenable")
+            return {
+              // oxlint-disable-next-line unicorn/no-thenable -- Exercise asynchronous default JSON data.
+              then(_resolve: unknown, reject: (error: unknown) => void) {
+                reject(failure)
+              },
+            }
+          const value = kind === "resolved" ? Promise.resolve("later") : Promise.reject(failure)
+          void value.catch(() => {})
+          if (kind === "hidden-then") {
+            // oxlint-disable-next-line unicorn/no-thenable -- Exercise a native promise with a hidden method.
+            Object.defineProperty(value, "then", { value: undefined })
+          }
+          return value
+        }
+        const data =
+          placement === "field"
+            ? { value: bad() }
+            : placement === "array"
+              ? { values: [bad()] }
+              : {
+                  toJSON() {
+                    return bad()
+                  },
+                }
+        supervisor.register({ id: "source", build: () => ({ sources: [source] }) })
+        try {
+          await supervisor.start()
+          source.pushEvent?.({ source: "discord", type: "input", data, meta: {}, receivedAt: 0 })
+          source.pushEvent?.({
+            source: "discord",
+            type: "input",
+            data: { recovered: true },
+            meta: {},
+            receivedAt: 0,
+          })
+          await waitForCondition(() =>
+            received.some((event) => event.content === '{"recovered":true}'),
+          )
+          await Bun.sleep(0)
+          expect(received.map((event) => event.content)).toEqual(['{"recovered":true}'])
+          const errors = logger.entries.filter((entry) => entry.level === "error")
+          expect(errors).toHaveLength(kind === "resolved" ? 1 : 2)
+          expect(
+            errors.some((entry) => entry.meta?.error === "JSON body values must be synchronous"),
+          ).toBe(true)
+          if (kind !== "resolved")
+            expect(errors.some((entry) => entry.meta?.error === failure.message)).toBe(true)
+        } finally {
+          await supervisor.stop()
+        }
+      })
+    }
+  }
+  for (const value of [NaN, Infinity, -Infinity]) {
+    it(`does not turn non-finite JSON data ${value} into null`, async () => {
+      const { supervisor, received, logger } = freshSupervisor()
+      const source = new StubSource()
+      supervisor.register({ id: "source", build: () => ({ sources: [source] }) })
+      try {
+        await supervisor.start()
+        source.pushEvent?.({
+          source: "discord",
+          type: "input",
+          data: { value },
+          meta: {},
+          receivedAt: 0,
+        })
+        source.pushEvent?.({
+          source: "discord",
+          type: "input",
+          data: { recovered: true },
+          meta: {},
+          receivedAt: 0,
+        })
+        await waitForCondition(() =>
+          received.some((event) => event.content === '{"recovered":true}'),
+        )
+        expect(received.map((event) => event.content)).toEqual(['{"recovered":true}'])
+        expect(logger.entries.filter((entry) => entry.level === "error")).toMatchObject([
+          {
+            message: 'channel "source" transform threw',
+            meta: { error: "JSON body numbers must be finite" },
+          },
+        ])
+      } finally {
+        await supervisor.stop()
+      }
+    })
+  }
+})

@@ -3,7 +3,7 @@ import { resolveConnectorToken } from "@/engine/connectors/resolve-connector-tok
 import type { GhConnectorConfig } from "@/engine/connectors/gh-connector-schema"
 import type { FunnelHttpClient } from "@/engine/http/http-client"
 import { NodeFunnelHttpClient } from "@/engine/http/node-http-client"
-import { serializeJsonBody } from "@/engine/connectors/serialize-json-body"
+import { serializeJsonBody } from "@/engine/serialize-json-body"
 import { readHttpErrorDetail } from "@/read-http-error-detail"
 
 type Deps = { config: GhConnectorConfig; http?: FunnelHttpClient; env?: NodeJS.ProcessEnv }
