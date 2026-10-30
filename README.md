@@ -58,7 +58,7 @@ listener からの内部配送は確定済みのチャネル・接続 ID を使�
 
 SDK の `query()` と MCP の `Server` は利用側のものをそのまま使います。Funnel はそのインスタンスを受け取らず、入力と通知の値を返します。SDK・MCP を依存として追加することもありません。
 
-Agent SDK の `prompt` にイベント列を渡す例です。上の `funnel` を使い、HTTP を待ち受けない構成にします。
+Agent SDK の `prompt` にイベント列を渡す例です。上の `funnel` を使い、HTTP を待ち受けない構成にします。対応する SDK / CLI で、外部テキストをそのまま渡す `verbatimPrompts` をホスト側から指定します。必要なバージョンとコンテキスト付加への影響は[組み込み案内](.docs/embedding.md#agent-sdk)を参照してください。
 
 ```ts
 import { query } from "@anthropic-ai/claude-agent-sdk"
@@ -69,7 +69,10 @@ const events = gateway.events({ channel: "ops", subscriberId: "assistant" })
 const input = agentSdkInput(events)
 try {
   await gateway.start()
-  for await (const message of query({ prompt: input })) {
+  for await (const message of query({
+    prompt: input,
+    options: { verbatimPrompts: true },
+  })) {
     // SDK の応答をそのまま扱う。権限・セッション・ツールも SDK の API で設定する。
     if (message.type === "result") console.log(message)
   }

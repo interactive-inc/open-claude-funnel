@@ -10,6 +10,10 @@ Funnel は外部イベントの配送部品。利用側が Agent SDK の `query(
 
 入力は SDK の user message 形式。本文は `{ content, meta, offset }` の JSON で、外部イベントの本文・チャネル・返信に必要なメタデータ・再送位置を保持する。`session_id` は空文字で、セッションの生成・再開は利用側の SDK 設定に委ねる。本文の加工や画像・ツール入力の合成が必要なら、自分の入力列で SDK のメッセージを作ってよい。
 
+README の例はホストの SDK オプション `verbatimPrompts: true` を使い、外部テキストの `@path`・`@server:resource` やコマンドを入力 UI の記法として処理させない。SDK の既定値は false で、JSON の本文に包むだけではこの前処理を無効にできない。このオプションは Agent SDK 0.3.280 以降と Claude Code 2.1.248 以降が必要で、古い CLI は対応するフィールドを無視する。
+
+現在の CLI では、この設定でターン開始時の添付処理全体が省かれ、入れ子の `CLAUDE.md`・rules・skill / tool 一覧などの付加にも影響する。通常の入力処理が必要なメッセージと混在させる場合は、SDK の `client_composed: true` を対象メッセージにだけ付ける方法もある。前処理とコンテキストの選択はホストが所有し、Funnel は SDK 設定を変更しない。[Agent SDK の入力オプション](https://code.claude.com/docs/en/agent-sdk/typescript#options)を確認して組み込む。
+
 `agentSdkInput` は入力列だけを変換する。SDK の応答、ツール登録、権限判断、中断・終了 API はそのまま利用する。SDK の出力と入力イベントは必ずしも一対一ではないため、最終応答を自動的に最後のイベントへ返信しない。
 
 ## Claude Code Channels
