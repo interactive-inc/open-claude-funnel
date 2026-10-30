@@ -86,6 +86,12 @@ export class FunnelChannels {
     )
   }
 
+  private generateId(): string {
+    const id = requireSynchronous(this.idGenerator.generate(), "ID generation must be synchronous")
+    if (typeof id !== "string") throw new TypeError("generated ID must be a string")
+    return id
+  }
+
   get(name: string): ChannelConfig | null {
     return this.list().find((c) => c.name === name) ?? null
   }
@@ -100,7 +106,7 @@ export class FunnelChannels {
         throw new FunnelChannelAlreadyExistsError(input.name)
       }
 
-      const id = this.idGenerator.generate()
+      const id = this.generateId()
       if (!id || settings.channels.some((channel) => channel.id === id))
         throw new Error("channel ID must be non-empty and unique")
 
@@ -182,7 +188,7 @@ export class FunnelChannels {
       }
 
       const candidate = this.registry.buildConfig(input, {
-        id: this.idGenerator.generate(),
+        id: this.generateId(),
         now: this.clock.iso(),
       })
 
@@ -302,7 +308,7 @@ export class FunnelChannels {
       }
 
       const { config: next, result } = this.registry.runOperation(connector, operation, args, {
-        generateId: () => this.idGenerator.generate(),
+        generateId: () => this.generateId(),
         now: this.clock.iso(),
       })
 
