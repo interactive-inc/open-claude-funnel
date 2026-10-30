@@ -102,18 +102,20 @@ export class FunnelChannels {
 
   add(input: { name: string; delivery?: ChannelDeliveryMode }): ChannelConfig {
     return this.updateSettings((settings) => {
-      if (settings.channels.some((c) => c.name === input.name)) {
-        throw new FunnelChannelAlreadyExistsError(input.name)
+      const name = input.name
+      if (settings.channels.some((c) => c.name === name)) {
+        throw new FunnelChannelAlreadyExistsError(name)
       }
 
+      const delivery = input.delivery ?? "fanout"
       const id = this.generateId()
       if (!id || settings.channels.some((channel) => channel.id === id))
         throw new Error("channel ID must be non-empty and unique")
 
       const channel: ChannelConfig = {
         id,
-        name: input.name,
-        delivery: input.delivery ?? "fanout",
+        name,
+        delivery,
         connectors: [],
       }
 
@@ -182,9 +184,10 @@ export class FunnelChannels {
   addConnector(channelName: string, input: AddConnectorInput): BaseConnectorConfig {
     return this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, channelName)
+      const requestedName = input.name
 
-      if (channel.connectors.some((c) => c.name === input.name)) {
-        throw new Error(`connector "${input.name}" already exists in channel "${channelName}"`)
+      if (channel.connectors.some((c) => c.name === requestedName)) {
+        throw new Error(`connector "${requestedName}" already exists in channel "${channelName}"`)
       }
 
       const candidate = this.registry.buildConfig(input, {
@@ -194,6 +197,10 @@ export class FunnelChannels {
 
       if (!candidate.id || channel.connectors.some((connector) => connector.id === candidate.id))
         throw new Error("connector ID must be non-empty and unique within a channel")
+
+      const candidateName = candidate.name
+      if (channel.connectors.some((connector) => connector.name === candidateName))
+        throw new Error(`connector "${candidateName}" already exists in channel "${channelName}"`)
 
       this.assertNoTokenCollision(settings, candidate)
 
