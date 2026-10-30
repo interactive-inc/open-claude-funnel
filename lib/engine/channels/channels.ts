@@ -262,8 +262,9 @@ export class FunnelChannels {
 
       const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
 
+      this.assertReplacementIdentity(channel, connector, updated)
       this.assertNoTokenCollision(settings, updated, connector)
-      this.replaceConnector(channel, connector.name, updated)
+      this.replaceConnector(channel, connector, updated)
     })
   }
 
@@ -319,9 +320,10 @@ export class FunnelChannels {
         now: this.clock.iso(),
       })
 
+      this.assertReplacementIdentity(channel, connector, next)
       this.assertNoTokenCollision(settings, next, connector)
       if (next !== connector) {
-        this.replaceConnector(channel, connector.name, next)
+        this.replaceConnector(channel, connector, next)
       }
 
       return result
@@ -422,16 +424,34 @@ export class FunnelChannels {
   // (e.g. a stale literal token when the slot moved to an env reference).
   private replaceConnector(
     channel: ChannelConfig,
-    connectorName: string,
+    current: BaseConnectorConfig,
     next: BaseConnectorConfig,
   ): void {
-    const index = channel.connectors.findIndex((c) => c.name === connectorName)
+    const index = channel.connectors.indexOf(current)
 
     if (index < 0) {
-      throw new Error(`connector "${connectorName}" not found in channel "${channel.name}"`)
+      throw new Error(`connector "${current.name}" not found in channel "${channel.name}"`)
     }
 
     channel.connectors[index] = next
+  }
+
+  private assertReplacementIdentity(
+    channel: ChannelConfig,
+    current: BaseConnectorConfig,
+    next: BaseConnectorConfig,
+  ): void {
+    const id = requireSynchronous(next.id, "connector ID must be synchronous")
+    if (
+      typeof id !== "string" ||
+      id === "" ||
+      channel.connectors.some((connector) => connector !== current && connector.id === id)
+    )
+      throw new Error("connector ID must be non-empty and unique within a channel")
+    const name = requireSynchronous(next.name, "connector name must be synchronous")
+    if (typeof name !== "string") throw new TypeError("connector name must be a string")
+    if (channel.connectors.some((connector) => connector !== current && connector.name === name))
+      throw new Error(`connector "${name}" already exists in channel "${channel.name}"`)
   }
 
   private assertNoTokenCollision(
