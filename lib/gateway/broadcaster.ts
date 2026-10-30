@@ -3,6 +3,7 @@ import type { ServerWebSocket } from "bun"
 import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { closeFailedWebSocket } from "@/gateway/close-failed-websocket"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import { WebSocketBackpressureError } from "@/gateway/errors"
 import { sendWsPayload } from "@/gateway/send-ws-payload"
@@ -738,13 +739,19 @@ export class FunnelBroadcaster {
           )
           continue
         }
-        try {
-          ws.close(1011, "send failed")
-        } catch {}
+        const failure = closeFailedWebSocket(ws, err, "send failed")
         invokeCallback(() =>
           this.logger?.warn("ws.send failed; dropping client", {
             channel: data?.channel,
-            error: errorMessageOf(err),
+            error: errorMessageOf(failure),
+          }),
+        )
+        invokeCallback(() =>
+          this.onError(failure, {
+            component: "broadcaster.send",
+            offset: event.offset,
+            channel: data?.channel ?? null,
+            connector: event.meta?.connector ?? null,
           }),
         )
       }

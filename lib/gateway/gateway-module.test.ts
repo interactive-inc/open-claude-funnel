@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 
 const isBun = typeof globalThis.Bun !== "undefined"
 import type { Server } from "bun"
@@ -26,11 +26,14 @@ const mountHost = async (
     gatewayFirst?: boolean
     /** Give the host its own `GET /health`, to exercise the collision with the built-in one. */
     hostHealth?: boolean
+    rejectReplayOnce?: "zero" | "throw" | "read"
+    onError?: (error: Error) => void
   } = { token: "" },
 ) => {
   const funnel = new Funnel({
     connectors: [scheduleConnector()],
     logger: new NoopFunnelLogger(),
+    onError: options.onError,
   })
 
   if (options.channelName) funnel.channels.add({ name: options.channelName })
@@ -49,6 +52,7 @@ const mountHost = async (
     ? new Hono().route("/", gw.app).route("/", hostRoutes)
     : new Hono().route("/", hostRoutes).route("/", gw.app)
 
+  const fault = { remaining: options.rejectReplayOnce ?? null }
   const server: Server<GatewayWsData> = Bun.serve<GatewayWsData>({
     port: 0,
     hostname: "127.0.0.1",
@@ -60,7 +64,41 @@ const mountHost = async (
 
       return app.fetch(request)
     },
-    websocket: gw.websocket,
+    websocket: {
+      ...gw.websocket,
+      open(ws) {
+        if (fault.remaining !== null) {
+          const mode = fault.remaining
+          fault.remaining = null
+          if (mode === "read") {
+            const replay = spyOn(gw.getBroadcaster(), "replayToClient").mockImplementationOnce(
+              () => {
+                throw new Error("replay read failed")
+              },
+            )
+            try {
+              gw.websocket.open?.(ws)
+            } finally {
+              replay.mockRestore()
+            }
+            return
+          }
+          const send = spyOn(ws, "send")
+          if (mode === "zero") send.mockReturnValueOnce(0)
+          else
+            send.mockImplementationOnce(() => {
+              throw new Error("replay send failed")
+            })
+          try {
+            gw.websocket.open?.(ws)
+          } finally {
+            send.mockRestore()
+          }
+          return
+        }
+        gw.websocket.open?.(ws)
+      },
+    },
   })
 
   await gw.start()
@@ -512,3 +550,47 @@ describe.skipIf(!isBun)("FunnelGatewayServer over the module", () => {
     }
   })
 })
+
+for (const mode of ["zero", "throw", "read"] satisfies ReadonlyArray<"zero" | "throw" | "read">) {
+  test(`failed replay closes the WebSocket and allows replay from the accepted offset (${mode})`, async () => {
+    const failures: Error[] = []
+    const mounted = await mountHost({
+      token: "",
+      channelName: "ops",
+      rejectReplayOnce: mode,
+      onError: (error) => failures.push(error),
+    })
+    active = mounted
+    mounted.gw.emit({ channel: "ops", content: "missed schedule" })
+    const clients: WebSocket[] = []
+    try {
+      const closed = Promise.withResolvers<boolean>()
+      const first = new WebSocket(`ws://127.0.0.1:${mounted.port}/ws?channel=ops&since=0`)
+      clients.push(first)
+      first.addEventListener("close", () => closed.resolve(true))
+      first.addEventListener("error", () => {})
+      const closeLimit = setTimeout(() => closed.resolve(false), 1000)
+      const wasClosed = await closed.promise
+      clearTimeout(closeLimit)
+      expect(wasClosed).toBe(true)
+      expect(mounted.gw.getBroadcaster().getClientCount()).toBe(0)
+      expect(failures).toHaveLength(1)
+      const received = Promise.withResolvers<string>()
+      const second = new WebSocket(`ws://127.0.0.1:${mounted.port}/ws?channel=ops&since=0`)
+      clients.push(second)
+      second.addEventListener("message", (event) => received.resolve(String(event.data)))
+      second.addEventListener("error", () => received.reject(new Error("reconnect failed")))
+      const receiveLimit = setTimeout(() => received.reject(new Error("replay timed out")), 1000)
+      try {
+        expect(JSON.parse(await received.promise)).toMatchObject({
+          offset: 1,
+          content: "missed schedule",
+        })
+      } finally {
+        clearTimeout(receiveLimit)
+      }
+    } finally {
+      for (const client of clients) client.close()
+    }
+  })
+}

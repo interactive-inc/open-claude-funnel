@@ -52,6 +52,8 @@ listener からの内部配送は確定済みのチャネル・接続 ID を使�
 
 `FunnelGatewayClient` は空文字・`.`・`..` のチャネル名とコネクタ名を送信前に拒否します。URL のパスとして正しく指定できないため、HTTP 操作には別の名前を使ってください。その他の名前に含まれる `/` などの区切り文字はエンコードします。
 
+送信・再送が失敗した接続は閉じ、ホストの `onError` へ返します。購読者は最後に受理したoffsetから再接続します。発火・保存・送信受付とモデルへの入力完了は別の状態です。境界と復旧手順は [WebSocket配送](.docs/websocket-delivery.md) を参照してください。
+
 ホスト自身が Bun の HTTP/WebSocket サーバーを持つ場合は、`gatewayModule({ token })` の `app`、`handleUpgrade`、`websocket` を組み込みます。Node.js では同一プロセスの配信 API と Hono の `app` を利用できます。`gatewayServer()` と WebSocket upgrade helper は Bun 専用です。
 
 ## Agent SDK / Channels に組み込む

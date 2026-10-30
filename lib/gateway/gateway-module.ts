@@ -14,6 +14,7 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelClock } from "@/engine/time/clock"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
 import { type BroadcastSubscriber, FunnelBroadcaster } from "@/gateway/broadcaster"
+import { closeFailedWebSocket } from "@/gateway/close-failed-websocket"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 import { FunnelEventLog } from "@/gateway/event-log/event-log"
 import { type Env, factory } from "@/gateway/factory"
@@ -586,13 +587,14 @@ export class FunnelGatewayModule {
           closeStopped()
           return
         }
-        const err = normalizeError(error)
-        try {
-          if (err instanceof WebSocketBackpressureError) ws.close(1009, "backpressure")
-          else ws.close(1011, "replay failed")
-        } catch {
-          // The peer may already have closed the transport.
-        }
+        let err = normalizeError(error)
+        if (err instanceof WebSocketBackpressureError) {
+          try {
+            ws.close(1009, "backpressure")
+          } catch {
+            // The peer may already have closed the transport.
+          }
+        } else err = closeFailedWebSocket(ws, err, "replay failed")
         invokeCallback(() =>
           this.logger?.warn("replay failed during ws.open", { error: errorMessageOf(err) }),
         )

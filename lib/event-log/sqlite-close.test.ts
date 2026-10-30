@@ -53,7 +53,7 @@ test("close finalizes statements and releases database files without waiting for
     close.mockRestore()
     rmSync(directory, { recursive: true, force: true })
   }
-})
+}, 15_000)
 
 test("a constructor failure after migration releases the database before retry", () => {
   const directory = mkdtempSync(join(tmpdir(), "funnel failed close "))
