@@ -57,7 +57,7 @@ export abstract class FunnelEventLog {
    */
   abstract loadSince(since: number, limit?: number): ReplayableEvent[]
 
-  /** Highest recorded offset, preserved after retention and clear remove payloads. */
+  /** Return the highest recorded offset synchronously or throw. Retention and clear preserve it. */
   abstract findMaxOffset(): number
 
   /**

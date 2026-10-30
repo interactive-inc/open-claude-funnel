@@ -755,6 +755,9 @@ export class FunnelBroadcaster {
 
   /** Forward-seed the offset counter (used at startup from the persisted event store). */
   seedLatestOffset(offset: number): void {
+    requireSynchronous(offset, "restored event offset must be synchronous", (error) =>
+      this.onError(normalizeError(error), { component: "broadcaster.offset-restore" }),
+    )
     if (!Number.isSafeInteger(offset) || offset < 0)
       throw new RangeError("restored event offset must be a non-negative safe integer")
     if (offset > this.latestOffset) this.latestOffset = offset
