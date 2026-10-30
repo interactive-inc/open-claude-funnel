@@ -1,4 +1,5 @@
 import type { CallInput } from "@/engine/connectors/connector-adapter"
+import { requireSynchronous } from "@/require-synchronous"
 import type { BaseConnectorConfig } from "@/engine/connectors/base-connector-config"
 import type { FunnelConnectorRegistry } from "@/engine/connectors/connector-registry"
 import type { FunnelConnectorListener } from "@/engine/connectors/connector-listener"
@@ -40,6 +41,9 @@ export type AddConnectorInput = { type: string; name: string } & Record<string, 
 
 const defaultClock = new NodeFunnelClock()
 const defaultIdGenerator = new NodeFunnelIdGenerator()
+const settingsReadSchema = settingsSchema.extend({
+  channels: settingsSchema.shape.channels.unwrap(),
+})
 
 /**
  * Channels own their connectors. Each channel has a stable id (UUID); the
@@ -68,7 +72,18 @@ export class FunnelChannels {
   }
 
   list(): ChannelConfig[] {
-    return settingsSchema.parse(this.store.read()).channels
+    return settingsReadSchema.parse(
+      requireSynchronous(this.store.read(), "settings read must be synchronous"),
+    ).channels
+  }
+
+  private updateSettings<T>(mutator: (settings: Settings) => T): T {
+    return requireSynchronous(
+      this.store.update((settings) =>
+        requireSynchronous(mutator(settings), "settings updates must be synchronous"),
+      ),
+      "settings update must be synchronous",
+    )
   }
 
   get(name: string): ChannelConfig | null {
@@ -80,7 +95,7 @@ export class FunnelChannels {
   }
 
   add(input: { name: string; delivery?: ChannelDeliveryMode }): ChannelConfig {
-    return this.store.update((settings) => {
+    return this.updateSettings((settings) => {
       if (settings.channels.some((c) => c.name === input.name)) {
         throw new FunnelChannelAlreadyExistsError(input.name)
       }
@@ -103,14 +118,14 @@ export class FunnelChannels {
   }
 
   setDelivery(name: string, delivery: ChannelDeliveryMode): void {
-    this.store.update((settings) => {
+    this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, name)
       channel.delivery = delivery
     })
   }
 
   remove(name: string): void {
-    this.store.update((settings) => {
+    this.updateSettings((settings) => {
       const index = settings.channels.findIndex((c) => c.name === name)
 
       if (index < 0) throw new FunnelChannelNotFoundError(name)
@@ -120,7 +135,7 @@ export class FunnelChannels {
   }
 
   rename(oldName: string, newName: string): void {
-    this.store.update((settings) => {
+    this.updateSettings((settings) => {
       const channel = settings.channels.find((c) => c.name === oldName)
 
       if (!channel) throw new FunnelChannelNotFoundError(oldName)
@@ -159,7 +174,7 @@ export class FunnelChannels {
   }
 
   addConnector(channelName: string, input: AddConnectorInput): BaseConnectorConfig {
-    return this.store.update((settings) => {
+    return this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, channelName)
 
       if (channel.connectors.some((c) => c.name === input.name)) {
@@ -183,7 +198,7 @@ export class FunnelChannels {
   }
 
   removeConnector(channelName: string, connectorName: string): void {
-    this.store.update((settings) => {
+    this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, channelName)
       const index = channel.connectors.findIndex((c) => c.name === connectorName)
 
@@ -196,7 +211,7 @@ export class FunnelChannels {
   }
 
   renameConnector(channelName: string, oldName: string, newName: string): void {
-    this.store.update((settings) => {
+    this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, channelName)
       const connector = channel.connectors.find((c) => c.name === oldName)
 
@@ -224,7 +239,7 @@ export class FunnelChannels {
     connectorName: string,
     fields: Record<string, unknown>,
   ): void {
-    this.store.update((settings) => {
+    this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, channelName)
       const connector = channel.connectors.find((c) => c.name === connectorName)
 
@@ -278,7 +293,7 @@ export class FunnelChannels {
     operation: string,
     args: unknown,
   ): unknown {
-    return this.store.update((settings) => {
+    return this.updateSettings((settings) => {
       const channel = this.requireChannel(settings, channelName)
       const connector = channel.connectors.find((c) => c.name === connectorName)
 
