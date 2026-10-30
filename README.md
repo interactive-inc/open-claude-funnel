@@ -40,6 +40,8 @@ await gateway.stop()
 
 別プロセスの購読者は `/ws?channel=ops&id=worker-1` に接続します。認証には `/gateway` の `channelWsProtocols(token)` を WebSocket の subprotocol として渡します。`since=<offset>` を付けると保持中のイベントを再送します。
 
+送信・再送が失敗した接続は閉じ、ホストの `onError` へ返します。購読者は最後に受理したoffsetから再接続します。発火・保存・送信受付とモデルへの入力完了は別の状態です。境界と復旧手順は [WebSocket配送](.docs/websocket-delivery.md) を参照してください。
+
 ホスト自身が Bun の HTTP/WebSocket サーバーを持つ場合は、`gatewayModule({ token })` の `app`、`handleUpgrade`、`websocket` を組み込みます。Node.js では同一プロセスの配信 API と Hono の `app` を利用できます。`gatewayServer()` と WebSocket upgrade helper は Bun 専用です。
 
 ## Agent SDK / Channels に組み込む

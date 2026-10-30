@@ -3,7 +3,7 @@ import type { ServerWebSocket } from "bun"
 import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 import { FunnelBroadcaster } from "@/gateway/broadcaster"
 
-type FakeWsMode = "fast" | "slow"
+type FakeWsMode = "fast" | "slow" | "dropped" | "buffered"
 
 class FakeWs {
   sent: string[] = []
@@ -11,8 +11,10 @@ class FakeWs {
 
   constructor(private readonly mode: FakeWsMode = "fast") {}
 
-  send(payload: string): void {
+  send(payload: string): number {
+    if (this.mode === "dropped") return 0
     this.sent.push(payload)
+    return this.mode === "buffered" ? -1 : Buffer.byteLength(payload)
   }
 
   getBufferedAmount(): number {
@@ -489,4 +491,32 @@ describe("FunnelBroadcaster", () => {
     expect(alice.sent.length).toBe(1)
     expect(bob.sent.length).toBe(1)
   })
+})
+
+test("a dropped WebSocket send closes the stale client and leaves the event replayable", () => {
+  const failures: Error[] = []
+  const broadcaster = new FunnelBroadcaster({ onError: (error) => failures.push(error) })
+  const dropped = new FakeWs("dropped")
+  const healthy = new FakeWs()
+  const subscription = { channel: "ops", connectors: ["schedule"] }
+  broadcaster.addClient(asWs(dropped), subscription)
+  broadcaster.addClient(asWs(healthy), subscription)
+  const event = broadcaster.broadcast("scheduled input", { connector: "schedule" })
+  expect(dropped.closed?.code).toBe(1011)
+  expect(broadcaster.getClientCount()).toBe(1)
+  expect(failures).toHaveLength(1)
+  expect(healthy.sent.map((payload) => JSON.parse(payload).content)).toEqual(["scheduled input"])
+  expect(broadcaster.replaySince(0, subscription)).toEqual([event])
+  expect(broadcaster.getMetrics().eventsBroadcast).toBe(1)
+})
+test("accepted backpressure does not close a client or replay its message automatically", () => {
+  const failures: Error[] = []
+  const broadcaster = new FunnelBroadcaster({ onError: (error) => failures.push(error) })
+  const buffered = new FakeWs("buffered")
+  broadcaster.addClient(asWs(buffered), { channel: "ops", connectors: [] })
+  broadcaster.broadcast("queued")
+  expect(buffered.sent).toHaveLength(1)
+  expect(buffered.closed).toBeNull()
+  expect(broadcaster.getClientCount()).toBe(1)
+  expect(failures).toEqual([])
 })

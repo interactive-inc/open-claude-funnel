@@ -8,6 +8,8 @@ import { FunnelLogger } from "@/engine/logger/logger"
 import type { FunnelClock } from "@/engine/time/clock"
 import { constantTimeEqual, requireBearerToken } from "@/gateway/auth-middleware"
 import { type BroadcastSubscriber, FunnelBroadcaster } from "@/gateway/broadcaster"
+import { sendWebSocketPayload } from "@/gateway/send-websocket-payload"
+import { closeFailedWebSocket } from "@/gateway/close-failed-websocket"
 import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 import { FunnelEventLog } from "@/gateway/event-log/event-log"
 import { type Env, factory } from "@/gateway/factory"
@@ -407,18 +409,14 @@ export class FunnelGatewayModule {
 
   private handleWsOpen(ws: ServerWebSocket<GatewayWsData>): void {
     if (typeof ws.data.since === "number") {
-      const replay = this.broadcaster.replaySince(ws.data.since, ws.data)
-
-      // ws.send can throw if the client raced a close before we got here.
-      // Wrap the whole replay so one failure does not skip both the
-      // remaining replay events AND the addClient call below — without
-      // the catch, addClient would never run and the client would silently
-      // miss live broadcasts.
       try {
-        for (const event of replay) ws.send(JSON.stringify(event))
+        const replay = this.broadcaster.replaySince(ws.data.since, ws.data)
+        for (const event of replay) sendWebSocketPayload(ws, JSON.stringify(event))
       } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error))
-        this.logger?.warn("replay send failed during ws.open", { error: err.message })
+        const failure =
+          error instanceof Error ? error : new Error("WebSocket replay failed", { cause: error })
+        const err = closeFailedWebSocket(ws, failure)
+        this.logger?.warn("replay failed during ws.open", { error: err.message })
         this.onError(err, { component: "gateway-server.replay" })
         return
       }

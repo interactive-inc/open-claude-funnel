@@ -2,6 +2,8 @@ import type { ServerWebSocket } from "bun"
 import { randomUUID } from "node:crypto"
 import type { OnFunnelError } from "@/engine/error/on-funnel-error"
 import { FunnelLogger } from "@/engine/logger/logger"
+import { sendWebSocketPayload } from "@/gateway/send-websocket-payload"
+import { closeFailedWebSocket } from "@/gateway/close-failed-websocket"
 import { eventSnapshot } from "@/gateway/event-snapshot"
 import {
   FunnelEventStream,
@@ -489,15 +491,23 @@ export class FunnelBroadcaster {
       // and the send call). Catch per-recipient so one broken socket does
       // not stop the broadcast loop from reaching healthy subscribers.
       try {
-        ws.send(payload)
+        sendWebSocketPayload(ws, payload)
       } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error))
+        const failure =
+          error instanceof Error ? error : new Error("WebSocket send failed", { cause: error })
         const data = this.clients.get(ws)
+        this.clients.delete(ws)
+        const err = closeFailedWebSocket(ws, failure)
         this.logger?.warn("ws.send failed; dropping client", {
           channel: data?.channel,
           error: err.message,
         })
-        this.clients.delete(ws)
+        this.onError(err, {
+          component: "broadcaster.send",
+          offset: event.offset,
+          channel: data?.channel ?? null,
+          connector: event.meta?.connector ?? null,
+        })
       }
     }
 
