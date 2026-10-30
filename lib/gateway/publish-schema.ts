@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { recordSchema } from "@/gateway/record-schema"
+import { recordSchema } from "@/record-schema"
 
 /**
  * Shared schema for `POST /channels/:channel/publish` — used by both the

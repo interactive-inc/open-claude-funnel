@@ -11,7 +11,8 @@ export type ChannelBroadcastPayload = {
   readonly meta?: Record<string, string>
 }
 
-/** Synchronous event conversion. Promise/thenable results are rejected before delivery. */
+/** Synchronous conversion to string content and string metadata values.
+ * Invalid or asynchronous results are reported and dropped before delivery. */
 export type ChannelTransform = (event: FlumeEvent) => ChannelBroadcastPayload | null
 
 /**
@@ -32,6 +33,7 @@ export type ChannelRuntime = {
   /**
    * Converts each source's FlumeEvent into a broadcast payload. Defaults to
    * `{ content: JSON.stringify(event.data), meta: event.meta }` when omitted
+   * Data that cannot produce a JSON string is reported and dropped.
    */
   readonly transform?: ChannelTransform
 }

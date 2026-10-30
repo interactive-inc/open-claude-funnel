@@ -1,9 +1,11 @@
 import type { FlumeErrorHandler, FlumeRuntimeDeps } from "@interactive-inc/flume"
+import { z } from "zod"
 import type { Channel, ChannelBuildContext } from "@/engine/channel/channel"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import { requireSynchronous } from "@/require-synchronous"
+import { recordSchema } from "@/record-schema"
 
 type Props = Pick<ChannelBuildContext, "logger" | "clock"> & {
   channel: Channel
@@ -39,6 +41,30 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
       this.props.logger.error(`channel "${channel.id}" transform threw`, {
         error: errorMessageOf(error),
       })
+    const stringField = (field: string) =>
+      z.preprocess(
+        (value) =>
+          requireSynchronous(
+            value,
+            `channel transform ${field} must be synchronous`,
+            reportTransformError,
+          ),
+        z.string(),
+      )
+    const payloadSchema = z.object({
+      content: stringField("content"),
+      meta: z
+        .preprocess(
+          (value) =>
+            requireSynchronous(
+              value,
+              "channel transform metadata must be synchronous",
+              reportTransformError,
+            ),
+          recordSchema(stringField("metadata value")),
+        )
+        .optional(),
+    })
     await this.runStart({
       sources: runtime.sources,
       deps: this.props.deps,
@@ -55,16 +81,18 @@ export class FunnelChannelListener extends FunnelFlumeSourceListener {
             transform === undefined
               ? { content: JSON.stringify(event.data), meta: event.meta }
               : transform.call(runtime, event)
-          payload = requireSynchronous(
+          const result = requireSynchronous(
             converted,
             "channel transform must be synchronous",
             reportTransformError,
           )
+          if (result === null || combinedSignal.aborted) return
+          payload = payloadSchema.parse(result)
         } catch (error) {
           reportTransformError(error)
           return
         }
-        if (payload !== null) await notify(payload.content, payload.meta)
+        if (!combinedSignal.aborted) await notify(payload.content, payload.meta)
       },
     })
   }

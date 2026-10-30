@@ -487,3 +487,252 @@ describe("FunnelChannelSupervisor", () => {
     expect(received).toHaveLength(0)
   })
 })
+
+describe("channel transform payload validation", () => {
+  for (const [kind, value] of [
+    ["undefined", undefined],
+    ["array", []],
+    ["missing content", {}],
+    ["numeric content", { content: 42 }],
+    ["null metadata", { content: "bad", meta: null }],
+    ["array metadata", { content: "bad", meta: [] }],
+    ["map metadata", { content: "bad", meta: new Map([["key", "value"]]) }],
+    ["numeric metadata", { content: "bad", meta: { key: 42 } }],
+    ["invalid special key", { content: "bad", meta: Object.fromEntries([["__proto__", 42]]) }],
+  ]) {
+    it(`rejects ${kind} and continues with later valid input`, async () => {
+      const { supervisor, received, logger } = freshSupervisor()
+      const source = new StubSource()
+      let calls = 0
+      supervisor.register({
+        id: "source",
+        build: () => ({
+          sources: [source],
+          transform: (() => (++calls === 1 ? value : { content: "recovered" })) as ChannelTransform,
+        }),
+      })
+      try {
+        await supervisor.start()
+        for (let index = 0; index < 2; index++)
+          source.pushEvent?.({
+            source: "discord",
+            type: "input",
+            data: {},
+            meta: {},
+            receivedAt: 0,
+          })
+        await waitForCondition(() => received.some((event) => event.content === "recovered"))
+        expect(received).toEqual([{ content: "recovered", meta: undefined }])
+        expect(logger.entries.filter((entry) => entry.level === "error")).toMatchObject([
+          { message: 'channel "source" transform threw' },
+        ])
+      } finally {
+        await supervisor.stop()
+      }
+    })
+  }
+  for (const [kind, data] of [
+    ["undefined", undefined],
+    ["function", () => {}],
+    ["symbol", Symbol("input")],
+    ["toJSON", { toJSON: () => undefined }],
+  ] as const) {
+    it(`does not deliver a missing default JSON body from ${kind}`, async () => {
+      const { supervisor, received, logger } = freshSupervisor()
+      const source = new StubSource()
+      supervisor.register({ id: "source", build: () => ({ sources: [source] }) })
+      try {
+        await supervisor.start()
+        for (const input of [data, { recovered: true }])
+          source.pushEvent?.({
+            source: "discord",
+            type: "input",
+            data: input as never,
+            meta: {},
+            receivedAt: 0,
+          })
+        await waitForCondition(() =>
+          received.some((event) => event.content === '{"recovered":true}'),
+        )
+        expect(received.map((event) => event.content)).toEqual(['{"recovered":true}'])
+        expect(logger.entries.filter((entry) => entry.level === "error")).toMatchObject([
+          { message: 'channel "source" transform threw' },
+        ])
+      } finally {
+        await supervisor.stop()
+      }
+    })
+  }
+  for (const field of ["content", "meta", "meta-value"] as const) {
+    for (const kind of ["resolved", "rejected", "hidden-then", "thenable"] as const) {
+      it(`rejects ${kind} asynchronous ${field} values and observes their failure`, async () => {
+        const { supervisor, received, logger } = freshSupervisor()
+        const source = new StubSource()
+        let calls = 0
+        const failure = new Error("payload field unavailable")
+        const bad = () => {
+          if (kind === "thenable")
+            return {
+              // oxlint-disable-next-line unicorn/no-thenable -- Exercise an asynchronous transform payload field.
+              then(_resolve: unknown, reject: (error: unknown) => void) {
+                reject(failure)
+              },
+            }
+          const value = kind === "resolved" ? Promise.resolve("later") : Promise.reject(failure)
+          void value.catch(() => {})
+          if (kind === "hidden-then") {
+            // oxlint-disable-next-line unicorn/no-thenable -- Exercise a native promise with a hidden method.
+            Object.defineProperty(value, "then", { value: undefined })
+          }
+          return value
+        }
+        supervisor.register({
+          id: "source",
+          build: () => ({
+            sources: [source],
+            transform: (() => {
+              if (++calls > 1) return { content: "recovered" }
+              const value = bad()
+              return {
+                content: field === "content" ? value : "bad",
+                meta:
+                  field === "meta" ? value : field === "meta-value" ? { key: value } : undefined,
+              }
+            }) as ChannelTransform,
+          }),
+        })
+        try {
+          await supervisor.start()
+          for (let index = 0; index < 2; index++)
+            source.pushEvent?.({
+              source: "discord",
+              type: "input",
+              data: {},
+              meta: {},
+              receivedAt: 0,
+            })
+          await waitForCondition(() => received.some((event) => event.content === "recovered"))
+          await Bun.sleep(0)
+          expect(received).toEqual([{ content: "recovered", meta: undefined }])
+          const errors = logger.entries.filter((entry) => entry.level === "error")
+          expect(errors).toHaveLength(kind === "resolved" ? 1 : 2)
+          expect(
+            errors.every((entry) => entry.message === 'channel "source" transform threw'),
+          ).toBe(true)
+          if (kind !== "resolved")
+            expect(errors.some((entry) => entry.meta?.error === failure.message)).toBe(true)
+        } finally {
+          await supervisor.stop()
+        }
+      })
+    }
+  }
+  it("captures content and metadata once, preserves special keys and detaches metadata", async () => {
+    const { supervisor, received } = freshSupervisor()
+    const source = new StubSource()
+    const meta = Object.fromEntries([
+      ["__proto__", "retained"],
+      ["constructor", "retained"],
+      ["key", "original"],
+    ])
+    let contentReads = 0
+    let metaReads = 0
+    supervisor.register({
+      id: "source",
+      build: () => ({
+        sources: [source],
+        transform: () => ({
+          get content() {
+            contentReads++
+            return "captured"
+          },
+          get meta() {
+            metaReads++
+            return meta
+          },
+        }),
+      }),
+    })
+    try {
+      await supervisor.start()
+      source.pushEvent?.({ source: "discord", type: "input", data: {}, meta: {}, receivedAt: 0 })
+      await waitForCondition(() => received.length === 1)
+      meta.key = "changed"
+      expect(received[0]).toEqual({
+        content: "captured",
+        meta: Object.fromEntries([
+          ["__proto__", "retained"],
+          ["constructor", "retained"],
+          ["key", "original"],
+        ]),
+      })
+      expect(contentReads).toBe(1)
+      expect(metaReads).toBe(1)
+    } finally {
+      await supervisor.stop()
+    }
+  })
+  it("keeps an empty custom body and valid falsey default JSON values", async () => {
+    const { supervisor, received } = freshSupervisor()
+    const source = new StubSource()
+    const empty = new StubSource()
+    supervisor.register({
+      id: "empty",
+      build: () => ({
+        sources: [empty],
+        transform: () => ({ content: "" }),
+      }),
+    })
+    supervisor.register({ id: "default", build: () => ({ sources: [source] }) })
+    try {
+      await supervisor.start()
+      empty.pushEvent?.({ source: "discord", type: "empty", data: {}, meta: {}, receivedAt: 0 })
+      await waitForCondition(() => received.length === 1)
+      for (const data of [null, false, 0, ""])
+        source.pushEvent?.({
+          source: "discord",
+          type: "input",
+          data: { toJSON: () => data },
+          meta: {},
+          receivedAt: 0,
+        })
+      await waitForCondition(() => received.length === 5)
+      expect(received.map((event) => event.content)).toEqual(["", "null", "false", "0", '""'])
+    } finally {
+      await supervisor.stop()
+    }
+  })
+})
+
+it("does not inspect a transform payload after the transform stops the supervisor", async () => {
+  const { supervisor, received, logger } = freshSupervisor()
+  const source = new StubSource()
+  let stopping: Promise<void> | undefined
+  let reads = 0
+  supervisor.register({
+    id: "source",
+    build: () => ({
+      sources: [source],
+      transform: () => {
+        stopping = supervisor.stop()
+        return {
+          get content(): string {
+            reads++
+            throw new Error("payload inspected after stop")
+          },
+        }
+      },
+    }),
+  })
+  try {
+    await supervisor.start()
+    source.pushEvent?.({ source: "discord", type: "input", data: {}, meta: {}, receivedAt: 0 })
+    await waitForCondition(() => stopping !== undefined)
+    await stopping
+    expect(reads).toBe(0)
+    expect(received).toEqual([])
+    expect(logger.entries.filter((entry) => entry.level === "error")).toEqual([])
+  } finally {
+    await supervisor.stop()
+  }
+})
