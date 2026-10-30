@@ -18,8 +18,8 @@ const collect = (directory) => {
 collect(join(root, "lib"))
 files.sort()
 
-// Bun 1.3.0 can crash when native cancellation tests follow global fetch mocks.
-// Keep every test, while giving this file a fresh process without those mocks.
+// Isolate native cancellation tests from global fetch mocks without skipping tests.
+// Old Bun runtimes may still crash in isolation; preserve that failure below.
 const isolated = join("lib", "engine", "http", "node-http-client.test.ts")
 if (!files.includes(isolated)) throw new Error("HTTP cancellation test file is missing")
 const shared = files.filter((path) => path !== isolated)
@@ -29,5 +29,9 @@ console.log(`Checking ${files.length} test files with Bun ${process.versions.bun
 for (const group of [shared, [isolated]]) {
   const result = spawnSync(process.execPath, ["test", ...group], { cwd: root, stdio: "inherit" })
   if (result.error) throw result.error
+  if (result.signal)
+    throw new Error(
+      `Minimum Bun ${group === shared ? "library" : "HTTP cancellation"} checks terminated by ${result.signal}`,
+    )
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
