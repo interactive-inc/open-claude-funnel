@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { invokeCallback } from "@/invoke-callback"
 import { readHttpErrorDetail } from "@/read-http-error-detail"
+import { requireSynchronous } from "@/require-synchronous"
 import { errorMessageOf } from "@/engine/error/error-message-of"
 import {
   publishRequestSchema,
@@ -28,8 +29,9 @@ export type ListListenersResult =
   | Exclude<ListenerOpResult, { state: "ok" }>
 type Options = {
   baseUrl: string
-  /** Read the host's current credential for every request. */
+  /** Read the host's current credential synchronously for every request. */
   token: () => string | null
+  /** Return a boolean synchronously; invalid results refuse dispatch. */
   isAvailable?: () => boolean
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 }
@@ -51,8 +53,9 @@ export class FunnelGatewayClient {
     this.base = url.origin
   }
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
-    const token = this.options.token()
-    if (!token) throw new Error("gateway token is unavailable")
+    const token = requireSynchronous(this.options.token(), "gateway token must be synchronous")
+    if (token === null || token === "") throw new Error("gateway token is unavailable")
+    if (typeof token !== "string") throw new TypeError("gateway token must be a string or null")
     const send = this.options.fetch
     const request: RequestInit = {
       ...init,
@@ -64,7 +67,14 @@ export class FunnelGatewayClient {
     return send ? send.call(this.options, url, request) : globalThis.fetch(url, request)
   }
   private available(): boolean {
-    return this.options.isAvailable?.() ?? true
+    const read = this.options.isAvailable
+    if (read === undefined) return true
+    const value = requireSynchronous(
+      read.call(this.options),
+      "gateway availability must be synchronous",
+    )
+    if (typeof value !== "boolean") throw new TypeError("gateway availability must be a boolean")
+    return value
   }
   async list(): Promise<ListListenersResult> {
     try {

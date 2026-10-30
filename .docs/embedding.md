@@ -76,7 +76,7 @@ const client = new FunnelGatewayClient({
 await client.publish("ops", { content: "host event" })
 ```
 
-認証値はリクエストごとに読み、リダイレクト先へ送らない。ホストが `isAvailable` を注入した場合、その値が false の間は通信せず `state: "offline"` を返す。成功は `state: "ok"`、HTTP・認証値の不足・応答形式・通信の失敗は `state: "error"` と reason で返す。HTTP の送信成功は購読者の処理完了を意味しない。
+認証値はリクエストごとに読み、リダイレクト先へ送らない。`token()` は文字列か `null`、`isAvailable()` は boolean を同期的に返す。Promise や不正な型を返した場合は通信せず `state: "error"` にする。ホストが `isAvailable` を注入した場合、その値が false の間は認証値も読まず `state: "offline"` を返す。成功は `state: "ok"`、HTTP・認証値の不足・応答形式・通信の失敗は `state: "error"` と reason で返す。HTTP の送信成功は購読者の処理完了を意味しない。
 
 ## 購読・返信・終了
 
