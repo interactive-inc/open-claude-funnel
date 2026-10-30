@@ -195,12 +195,7 @@ export class FunnelChannels {
         now: this.clock.iso(),
       })
 
-      if (!candidate.id || channel.connectors.some((connector) => connector.id === candidate.id))
-        throw new Error("connector ID must be non-empty and unique within a channel")
-
-      const candidateName = candidate.name
-      if (channel.connectors.some((connector) => connector.name === candidateName))
-        throw new Error(`connector "${candidateName}" already exists in channel "${channelName}"`)
+      this.assertConnectorIdentity(channel, candidate)
 
       this.assertNoTokenCollision(settings, candidate)
 
@@ -262,7 +257,7 @@ export class FunnelChannels {
 
       const updated = this.registry.applyUpdate(connector, fields, { now: this.clock.iso() })
 
-      this.assertReplacementIdentity(channel, connector, updated)
+      this.assertConnectorIdentity(channel, updated, connector)
       this.assertNoTokenCollision(settings, updated, connector)
       this.replaceConnector(channel, connector, updated)
     })
@@ -320,7 +315,7 @@ export class FunnelChannels {
         now: this.clock.iso(),
       })
 
-      this.assertReplacementIdentity(channel, connector, next)
+      this.assertConnectorIdentity(channel, next, connector)
       this.assertNoTokenCollision(settings, next, connector)
       if (next !== connector) {
         this.replaceConnector(channel, connector, next)
@@ -436,10 +431,10 @@ export class FunnelChannels {
     channel.connectors[index] = next
   }
 
-  private assertReplacementIdentity(
+  private assertConnectorIdentity(
     channel: ChannelConfig,
-    current: BaseConnectorConfig,
     next: BaseConnectorConfig,
+    current?: BaseConnectorConfig,
   ): void {
     const id = requireSynchronous(next.id, "connector ID must be synchronous")
     if (
