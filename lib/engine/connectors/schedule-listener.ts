@@ -522,7 +522,8 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   private readNow(): Date {
-    return new Date(requireTimestamp(this.now().getTime()))
+    const date = requireSynchronous(this.now(), "clock now must be synchronous")
+    return new Date(requireTimestamp(date.getTime()))
   }
 
   private truncateToMinute(date: Date): Date {
