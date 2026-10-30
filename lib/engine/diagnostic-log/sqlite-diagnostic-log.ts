@@ -1,8 +1,10 @@
-import { normalizeSqlitePath } from "@/event-log/sqlite-path"
 import { hasSafeJsonDepth } from "@/has-safe-json-depth"
 import { invokeCallback } from "@/invoke-callback"
 import { snapshotDiagnosticQuery } from "@/engine/diagnostic-log/query-snapshot"
-import { requireSeparateDiagnosticPaths } from "@/engine/diagnostic-log/require-separate-paths"
+import {
+  requireSeparateDiagnosticPaths,
+  resolveDiagnosticPath,
+} from "@/engine/diagnostic-log/require-separate-paths"
 import { requireDurationLimit, requireIntegerLimit } from "@/require-limit"
 import { chmodSync } from "node:fs"
 import type { EventLogEntry } from "@/event-log/event-log-entry"
@@ -96,9 +98,9 @@ export class SqliteConnectorDiagnosticLog extends ConnectorDiagnosticLog {
       now,
       logger,
     } = props
-    const rawPath = normalizeSqlitePath(rawInput)
-    const processedPath = normalizeSqlitePath(processedInput)
-    const connectionPath = normalizeSqlitePath(connectionInput)
+    const rawPath = resolveDiagnosticPath(rawInput)
+    const processedPath = resolveDiagnosticPath(processedInput)
+    const connectionPath = resolveDiagnosticPath(connectionInput)
     const paths = [rawPath, processedPath, connectionPath]
     requireSeparateDiagnosticPaths(paths)
     if (maxRows !== undefined) requireIntegerLimit(maxRows, "maxRows")

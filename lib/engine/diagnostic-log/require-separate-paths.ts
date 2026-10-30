@@ -7,7 +7,7 @@ export function requireSeparateDiagnosticPaths(paths: readonly string[]): void {
   const names = new Map<string, string>()
   const files = new Map<string, string>()
   const reserve = (path: string, owner: string): void => {
-    const canonical = canonicalPath(path)
+    const canonical = resolveDiagnosticPath(path)
     const previous = names.get(canonical)
     if (previous !== undefined && previous !== owner)
       throw new Error("diagnostic database paths must identify separate files")
@@ -26,7 +26,7 @@ export function requireSeparateDiagnosticPaths(paths: readonly string[]): void {
   paths.forEach((input, index) => {
     const path = normalizeSqlitePath(input)
     if (path === ":memory:") return
-    const canonical = canonicalPath(path)
+    const canonical = resolveDiagnosticPath(path)
     for (const suffix of ["", "-wal", "-shm", "-journal"]) {
       // Reserve both the caller's spelling and the resolved database name:
       // SQLite sidecars must not overwrite any other store's primary file.
@@ -37,7 +37,10 @@ export function requireSeparateDiagnosticPaths(paths: readonly string[]): void {
   })
 }
 
-function canonicalPath(path: string): string {
+/** Resolve the same physical destination for validation and the SQLite connection. */
+export function resolveDiagnosticPath(input: string): string {
+  const path = normalizeSqlitePath(input)
+  if (path === ":memory:") return path
   const root = parse(path).root
   let current = realpathSync(root || process.cwd())
   // Resolve each existing component before applying a later parent traversal.

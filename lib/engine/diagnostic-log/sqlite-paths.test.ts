@@ -164,6 +164,14 @@ test("lexically similar paths through a symlink may still identify separate data
       expect(log.queryRaw({})).toHaveLength(1)
       expect(log.queryProcessed({})).toEqual([])
       expect(log.queryConnection({})).toEqual([])
+      const physicalPath = join(directory, "target", "raw.db")
+      expect(existsSync(physicalPath)).toBe(true)
+      const physical = new SqliteEventLog({ path: physicalPath })
+      try {
+        expect(physical.query()).toEqual([])
+      } finally {
+        physical.close()
+      }
     } finally {
       log.close()
     }
