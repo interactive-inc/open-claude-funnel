@@ -4,7 +4,7 @@ import { MemoryFunnelEventLog } from "@/gateway/event-log/memory-event-log"
 import type { GatewayWsData } from "@/gateway/gateway-module"
 
 for (const action of ["dispose", "stop", "abort", "socket-close"] as const) {
-  for (const phase of ["load", "load-error", "claim", "send"] as const) {
+  for (const phase of ["load", "load-error", "load-iterator", "claim", "send"] as const) {
     test(`${action} during WebSocket replay ${phase} closes without further sends or claims`, async () => {
       const controller = new AbortController()
       const failures: Error[] = []
@@ -38,10 +38,17 @@ for (const action of ["dispose", "stop", "abort", "socket-close"] as const) {
         else closeSocket()
       }
       const load = store.loadSince.bind(store)
+      let iterations = 0
       store.loadSince = (since, limit) => {
-        if (phase === "load" || phase === "load-error") shutdown()
+        if (phase === "load" || phase === "load-error" || phase === "load-iterator") shutdown()
         if (phase === "load-error") throw new Error("read failed after cancellation")
-        return load(since, limit)
+        const page = load(since, limit)
+        if (phase === "load-iterator")
+          page[Symbol.iterator] = () => {
+            iterations++
+            return page.values()
+          }
+        return page
       }
       const closeRequests: { code: number | undefined; reason: string | undefined }[] = []
       let claims = 0
@@ -97,7 +104,10 @@ for (const action of ["dispose", "stop", "abort", "socket-close"] as const) {
         expect([1000, 1001]).toContain(closed.code)
         expect(closed.reason).toBe(reason)
         expect(messages).toHaveLength(phase === "send" ? 1 : 0)
-        expect(claims).toBe(phase === "load" || phase === "load-error" ? 0 : 1)
+        expect(claims).toBe(
+          phase === "load" || phase === "load-error" || phase === "load-iterator" ? 0 : 1,
+        )
+        expect(iterations).toBe(0)
         expect(gateway.getStatus().clients).toBe(0)
         expect(failures).toEqual([])
       } finally {

@@ -68,3 +68,48 @@ for (const cancel of ["return", "close-all", "abort"] as const) {
     })
   }
 }
+
+for (const cancel of ["return", "close-all", "abort"] as const) {
+  for (const phase of ["load", "then", "length"] as const) {
+    test(`${cancel} during replay page ${phase} cannot start another host iterator`, async () => {
+      let subscription: FunnelEventSubscription
+      const controller = new AbortController()
+      let iterations = 0
+      const cancelReplay = () => {
+        if (cancel === "return") void subscription.return()
+        else if (cancel === "close-all") broadcaster.closeEventStreams()
+        else controller.abort()
+      }
+      const broadcaster = new FunnelBroadcaster({
+        persistentReplay: {
+          loadSince() {
+            const records = [{ offset: 1, content: "history" }]
+            records[Symbol.iterator] = () => {
+              iterations++
+              return records.values()
+            }
+            if (phase === "load") cancelReplay()
+            return new Proxy(records, {
+              get(target, key, receiver) {
+                if (key === phase) cancelReplay()
+                return Reflect.get(target, key, receiver)
+              },
+            })
+          },
+        },
+      })
+      broadcaster.seedLatestOffset(1)
+      subscription = broadcaster.events(
+        { channel: "ops", connectors: [] },
+        { since: 0, signal: controller.signal },
+      )
+      try {
+        expect(await subscription.next()).toEqual({ done: true, value: undefined })
+        expect(iterations).toBe(0)
+        expect(broadcaster.getMetrics().subscribers).toBe(0)
+      } finally {
+        await subscription.return()
+      }
+    })
+  }
+}

@@ -299,9 +299,11 @@ export class FunnelBroadcaster {
             "event log replay must return an array synchronously",
             (error) => reportReadFailure(error, cursor),
           )
+          if (isCancelled?.()) return
           if (!Array.isArray(page))
             throw new Error("event log replay must return an array synchronously")
           if (page.length === 0) break
+          if (isCancelled?.()) return
           let atBoundary = false
           for (const record of page) {
             if (isCancelled?.()) return
