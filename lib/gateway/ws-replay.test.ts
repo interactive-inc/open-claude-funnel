@@ -6,7 +6,15 @@ import { MemoryFunnelLogger } from "@/engine/logger/memory-logger"
 
 /** Real loopback sockets with deterministic storage and transport failures. */
 const failedReplay = async (
-  failure: "read" | "send" | "dropped" | "backpressure" | "unprintable-read" | "unprintable-send",
+  failure:
+    | "read"
+    | "send"
+    | "dropped"
+    | "backpressure"
+    | "unprintable-read"
+    | "unprintable-send"
+    | "async-page"
+    | "invalid-page",
   failingReporters = false,
 ) => {
   const reported: Error[] = []
@@ -39,6 +47,9 @@ const failedReplay = async (
       if (failure === "unprintable-read") throw Object.create(null)
       throw new Error("replay read failed")
     }
+  if (failure === "async-page")
+    log.loadSince = () => Promise.reject(new Error("replay storage unavailable")) as never
+  if (failure === "invalid-page") log.loadSince = () => ({ length: 0 }) as never
   const server = Bun.serve<GatewayWsData>({
     hostname: "127.0.0.1",
     port: 0,
@@ -81,7 +92,15 @@ const failedReplay = async (
       }
     })
     expect(escaped).toEqual([])
-    expect(reported).toHaveLength(1)
+    await Bun.sleep(0)
+    expect(reported).toHaveLength(failure === "async-page" ? 2 : 1)
+    if (failure === "async-page" || failure === "invalid-page") {
+      expect(reported.map((error) => error.message)).toContain(
+        "event log replay must return an array synchronously",
+      )
+      if (failure === "async-page")
+        expect(reported.map((error) => error.message)).toContain("replay storage unavailable")
+    }
     if (failure === "read" || failure === "send")
       expect(reported[0]?.message).toBe(`replay ${failure} failed`)
     if (failure === "unprintable-read" || failure === "unprintable-send")
@@ -101,7 +120,12 @@ test("WebSocket replay read failure is reported and closes the failed subscripti
   await failedReplay("read")
 })
 
-for (const failure of ["unprintable-read", "unprintable-send"] as const) {
+for (const failure of [
+  "unprintable-read",
+  "unprintable-send",
+  "async-page",
+  "invalid-page",
+] as const) {
   for (const failingReporters of [false, true]) {
     test(`${failure} closes the real socket without escaping (reporters fail=${failingReporters})`, async () => {
       await failedReplay(failure, failingReporters)

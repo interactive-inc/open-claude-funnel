@@ -283,12 +283,24 @@ export class FunnelBroadcaster {
     )
     const source = this.persistentReplay
     const matches = (event: ReplayableEvent) => this.matchesReplay(event, data)
+    const reportReadFailure = (error: unknown, cursor: number) =>
+      this.onError(normalizeError(error), {
+        component: "broadcaster.replay-query",
+        since: cursor,
+        channelId: data.channel,
+      })
     return (function* () {
       let cursor = since
       if (source && since < cutoff - 1) {
         while (true) {
           if (isCancelled?.()) return
-          const page = source.loadSince(cursor, 64)
+          const page = requireSynchronous(
+            source.loadSince(cursor, 64),
+            "event log replay must return an array synchronously",
+            (error) => reportReadFailure(error, cursor),
+          )
+          if (!Array.isArray(page))
+            throw new Error("event log replay must return an array synchronously")
           if (page.length === 0) break
           let atBoundary = false
           for (const record of page) {

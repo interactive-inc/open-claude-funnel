@@ -53,6 +53,7 @@ export abstract class FunnelEventLog {
    * Ascending offsets strictly after since. since and an explicit limit must
    * be non-negative safe integers. An omitted limit reads all retained rows;
    * zero returns no rows. Reject invalid bounds before reading any records.
+   * Return an array synchronously or throw; asynchronous stores need a host adapter.
    */
   abstract loadSince(since: number, limit?: number): ReplayableEvent[]
 
