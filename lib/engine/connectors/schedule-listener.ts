@@ -43,6 +43,8 @@ type Deps = {
 
 const MAX_CATCHUP_MINUTES = 60 * 24
 
+const activeTicks = new WeakMap<ScheduleStateStore, Promise<void>>()
+
 export class FunnelScheduleListener extends FunnelConnectorListener {
   private readonly config: ScheduleConnectorConfig
   private readonly lastFiredStore: ScheduleStateStore
@@ -53,7 +55,6 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
   private tickScheduled = false
-  private tickCompletion: Promise<void> | null = null
   private run = 0
   private readonly signal: AbortSignal | undefined
   private abortBinding: { signal: AbortSignal; abort: () => void } | null = null
@@ -145,7 +146,7 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
 
     // A stop/restart can be requested from inside notify/onFired. Do not wait
     // for that callback here: defer this run's first tick until it unwinds.
-    const pending = this.tickCompletion
+    const pending = activeTicks.get(this.lastFiredStore)
     if (pending) {
       invokeCallback(
         () => pending.then(connect),
@@ -213,14 +214,14 @@ export class FunnelScheduleListener extends FunnelConnectorListener {
   }
 
   async tick(notify: NotifyFn): Promise<void> {
-    if (this.stopped || this.tickCompletion) return
+    if (this.stopped || activeTicks.has(this.lastFiredStore)) return
     const completion = Promise.withResolvers<void>()
-    this.tickCompletion = completion.promise
+    activeTicks.set(this.lastFiredStore, completion.promise)
     const run = this.run
     try {
       await this.tickEntries(notify, run)
     } finally {
-      this.tickCompletion = null
+      activeTicks.delete(this.lastFiredStore)
       completion.resolve()
     }
   }

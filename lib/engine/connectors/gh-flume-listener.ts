@@ -3,7 +3,7 @@ import { FlumeGitHubSource } from "@interactive-inc/flume/github"
 import type { FlumeGitHubEvent, FlumeRuntimeDeps } from "@interactive-inc/flume"
 import type { NotifyFn } from "@/engine/connectors/connector-listener"
 import { errorMessageOf } from "@/engine/error/error-message-of"
-import { flumeLogHandler, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
+import { flumeLogHandler, flumeRuntimeDeps, resolveFlumeDeps } from "@/engine/connectors/flume-deps"
 import { FunnelFlumeSourceListener } from "@/engine/connectors/flume-source-listener"
 import { listenerSignal } from "@/engine/connectors/listener-signal"
 import type { FunnelLogger } from "@/engine/logger/logger"
@@ -27,6 +27,12 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
   private readonly env: NodeJS.ProcessEnv
   private readonly flumeDeps: Partial<FlumeRuntimeDeps>
   private readonly signal: AbortSignal | undefined
+
+  private hasPollingTimer = () => false
+
+  override isAlive(): boolean {
+    return super.isAlive() || (this.running !== null && this.hasPollingTimer())
+  }
 
   constructor(deps: Deps) {
     super({
@@ -69,10 +75,40 @@ export class FunnelFlumeGhListener extends FunnelFlumeSourceListener {
       pollInterval: this.config.pollInterval ?? 60,
     })
 
+    // Flume 0.11 reports HTTP degradation as disconnected while its poll timer still runs.
+    const deps = resolveFlumeDeps(this.flumeDeps) ?? flumeRuntimeDeps()
+    const timers = new Set<unknown>()
+    this.hasPollingTimer = () => timers.size > 0
     await this.runStart({
       sources: [source],
       onLog: flumeLogHandler(this.logger),
-      deps: resolveFlumeDeps(this.flumeDeps),
+      deps: {
+        ...deps,
+        setInterval(fn, delay) {
+          const handle = deps.setInterval(fn, delay)
+          timers.add(handle)
+          return handle
+        },
+        clearInterval(handle) {
+          timers.delete(handle)
+          deps.clearInterval(handle)
+        },
+        setTimeout(fn, delay) {
+          let handle: unknown
+          let fired = false
+          handle = deps.setTimeout(() => {
+            fired = true
+            timers.delete(handle)
+            fn()
+          }, delay)
+          if (!fired) timers.add(handle)
+          return handle
+        },
+        clearTimeout(handle) {
+          timers.delete(handle)
+          deps.clearTimeout(handle)
+        },
+      },
       signal: startupSignal,
       onEvent: (event) => {
         if (event.source !== "github") return Promise.resolve()

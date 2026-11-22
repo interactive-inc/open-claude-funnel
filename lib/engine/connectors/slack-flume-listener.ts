@@ -280,6 +280,8 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
         },
       })
       text = await res.text()
+      if (res.status === 429 || res.status >= 500)
+        throw new Error(`Slack auth.test HTTP ${res.status}`)
     } catch (error) {
       // A transport failure says nothing about whether the credential is
       // valid. Keep auth-failed for an actual auth.test rejection so doctor
@@ -292,12 +294,23 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
     const parsed = authTestResponseSchema.safeParse(safeJsonParse(text))
 
     if (!parsed.success) {
-      return {
-        ok: false,
-        error: `non-JSON auth.test response: ${text.slice(0, 200)}`,
-      }
+      throw new Error("Invalid Slack auth.test response")
     }
 
+    if (
+      !parsed.data.ok &&
+      ![
+        "invalid_auth",
+        "not_authed",
+        "account_inactive",
+        "token_revoked",
+        "token_expired",
+        "missing_scope",
+        "not_allowed_token_type",
+      ].includes(parsed.data.error ?? "")
+    ) {
+      throw new Error(`Slack auth.test failed: ${parsed.data.error ?? "unknown error"}`)
+    }
     return parsed.data
   }
 

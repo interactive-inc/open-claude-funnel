@@ -6,8 +6,7 @@ import { FunnelScheduleListener, type ScheduleOnFired } from "@/engine/connector
 import { FunnelScheduleStateStore } from "@/engine/connectors/schedule-state-store"
 import { MemoryConnectorDiagnosticLog } from "@/engine/diagnostic-log/memory-diagnostic-log"
 
-const setup = (onFired?: ScheduleOnFired) => {
-  const state = new FunnelScheduleStateStore()
+const setup = (onFired?: ScheduleOnFired, state = new FunnelScheduleStateStore()) => {
   const connected = Promise.withResolvers<void>()
   class Diagnostics extends MemoryConnectorDiagnosticLog {
     override recordConnection(input: ConnectorConnectionRecord): void {
@@ -273,5 +272,34 @@ test("a restarted catch-up run delivers remaining minutes only through the new n
     release.resolve()
     await starting
     await listener.stop()
+  }
+})
+
+test("replacement listener waits for the prior generation to checkpoint delivery", async () => {
+  const old = setup()
+  const next = setup(undefined, old.state)
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const delivered: string[] = []
+  const starting = old.listener.start(async (content) => {
+    delivered.push(content)
+    entered.resolve()
+    await release.promise
+  })
+  try {
+    await entered.promise
+    await old.listener.stop()
+    await next.listener.start(async (content) => {
+      delivered.push(content)
+    })
+    release.resolve()
+    await starting
+    await next.connected
+    expect(delivered).toEqual(["a", "b"])
+    expect([...old.state.load().keys()]).toEqual(["a", "b"])
+  } finally {
+    release.resolve()
+    await old.listener.stop()
+    await next.listener.stop()
   }
 })
