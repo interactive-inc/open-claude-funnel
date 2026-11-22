@@ -117,3 +117,36 @@ for (const type of ["discord", "gh"] as const) {
     }
   })
 }
+
+test("GitHub remains alive across HTTP degradation while its poll timer runs", async () => {
+  let poll = () => {}
+  let status = 200
+  const listener = new FunnelFlumeGhListener({
+    config: { id: "gh", name: "gh", type: "gh", token: "example" },
+    flumeDeps: {
+      fetch: async () => new Response("[]", { status }),
+      setInterval: (fn) => {
+        poll = fn
+        return 1
+      },
+      clearInterval: () => {},
+    },
+  })
+  await listener.start(async () => {})
+  try {
+    status = 503
+    for (let i = 0; i < 3; i++) {
+      poll()
+      await Bun.sleep(1)
+    }
+    expect(listener.isConnected()).toBe(false)
+    expect(listener.isAlive()).toBe(true)
+    status = 200
+    poll()
+    await Bun.sleep(1)
+    expect(listener.isConnected()).toBe(true)
+  } finally {
+    await listener.stop()
+  }
+  expect(listener.isAlive()).toBe(false)
+})

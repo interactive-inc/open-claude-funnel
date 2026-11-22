@@ -101,3 +101,24 @@ for (const method of ["insert", "batch", "write"] as const) {
     }
   })
 }
+
+test("short lived writers check the byte budget after reopening a populated log", () => {
+  const root = mkdtempSync(join(tmpdir(), "funnel-retention-reopen-"))
+  const options = { path: join(root, "log.db"), maxBytes: 262144, targetBytes: 131072 }
+  try {
+    for (let i = 0; i < 5; i++) {
+      const log = new SqliteEventLog<string>(options)
+      try {
+        expect(
+          log.insertMany(Array.from({ length: 200 }, () => ({ ts: 0, event: "x".repeat(1024) }))),
+        ).not.toBeInstanceOf(Error)
+        expect(log.getMaxSeq()).toBe(200 * (i + 1))
+        if (i === 4) expect(log.query().length).toBeLessThan(500)
+      } finally {
+        log.close()
+      }
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

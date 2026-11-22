@@ -112,7 +112,6 @@ const MIGRATIONS: ReadonlyArray<ReadonlyArray<string>> = [
     "CREATE INDEX IF NOT EXISTS idx_logs_type ON logs (type)",
   ],
   [
-    "DROP TABLE IF EXISTS leuco_log",
     "CREATE TABLE IF NOT EXISTS logs (seq INTEGER PRIMARY KEY, ts INTEGER NOT NULL, type TEXT, event TEXT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts)",
     "CREATE INDEX IF NOT EXISTS idx_logs_type ON logs (type)",
@@ -255,6 +254,8 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
       this.maxSeqStmt = this.db.query(
         "SELECT seq AS max, (SELECT MAX(seq) FROM logs) AS retainedMax FROM log_sequence WHERE id = 1",
       )
+      if (this.maxBytes !== null && this.db.query("SELECT 1 FROM logs LIMIT 1").get())
+        this.insertsSinceByteCheck = BYTE_CHECK_INTERVAL - 1
       this.countStmt = this.db.query("SELECT COUNT(*) AS n FROM logs")
       this.trimRowsStmt = this.db.query(
         "DELETE FROM logs WHERE seq <= (SELECT seq FROM logs ORDER BY seq DESC LIMIT 1 OFFSET ?)",
@@ -673,6 +674,13 @@ export class SqliteEventLog<E, const I extends ReadonlyArray<string> = readonly 
     for (const stmts of pending) {
       version += 1
       this.runTransaction("BEGIN", () => {
+        if (
+          version === 2 &&
+          this.db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='leuco_log'").get()
+        ) {
+          // ALTER preserves retained payloads and any host-declared index columns.
+          this.db.run("ALTER TABLE leuco_log RENAME TO logs")
+        }
         for (const stmt of stmts) this.db.run(stmt)
         this.db.run(`PRAGMA user_version = ${version}`)
       })

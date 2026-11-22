@@ -44,3 +44,31 @@ for (const version of [4, 99, -1]) {
     }
   })
 }
+
+test("schema one keeps legacy rows, custom columns and offsets across reopen", () => {
+  const directory = mkdtempSync(join(tmpdir(), "legacy-events-"))
+  const path = join(directory, "events.db")
+  try {
+    const legacy = new Database(path)
+    legacy.run(
+      "CREATE TABLE leuco_log(seq INTEGER PRIMARY KEY,ts INTEGER NOT NULL,type TEXT,event TEXT NOT NULL,channel_id TEXT)",
+    )
+    legacy.run("INSERT INTO leuco_log VALUES (42,0,NULL,?,?)", ['"saved"', "ops"])
+    legacy.run("PRAGMA user_version=1")
+    legacy.close()
+    for (let i = 0; i < 2; i++) {
+      const log = new SqliteEventLog<string>({ path })
+      try {
+        expect(log.query()[0]).toMatchObject({ seq: 42, event: "saved" })
+        expect(log.database.query("SELECT channel_id FROM logs WHERE seq=42").get()).toEqual({
+          channel_id: "ops",
+        })
+        if (i === 1) expect(log.insert({ ts: 1, event: "next" })).toMatchObject({ seq: 43 })
+      } finally {
+        log.close()
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})

@@ -193,6 +193,29 @@ describe("FunnelConnectorRegistry → FlumeSlackSource integration", () => {
     await listener.stop()
   })
 
+  test.each([503, 429, 200])(
+    "Slack transient auth.test response (%i) permits recovery",
+    async (status) => {
+      const healthyFetch = globalThis.fetch
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ ok: false, error: "internal_error" }), {
+          status,
+        })) as unknown as typeof fetch
+      const registry = new FunnelConnectorRegistry({
+        descriptors: [slackConnector()],
+        diagnosticLog,
+      })
+      const listener = registry.createListener("channel", slackConfig)
+      await expect(listener.start(async () => {})).rejects.toThrow("Slack auth.test")
+      expect(diagnosticLog.queryConnection({}).map((entry) => entry.status)).not.toContain(
+        "auth-failed",
+      )
+      globalThis.fetch = healthyFetch
+      await listener.start(async () => {})
+      await listener.stop()
+    },
+  )
+
   test("auth.test transport failures are connection errors, not credential rejections", async () => {
     globalThis.fetch = (async (url: string | URL) => {
       if (String(url) === "https://slack.com/api/auth.test") {
