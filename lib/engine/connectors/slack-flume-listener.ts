@@ -268,6 +268,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
 
   private async callAuthTest(signal?: AbortSignal) {
     let text: string
+    let status: number
 
     try {
       const res = await this.http.fetch({
@@ -279,6 +280,7 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
           "Content-Type": "application/x-www-form-urlencoded",
         },
       })
+      status = res.status
       text = await res.text()
       if (res.status === 429 || res.status >= 500)
         throw new Error(`Slack auth.test HTTP ${res.status}`)
@@ -293,6 +295,8 @@ export class FunnelFlumeSlackListener extends FunnelFlumeSourceListener {
 
     const parsed = authTestResponseSchema.safeParse(safeJsonParse(text))
 
+    if (status === 401 || status === 403)
+      return { ok: false as const, error: (parsed.success && parsed.data.error) || `HTTP ${status}` }
     if (!parsed.success) {
       throw new Error("Invalid Slack auth.test response")
     }
